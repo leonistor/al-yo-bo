@@ -10,6 +10,9 @@
     "astro",
     "python-design-patterns",
     "uv",
-    "zig-best-practices",
+    "zig-best-practices"
+  ],
+  "_migrations": [
+    "2026-08-reasoning-unification"
   ],
 }

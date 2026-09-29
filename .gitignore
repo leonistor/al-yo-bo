@@ -1,34 +1,25 @@
-# dependencies (bun install)
-node_modules
+# Agent / tooling local state
+.omo/*
+!.omo/omo.jsonc
+.codegraph
+.playwriter-profile/
+.zed/local/
 
-# output
-out
-dist
-*.tgz
-
-# code coverage
-coverage
-*.lcov
-
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# caches
-.eslintcache
-.cache
+# Runtime / build artifacts
+node_modules/
+dist/
+build/
+.output/
 *.tsbuildinfo
+*.log
 
-# IntelliJ based IDEs
-.idea
+# Secrets and local config
+.env
+.env.*
+!/.env.example
+
+# Local tool binaries (e.g. the trail single binary)
+.tools/
 
 # Finder (MacOS) folder config
 .DS_Store
