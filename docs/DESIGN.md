@@ -1,7 +1,6 @@
 # al-yo-bo — Design System
 
-> The UI design system for al-yo-bo. Read alongside [ARCHITECTURE.md](ARCHITECTURE.md). This is a **starting point** — evolve it deliberately as the UI is built, and
-> keep it the single reference for components and pages.
+> This is a **starting point** — evolve it deliberately as the UI is built, and keep it the single reference for components and pages.
 
 ## Principles
 
@@ -57,7 +56,7 @@ active = `primary`, deprecated = `muted-foreground`).
 ## Interaction & motion
 
 - Motion is functional: transitions **150–200 ms**, `ease-out`; respect `prefers-reduced-motion`.
-- Optimistic mutations (TanStack DB) must show pending affordance and a recovery path on failure.
+- Optimistic mutations must show pending affordance and a recovery path on failure.
 - Keyboard: `/` focuses search, `c` opens chat, `Esc` closes overlays, arrows move list selection.
 - Focus states use the `ring` token and must remain visible on every interactive element.
 

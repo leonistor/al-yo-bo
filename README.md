@@ -26,20 +26,20 @@ See a previous attempt at [docs/MODEL.md](docs/MODEL.md), to be treated as a sug
 
 ## Technology stack
 
-| Layer           | Choice                           | Notes                                    | URL                                                                                                  |
-| --------------- | -------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Runtime         | **Bun**                          | Node only if a dependency forces it      | [bun.com](https://bun.com)                                                                           |
-| Web framework   | **Hono**                         | server routes                            | [hono.dev](https://hono.dev)                                                                         |
-| Reactive client | **React 19 + Hono RPC**          | UI                                       | [react.dev](https://react.dev), [https://hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc) |
-| UI components   | **shadcn/ui**                    |                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
-| Chat UI         | **assistant-ui**                 | AI SDK runtime                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
-| Classifier      | **Ollaya**                       | open decision models, single binary      | [ollaya.dev](https://ollaya.dev)                                                                     |
-| LLM access      | **AI SDK**                       | Ollama locally, OpenRouter in production | [ai-sdk.com](https://ai-sdk.com)                                                                     |
-| Embeddings      | **OpenRouter** + **sqlite-vec**  |                                          | [openrouter.com](https://openrouter.com)                                                             |
-| Search          | **SQLite FTS5** + **sqlite-vec** | keyword + semantic, same DB              | [sqlite.org](https://sqlite.org)                                                                     |
-| Background jobs | **OpenWorkflow**                 | durable workflows, SQLite, Bun-native    | [openworkflow.dev](https://openworkflow.dev)                                                         |
-| Configuration   | **env**                          |                                          | [env](https://bun.com/docs/runtime/environment-variables)                                            |
-| Deployment      | **shell scripts**                |                                          |                                                                                                      |
+| Layer           | Choice                           | Notes                                                                                    | URL                                                                                                  |
+| --------------- | -------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Runtime         | **Bun**                          | Node only if a dependency forces it                                                      | [bun.com](https://bun.com)                                                                           |
+| Web framework   | **Hono**                         | server routes                                                                            | [hono.dev](https://hono.dev)                                                                         |
+| Reactive client | **React 19 + Hono RPC**          | UI                                                                                       | [react.dev](https://react.dev), [https://hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc) |
+| UI components   | **shadcn/ui**                    |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
+| Chat UI         | **assistant-ui**                 | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
+| Classifier      | **Ollaya**                       | open decision models, single binary                                                      | [ollaya.dev](https://ollaya.dev)                                                                     |
+| LLM access      | **AI SDK**                       | Ollama locally, OpenRouter in production                                                 | [ai-sdk.com](https://ai-sdk.com)                                                                     |
+| Embeddings      | **OpenRouter** + **sqlite-vec**  |                                                                                          | [openrouter.com](https://openrouter.com)                                                             |
+| Search          | **SQLite FTS5** + **sqlite-vec** | keyword + semantic, same DB                                                              | [sqlite.org](https://sqlite.org)                                                                     |
+| Background jobs | **OpenWorkflow**                 | durable workflows, SQLite, Bun-native                                                    | [openworkflow.dev](https://openworkflow.dev)                                                         |
+| Configuration   | **env**                          |                                                                                          | [env](https://bun.com/docs/runtime/environment-variables)                                            |
+| Deployment      | **shell scripts**                | just a `nohup bun run server.ts` on server, shell script to copy and unpack dist archive |                                                                                                      |
 
 ## Tooling
 
