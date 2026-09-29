@@ -19,10 +19,10 @@
 | ----------- | ------------------------------------ | --------------------------------------------------------- |
 | Base unit   | `4px` (Tailwind spacing scale)       | Use scale steps (`2`, `3`, `4`, `6`, …), not arbitrary px |
 | Radius      | `--radius` (shadcn default `0.5rem`) | Cards, inputs, popovers inherit it                        |
-| Font (UI)   | system sans stack                    | Via Tailwind `font-sans`                                  |
+| Font (UI)   | Inter Variable                       | Via `font-sans`; loaded from `@fontsource-variable/inter` |
 | Font (mono) | system mono stack                    | For URLs, hashes, code (`font-mono`)                      |
 | Type scale  | Tailwind `text-xs` → `text-2xl`      | Body `text-sm`; page titles `text-2xl`                    |
-| Color       | shadcn **CSS variables** (HSL)       | Define semantic tokens, never raw hex in components       |
+| Color       | shadcn **CSS variables** (oklch)     | Define semantic tokens, never raw hex in components       |
 
 **Color rule:** consume semantic tokens only — `background`, `foreground`, `muted`, `muted-foreground`,
 `primary`, `secondary`, `accent`, `destructive`, `border`, `ring`, `card`, `popover`. Light and dark
