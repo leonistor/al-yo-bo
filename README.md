@@ -31,8 +31,8 @@ bun run dev       # server (:3000) + web dev server (Vite)
 bun run db:seed   # load the synthetic demo seed data
 bun run build     # build the web app into apps/web/dist
 bun run start     # production: one Bun process serves API + web
-bunx oxlint .     # lint
-bunx oxfmt .      # format
+bun run lint      # lint
+bun run format    # format
 bun run typecheck # typecheck every workspace
 bun test          # tests
 ```

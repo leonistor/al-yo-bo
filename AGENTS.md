@@ -48,8 +48,8 @@ package allowed to depend on concrete subsystem implementations; no cycles. See 
 | Build (web → dist)       | `bun run build`        |
 | Start (prod, one process)| `bun run start`        |
 | Seed demo data           | `bun run db:seed`      |
-| Lint                     | `bunx oxlint .`        |
-| Format                   | `bunx oxfmt .`         |
+| Lint                     | `bun run lint`         |
+| Format                   | `bun run format`       |
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
 
