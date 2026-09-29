@@ -11,8 +11,8 @@
    Unmatched output is recorded as a `proposed` tag that requires explicit user approval before use.
 4. **Provenance is always recoverable.** Every effective tag assignment points back to the run that
    produced it, and each result keeps the classifier's original label.
-5. **One store.** Relational data, full-text search (FTS5), and vector search (sqlite-vec) all live in
-   the same SQLite file.
+5. **One store.** Relational data, full-text search (FTS5), and vector search (in-process KNN over
+   BLOB-stored embeddings) all live in the same SQLite file.
 
 ## Entity overview
 
@@ -157,7 +157,7 @@ CREATE INDEX bookmark_tags_tag ON bookmark_tags(tag_id);
 
 ### Search structures
 
-These are **internal** structures: FTS5 and `vec0` virtual tables are not `STRICT` and have no `INTEGER`/UUID primary key. They are queried from server-side search code, never through generated CRUD.
+The keyword index is an **internal** structure: FTS5 virtual tables are not `STRICT` and have no `INTEGER`/UUID primary key. It is queried from server-side search code, never through generated CRUD. Embeddings, by contrast, live in a normal `STRICT` table (below).
 
 ### Keyword search — FTS5
 
@@ -175,16 +175,25 @@ CREATE VIRTUAL TABLE bookmark_fts USING fts5(
 `bookmark_id` stores the **BLOB** UUID, so `bookmarks.id = bookmark_fts.bookmark_id` joins directly in
 any SQLite connection (no extension needed). Kept in sync with `bookmarks` by triggers.
 
-### Semantic search — sqlite-vec
+### Semantic search — in-process KNN
+
+Vectors are stored as little-endian `Float32` BLOBs in a normal `STRICT` table and scanned in memory
+by `packages/search`; cosine similarity reduces to a dot product on pre-normalized vectors. The
+dimension is fixed by the embedding model, and `packages/search` loads all rows into one matrix at
+startup (see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
 
 ```sql
-CREATE VIRTUAL TABLE bookmark_embeddings USING vec0(
-  bookmark_id TEXT PRIMARY KEY,                     -- canonical UUID text (vec0 PKs are INTEGER/TEXT only)
-  embedding    FLOAT[1536]                          -- dimension set by the embedding model
-);
+CREATE TABLE bookmark_embeddings (
+  bookmark_id BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(bookmark_id))
+                   REFERENCES bookmarks(id) ON DELETE CASCADE,
+  model       TEXT NOT NULL,                        -- embedding model id
+  dims        INTEGER NOT NULL,                     -- must equal dimension(model)
+  embedding   BLOB NOT NULL,                        -- little-endian Float32 array, length = dims * 4 bytes
+  updated_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+) STRICT;
 ```
 
-Hybrid ranking combines FTS5 (BM25) and sqlite-vec (KNN) results, e.g. with reciprocal rank fusion.
+Hybrid ranking combines FTS5 (BM25) and the KNN scan results, e.g. with reciprocal rank fusion.
 
 ## Invariants & rules
 
@@ -198,7 +207,7 @@ Hybrid ranking combines FTS5 (BM25) and sqlite-vec (KNN) results, e.g. with reci
   is never auto-assigned.
 - **Referential integrity** is enforced with foreign keys (`PRAGMA foreign_keys = ON`); deletes cascade
   as shown, or set the referencing column to `NULL` where noted.
-- **Server-set timestamps.** `AFTER INSERT` triggers (`U1790533231__server_timestamps.sql`) force
+- **Server-set timestamps.** `AFTER INSERT` triggers in the migrations force
   `created_at` / `updated_at` to server time on every insert, and `AFTER UPDATE` triggers bump
   `updated_at` — client-sent values are always overridden (a raw authenticated UPDATE could still
   rewrite `created_at`; the app never sends it — v0.9.0 API-hardening scope).
@@ -207,7 +216,7 @@ Hybrid ranking combines FTS5 (BM25) and sqlite-vec (KNN) results, e.g. with reci
 
 | Deleted            | Effect                                                                                                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`; `bookmark_fts` / `bookmark_embeddings` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets) |
+| bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets) |
 | tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                        |
 | category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                             |
 | classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains                                                                                                                       |
