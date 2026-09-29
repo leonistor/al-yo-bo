@@ -37,6 +37,7 @@
     "dist/**",
     ".output/**",
     "node_modules/**",
+    ".agents/**",
     "**/routeTree.gen.ts",
     "**/components/ui/**"
   ]
