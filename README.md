@@ -7,7 +7,7 @@
 - View bookmarks as a list or a grid.
 - Chat with an AI assistant to search and get suggestions.
 - Switch easily between chat and the traditional UI.
-- Import bookmarks from various markdown files, examples in [docs/examples-mds](docs/examples-mds).
+- Import bookmarks from various markdown files, examples in [docs/examples-mds](docs/examples-mds). The content of this files should **not** be used as agents suggestions.
 
 ## Architecture
 
@@ -22,7 +22,7 @@ The design favors well-documented, self-hostable, open-source components over be
 
 ## Data model
 
-See [docs/MODEL.md](docs/MODEL.md)
+See a previous attempt at [docs/MODEL.md](docs/MODEL.md), to be treated as a suggestion.
 
 ## Technology stack
 
@@ -43,6 +43,14 @@ See [docs/MODEL.md](docs/MODEL.md)
 
 ## Tooling
 
-- [oxfmt + oxlint](https://oxc.rs/)
-- [opencode](https://opencode.ai/) and [oh-my-agent](https://omo.dev/)
-- [Zed editor](https://zed.dev/)
+- **Package manager / workspaces:** Bun.
+- **Lint:** `oxlint` and **Format:** [oxfmt + oxlint](https://oxc.rs/)
+- **Browser QA:** use **Playwriter**, not Playwright. Start the project-scoped Chrome with `bun run browser:start` (headed, `./.playwriter-profile`, gitignored). Install the skill once with `npx -y skills add https://playwriter.dev`.
+- **Docs lookup:** **context7** (via the opencode plugin). Note **Ollaya has no Context7 coverage** — use offline/manual docs for it.
+
+## Agent tooling
+
+- **opencode + oh-my-openagent (omo)** provide the agent harness. Keep runtime state out of git
+  (`.omo/`, `.codegraph` are gitignored). [opencode](https://opencode.ai/) and [oh-my-agent](https://omo.dev/)
+- **agent-skill-manager (`asm`)** is a global tool for managing installed skills; it stores nothing in this repo. Useful: `asm list --json`, `asm install <skill> -p opencode`, `asm audit security`. Project-shared skills would be committed under `.opencode/skills/<name>/SKILL.md`.
+- Use `./.omo/session-work/` for scratch files and `./.omo/evidence/` for generated evidence (gitignored).

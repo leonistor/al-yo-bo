@@ -132,9 +132,6 @@ CREATE TABLE classification_results (
 CREATE INDEX classification_results_tag ON classification_results(tag_id);
 ```
 
-> The former composite `PRIMARY KEY (run_id, tag_id)` becomes a surrogate `id` PK plus a `UNIQUE`
-> constraint — TrailBase cannot expose composite keys, and uniqueness is fully preserved by `UNIQUE`.
-
 ### `bookmark_tags`
 
 The **effective** assignment shown in the UI. Composite uniqueness prevents duplicates.
@@ -160,9 +157,7 @@ CREATE INDEX bookmark_tags_tag ON bookmark_tags(tag_id);
 
 ### Search structures
 
-These are **internal** structures: FTS5 and `vec0` virtual tables are not `STRICT` and have no
-`INTEGER`/UUID primary key, so TrailBase **cannot expose them as record APIs**. They are queried from
-server-side search code, never through generated CRUD.
+These are **internal** structures: FTS5 and `vec0` virtual tables are not `STRICT` and have no `INTEGER`/UUID primary key. They are queried from server-side search code, never through generated CRUD.
 
 ### Keyword search — FTS5
 
@@ -188,10 +183,6 @@ CREATE VIRTUAL TABLE bookmark_embeddings USING vec0(
   embedding    FLOAT[1536]                          -- dimension set by the embedding model
 );
 ```
-
-`vec0` primary keys cannot be `BLOB`, so `bookmark_id` holds the **canonical UUID text**. Joining back
-to `bookmarks` uses `uuid_parse(bookmark_embeddings.bookmark_id)` in a TrailBase connection, or a
-client-side conversion; the shared codec owns that conversion.
 
 Hybrid ranking combines FTS5 (BM25) and sqlite-vec (KNN) results, e.g. with reciprocal rank fusion.
 
