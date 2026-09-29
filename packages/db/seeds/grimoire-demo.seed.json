@@ -1,0 +1,564 @@
+{
+  "$comment": "Synthetic seed data extracted from the Grimoire public demo (https://goniszewski.com/grimoire/demo/). Not real user data.",
+  "source": "https://goniszewski.com/grimoire/demo/",
+  "extractedAt": "2026-09-29T14:36:15.636Z",
+  "categories": [
+    "Architecture",
+    "Backend",
+    "Design systems",
+    "Frontend",
+    "Research",
+    "Security",
+    "Testing",
+    "Tooling"
+  ],
+  "tags": [
+    "accessibility",
+    "animation",
+    "architecture",
+    "aria",
+    "async",
+    "authentication",
+    "backend",
+    "build",
+    "bun",
+    "containers",
+    "csp",
+    "css",
+    "data",
+    "deployment",
+    "design",
+    "design-systems",
+    "distributed-systems",
+    "docker",
+    "e2e",
+    "foundations",
+    "frontend",
+    "git",
+    "heuristics",
+    "http",
+    "machine-learning",
+    "node",
+    "npm",
+    "operations",
+    "performance",
+    "playwright",
+    "postgres",
+    "python",
+    "react",
+    "release",
+    "research",
+    "review",
+    "security",
+    "sqlite",
+    "standards",
+    "testing",
+    "tooling",
+    "transactions",
+    "types",
+    "typescript",
+    "ux",
+    "versioning",
+    "vite",
+    "vitest",
+    "web",
+    "web-platform",
+    "workflow"
+  ],
+  "bookmarks": [
+    {
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API",
+      "title": "View Transition API",
+      "description": "A practical reference for animating document and single-page transitions.",
+      "category": "Frontend",
+      "tags": [
+        "animation",
+        "frontend",
+        "web-platform"
+      ],
+      "createdAt": 1787301900000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-001",
+          "note": "Useful when a route change should still feel spatial."
+        }
+      }
+    },
+    {
+      "url": "https://react.dev/learn/you-might-not-need-an-effect",
+      "title": "You Might Not Need an Effect",
+      "description": "A clear guide to keeping derived data in render instead of synchronising it with effects.",
+      "category": "Frontend",
+      "tags": [
+        "architecture",
+        "frontend",
+        "react"
+      ],
+      "createdAt": 1787239200000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-002",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://web.dev/articles/deferring-non-critical-css",
+      "title": "Deferring non-critical CSS",
+      "description": "Performance patterns for keeping initial rendering focused on what is visible first.",
+      "category": "Frontend",
+      "tags": [
+        "css",
+        "frontend",
+        "performance"
+      ],
+      "createdAt": 1787140800000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-003",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+      "title": "TypeScript: Narrowing",
+      "description": "The handbook chapter on turning runtime checks into precise static types.",
+      "category": "Frontend",
+      "tags": [
+        "tooling",
+        "types",
+        "typescript"
+      ],
+      "createdAt": 1787045400000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-004",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://vite.dev/guide/build.html",
+      "title": "Vite production build guide",
+      "description": "The reference for building, previewing, and tuning a Vite application.",
+      "category": "Tooling",
+      "tags": [
+        "build",
+        "tooling",
+        "vite"
+      ],
+      "createdAt": 1786976100000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-005",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://nodejs.org/en/learn/getting-started/an-introduction-to-the-npm-package-manager",
+      "title": "An introduction to the npm package manager",
+      "description": "A compact explanation of package manifests, dependencies, and reproducible installs.",
+      "category": "Tooling",
+      "tags": [
+        "node",
+        "npm",
+        "tooling"
+      ],
+      "createdAt": 1786880400000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-006",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://bun.sh/docs/runtime/sqlite",
+      "title": "Bun SQLite API",
+      "description": "Notes on using Bun's built-in SQLite runtime with a small local service.",
+      "category": "Backend",
+      "tags": [
+        "backend",
+        "bun",
+        "sqlite"
+      ],
+      "createdAt": 1786811100000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-007",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
+      "title": "An overview of HTTP",
+      "description": "A durable refresher on requests, responses, methods, headers, and status codes.",
+      "category": "Backend",
+      "tags": [
+        "backend",
+        "http",
+        "web-platform"
+      ],
+      "createdAt": 1786701600000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-008",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.sqlite.org/foreignkeys.html",
+      "title": "SQLite foreign key support",
+      "description": "A reference for enforcing relationships safely in a small embedded database.",
+      "category": "Backend",
+      "tags": [
+        "backend",
+        "data",
+        "sqlite"
+      ],
+      "createdAt": 1786628100000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-009",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+      "title": "Transaction isolation",
+      "description": "The PostgreSQL reference on visibility, concurrency, and transaction isolation levels.",
+      "category": "Backend",
+      "tags": [
+        "data",
+        "postgres",
+        "transactions"
+      ],
+      "createdAt": 1786528200000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-010",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://docs.docker.com/build/building/multi-stage/",
+      "title": "Multi-stage builds",
+      "description": "A guide to keeping production container images small and focused.",
+      "category": "Tooling",
+      "tags": [
+        "build",
+        "containers",
+        "docker"
+      ],
+      "createdAt": 1786467900000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-011",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://playwright.dev/docs/test-intro",
+      "title": "Playwright Test introduction",
+      "description": "A practical overview of browser test isolation, locators, and traceable failures.",
+      "category": "Testing",
+      "tags": [
+        "e2e",
+        "playwright",
+        "testing"
+      ],
+      "createdAt": 1786274100000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-013",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://vitest.dev/guide/",
+      "title": "Vitest guide",
+      "description": "Fast unit testing patterns for a Vite-native TypeScript codebase.",
+      "category": "Testing",
+      "tags": [
+        "testing",
+        "typescript",
+        "vitest"
+      ],
+      "createdAt": 1786184400000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-014",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://testing-library.com/docs/queries/about/",
+      "title": "Testing Library queries",
+      "description": "A testing philosophy and query guide that keeps assertions close to user behavior.",
+      "category": "Testing",
+      "tags": [
+        "accessibility",
+        "frontend",
+        "testing"
+      ],
+      "createdAt": 1786093800000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-015",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.w3.org/WAI/ARIA/apg/",
+      "title": "ARIA Authoring Practices Guide",
+      "description": "Patterns for making interactive widgets understandable and keyboard operable.",
+      "category": "Design systems",
+      "tags": [
+        "accessibility",
+        "aria",
+        "design-systems"
+      ],
+      "createdAt": 1786021200000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-016",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.nngroup.com/articles/ten-usability-heuristics/",
+      "title": "10 usability heuristics for user interface design",
+      "description": "A durable checklist for evaluating feedback, language, control, and error recovery.",
+      "category": "Design systems",
+      "tags": [
+        "design",
+        "heuristics",
+        "ux"
+      ],
+      "createdAt": 1785918600000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-017",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://martinfowler.com/articles/patterns-of-distributed-systems/",
+      "title": "Patterns of distributed systems",
+      "description": "A catalog of small, named solutions for coordination and consistency problems.",
+      "category": "Architecture",
+      "tags": [
+        "architecture",
+        "backend",
+        "distributed-systems"
+      ],
+      "createdAt": 1785759600000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-019",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://12factor.net/",
+      "title": "The Twelve-Factor App",
+      "description": "A concise set of deployment and configuration principles for service applications.",
+      "category": "Architecture",
+      "tags": [
+        "architecture",
+        "deployment",
+        "operations"
+      ],
+      "createdAt": 1785663900000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-020",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://owasp.org/www-project-application-security-verification-standard/",
+      "title": "OWASP Application Security Verification Standard",
+      "description": "A structured security baseline for reviewing authentication, validation, and data handling.",
+      "category": "Security",
+      "tags": [
+        "review",
+        "security",
+        "web"
+      ],
+      "createdAt": 1785594300000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-021",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+      "title": "Content Security Policy",
+      "description": "A reference for constraining browser resource loading and reducing injection impact.",
+      "category": "Security",
+      "tags": [
+        "csp",
+        "security",
+        "web-platform"
+      ],
+      "createdAt": 1785496200000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-022",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "title": "Authentication cheat sheet",
+      "description": "Implementation reminders for passwords, sessions, recovery, and multi-factor authentication.",
+      "category": "Security",
+      "tags": [
+        "authentication",
+        "review",
+        "security"
+      ],
+      "createdAt": 1785400500000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-023",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://arxiv.org/abs/1706.03762",
+      "title": "Attention Is All You Need",
+      "description": "The paper page for the transformer architecture, saved as a research reference.",
+      "category": "Research",
+      "tags": [
+        "foundations",
+        "machine-learning",
+        "research"
+      ],
+      "createdAt": 1785245400000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-025",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://docs.python.org/3/library/asyncio.html",
+      "title": "asyncio — Asynchronous I/O",
+      "description": "The Python standard-library reference for cooperative concurrency and event loops.",
+      "category": "Backend",
+      "tags": [
+        "async",
+        "backend",
+        "python"
+      ],
+      "createdAt": 1785147300000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-026",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://git-scm.com/book/en/v2",
+      "title": "Pro Git book",
+      "description": "A deep but approachable reference for everyday Git workflows and repository internals.",
+      "category": "Tooling",
+      "tags": [
+        "git",
+        "tooling",
+        "workflow"
+      ],
+      "createdAt": 1784992800000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-028",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://semver.org/",
+      "title": "Semantic Versioning 2.0.0",
+      "description": "The specification for communicating compatibility through version numbers.",
+      "category": "Architecture",
+      "tags": [
+        "release",
+        "tooling",
+        "versioning"
+      ],
+      "createdAt": 1784890800000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-029",
+          "note": null
+        }
+      }
+    },
+    {
+      "url": "https://www.w3.org/TR/wcag-quickref/",
+      "title": "How to meet WCAG quick reference",
+      "description": null,
+      "category": "Design systems",
+      "tags": [
+        "accessibility",
+        "design",
+        "standards"
+      ],
+      "createdAt": 1784797200000,
+      "metadata": {
+        "seed": {
+          "source": "grimoire-demo",
+          "demoId": "demo-030",
+          "note": null
+        }
+      }
+    }
+  ]
+}

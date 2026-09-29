@@ -47,11 +47,32 @@ active = `primary`, deprecated = `muted-foreground`).
 
 - App shell: persistent left **navigation/category** rail, main content area, optional right **chat**
   panel that can take over the main area.
-- Default view is a **list**; a **grid** toggle persists per user (config, not local state).
+- Default view is a **list**; a **grid** toggle persists locally in the browser (`localStorage`). It is
+  a per-browser preference, not server state.
 - Breakpoints follow Tailwind defaults (`sm`/`md`/`lg`). Collapse the nav rail to an icon rail below
   `lg`; chat becomes full-screen below `md`.
 - Empty, loading, and error states are designed, not afterthoughts — every list needs a skeleton and
   an empty state with the primary action.
+
+## App shell reference (Grimoire demo)
+
+The public demo at <https://goniszewski.com/grimoire/demo/> is used as a **layout and seed-data
+reference** (see ARCHITECTURE §7 for the seed fixture, and `.omo/evidence/` for screenshots). It is a
+different product: borrow the information architecture, not the feature set.
+
+**Borrow:**
+
+- Left rail: `All` (with total), a flat list of categories with counts, a tag list with counts; a
+  collapse control below `lg`.
+- Top bar: a single search input (with a keyword/semantic/hybrid mode control), plus add/import/theme
+  actions.
+- Main area: result count, a "refine" filters popover, list/grid toggle, sort control, and pagination
+  (default 20/page).
+- Bookmark row: title, host, tag chips, and a short description; row actions on the right.
+- A dedicated review-queue surface with a pending count badge.
+
+**Do not adopt (out of scope for al-yo-bo):** Domains, Timeline, Archive, Suggestions, pin/read-later/
+opened-count counters — unless they are separately requested and added to these docs.
 
 ## Interaction & motion
 

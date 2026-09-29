@@ -30,7 +30,7 @@ depends on it.
 | --------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Runtime         | **Bun**                              | Node only if a dependency forces it                                                      | [bun.com](https://bun.com)                                                                           |
 | Web framework   | **Hono**                             | server routes                                                                            | [hono.dev](https://hono.dev)                                                                         |
-| Reactive client | **React 19 + Hono RPC**              | UI                                                                                       | [react.dev](https://react.dev), [hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc)         |
+| Reactive client | **React 19 + Hono RPC**              | UI; bundled with **Vite**                                                                | [react.dev](https://react.dev), [hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc)         |
 | UI components   | **shadcn/ui**                        |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
 | Chat UI         | **assistant-ui**                     | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
 | Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon                                      | [ollaya.dev](https://ollaya.dev)                                                                     |
@@ -41,7 +41,14 @@ depends on it.
 | Configuration   | **env**                              |                                                                                          | [bun.com/docs/runtime/environment-variables](https://bun.com/docs/runtime/environment-variables)     |
 | Deployment      | **shell scripts**                    | a `nohup bun run server.ts` on the server, shell script to copy and unpack a dist archive |                                                                                                      |
 
-Patterns worth studying while scaffolding: [Hono RPC and React Monorepo Template](https://vladimir.vovk.in/blog/hono-rpc-and-react-monorepo-template), [Bun SQL Backend for Frontend Devs](https://samuellawrentz.com/blog/bun-sql-backend-for-frontend-devs/).
+Patterns worth studying while scaffolding: [Hono RPC and React Monorepo Template](https://vladimir.vovk.in/blog/hono-rpc-and-react-monorepo-template), [Bun SQL Backend for Frontend Devs](https://samuellawrentz.com/blog/bun-sql-backend-for-frontend-devs/) (the latter is a backend-only pattern — it says nothing about the web build).
+
+**Web build (decided).** `apps/web` is a Vite + React 19 SPA. Vite is used for local dev and the
+production build (`apps/web/dist`) because shadcn/ui's CLI targets Vite and Bun's fullstack bundler
+does not yet apply plugins (Tailwind included) in its production CLI build. This does not weaken the
+Bun-native constraint: Bun stays the runtime, package manager, test runner, and server, and in
+production the same Bun process serves the built assets through Hono (`serveStatic`), so §9 still
+describes a single process. The trigger to revisit this is in §11.
 
 ## 3. System overview
 
@@ -369,7 +376,8 @@ the row is always saved first, enrichment is best-effort.
 Single-user, shell-script driven. The documented shape is `nohup bun run apps/server …` on the host,
 with a scripted archive copy to ship a new build. Two processes must be running:
 
-1. the **Bun server** (API + worker), and
+0. the **web build** (`bun run build` → `apps/web/dist`), produced ahead of the server start, and
+1. the **Bun server** (API + worker, which also serves `apps/web/dist`), and
 2. the **Ollaya sidecar** (systemd unit or Docker), with its models pulled once
    (`ollaya pull laya`).
 
@@ -397,3 +405,4 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
+| Web bundler (§2)                 | Bun's bundler applies plugins (Tailwind/shadcn) in its production CLI build and the fullstack API stabilizes; then re-evaluate dropping Vite for a fully Bun-native build.            |

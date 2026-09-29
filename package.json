@@ -1,8 +1,18 @@
 {
   "name": "al-yo-bo",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "bun run --filter '@al-yo-bo/server' dev & bun run --filter '@al-yo-bo/web' dev",
+    "build": "bun run --filter '@al-yo-bo/web' build",
+    "start": "NODE_ENV=production bun run apps/server/src/index.ts",
+    "lint": "bunx oxlint .",
+    "format": "bunx oxfmt .",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "db:seed": "bun run packages/db/src/seed.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

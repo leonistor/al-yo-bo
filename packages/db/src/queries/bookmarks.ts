@@ -1,0 +1,338 @@
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
+
+import {
+  bytesToUuid,
+  clampPagination,
+  newIdBytes,
+  normalizeUrl,
+  toFtsMatch,
+  uuidToBytes,
+  type Bookmark,
+  type BookmarkSort,
+  type BookmarkWithTags,
+  type RankedCandidate,
+} from '@al-yo-bo/shared';
+
+import { mapBookmark, type BookmarkRow } from '../row-mapping.ts';
+import { getTagsForBookmarks } from './bookmark-tags.ts';
+
+const COLUMNS =
+  'id, url, title, description, content, metadata, category_id, content_hash, scraped_at, created_at, updated_at';
+
+export interface BookmarkInput {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  content?: string | null;
+  metadata?: Record<string, unknown> | null;
+  categoryId?: string | null;
+  contentHash?: string | null;
+  scrapedAt?: number | null;
+}
+
+export interface ListBookmarksFilters {
+  categoryId?: string;
+  tagId?: string;
+  dateFrom?: number;
+  dateTo?: number;
+  sort?: BookmarkSort;
+  direction?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export interface KeywordSearchParams {
+  q: string;
+  categoryId?: string;
+  tagId?: string;
+  dateFrom?: number;
+  dateTo?: number;
+  limit?: number;
+  offset?: number;
+}
+
+function hydrate(db: Database, rows: BookmarkRow[]): BookmarkWithTags[] {
+  const bookmarks = rows.map(mapBookmark);
+  const tags = getTagsForBookmarks(
+    db,
+    bookmarks.map((bookmark) => bookmark.id),
+  );
+  return bookmarks.map((bookmark) => ({ ...bookmark, tags: tags.get(bookmark.id) ?? [] }));
+}
+
+function sortColumn(sort: BookmarkSort = 'created_at'): string {
+  switch (sort) {
+    case 'title':
+      return 'title COLLATE NOCASE';
+    case 'updated_at':
+      return 'updated_at';
+    default:
+      return 'created_at';
+  }
+}
+
+function buildFilterClauses(filters: ListBookmarksFilters): {
+  whereSql: string;
+  params: SQLQueryBindings[];
+} {
+  const where: string[] = [];
+  const params: SQLQueryBindings[] = [];
+
+  if (filters.categoryId) {
+    where.push('category_id = ?');
+    params.push(uuidToBytes(filters.categoryId));
+  }
+  if (filters.tagId) {
+    where.push('id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?)');
+    params.push(uuidToBytes(filters.tagId));
+  }
+  if (filters.dateFrom !== undefined) {
+    where.push('created_at >= ?');
+    params.push(filters.dateFrom);
+  }
+  if (filters.dateTo !== undefined) {
+    where.push('created_at <= ?');
+    params.push(filters.dateTo);
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+export function getBookmarkById(db: Database, id: string): Bookmark | null {
+  const row = db
+    .query<BookmarkRow, [Uint8Array]>(`SELECT ${COLUMNS} FROM bookmarks WHERE id = ?`)
+    .get(uuidToBytes(id));
+  return row ? mapBookmark(row) : null;
+}
+
+export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
+  const row = db
+    .query<BookmarkRow, [string]>(`SELECT ${COLUMNS} FROM bookmarks WHERE url = ?`)
+    .get(normalizeUrl(url));
+  return row ? mapBookmark(row) : null;
+}
+
+export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
+  const id = newIdBytes();
+  db.query(
+    `INSERT INTO bookmarks (id, url, title, description, content, metadata, category_id, content_hash, scraped_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    normalizeUrl(input.url),
+    input.title ?? null,
+    input.description ?? null,
+    input.content ?? null,
+    input.metadata ? JSON.stringify(input.metadata) : null,
+    input.categoryId ? uuidToBytes(input.categoryId) : null,
+    input.contentHash ?? null,
+    input.scrapedAt ?? null,
+  );
+  const created = getBookmarkById(db, bytesToUuid(id));
+  if (!created) {
+    throw new Error('Bookmark insert did not persist');
+  }
+  return created;
+}
+
+export function updateBookmark(
+  db: Database,
+  id: string,
+  patch: Partial<BookmarkInput>,
+): Bookmark | null {
+  const current = getBookmarkById(db, id);
+  if (!current) {
+    return null;
+  }
+
+  const url = patch.url !== undefined ? normalizeUrl(patch.url) : current.url;
+  const title = patch.title !== undefined ? patch.title : current.title;
+  const description = patch.description !== undefined ? patch.description : current.description;
+  const content = patch.content !== undefined ? patch.content : current.content;
+  const metadata =
+    patch.metadata !== undefined
+      ? patch.metadata
+        ? JSON.stringify(patch.metadata)
+        : null
+      : current.metadata
+        ? JSON.stringify(current.metadata)
+        : null;
+  const categoryId = patch.categoryId !== undefined ? patch.categoryId : current.categoryId;
+  const contentHash = patch.contentHash !== undefined ? patch.contentHash : current.contentHash;
+  const scrapedAt = patch.scrapedAt !== undefined ? patch.scrapedAt : current.scrapedAt;
+
+  db.query(
+    `UPDATE bookmarks
+        SET url = ?, title = ?, description = ?, content = ?, metadata = ?, category_id = ?, content_hash = ?, scraped_at = ?
+      WHERE id = ?`,
+  ).run(
+    url,
+    title,
+    description,
+    content,
+    metadata,
+    categoryId ? uuidToBytes(categoryId) : null,
+    contentHash,
+    scrapedAt,
+    uuidToBytes(id),
+  );
+
+  return getBookmarkById(db, id);
+}
+
+/** Idempotent upsert keyed on the normalized URL. */
+export function upsertBookmarkByUrl(
+  db: Database,
+  input: BookmarkInput,
+): { bookmark: Bookmark; created: boolean } {
+  const existing = getBookmarkByUrl(db, input.url);
+  if (!existing) {
+    return { bookmark: createBookmark(db, input), created: true };
+  }
+  const updated = updateBookmark(db, existing.id, input);
+  if (!updated) {
+    throw new Error('Bookmark upsert failed');
+  }
+  return { bookmark: updated, created: false };
+}
+
+export function deleteBookmark(db: Database, id: string): boolean {
+  const result = db.query('DELETE FROM bookmarks WHERE id = ?').run(uuidToBytes(id));
+  return result.changes > 0;
+}
+
+export function countBookmarks(db: Database): number {
+  return db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0;
+}
+
+export function listBookmarks(
+  db: Database,
+  filters: ListBookmarksFilters = {},
+): { items: BookmarkWithTags[]; total: number } {
+  const { limit, offset } = clampPagination(filters.limit, filters.offset);
+  const { whereSql, params } = buildFilterClauses(filters);
+
+  const total =
+    db
+      .query<{ count: number }, SQLQueryBindings[]>(
+        `SELECT COUNT(*) AS count FROM bookmarks ${whereSql}`,
+      )
+      .get(...params)?.count ?? 0;
+
+  const direction = filters.direction === 'asc' ? 'ASC' : 'DESC';
+  const rows = db
+    .query<BookmarkRow, SQLQueryBindings[]>(
+      `SELECT ${COLUMNS} FROM bookmarks ${whereSql}
+        ORDER BY ${sortColumn(filters.sort)} ${direction}, created_at DESC
+        LIMIT ? OFFSET ?`,
+    )
+    .all(...params, limit, offset);
+
+  return { items: hydrate(db, rows), total };
+}
+
+export function getBookmarksWithTagsByIds(db: Database, ids: string[]): BookmarkWithTags[] {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) {
+    return [];
+  }
+
+  const placeholders = unique.map(() => '?').join(', ');
+  const rows = db
+    .query<BookmarkRow, Uint8Array[]>(`SELECT ${COLUMNS} FROM bookmarks WHERE id IN (${placeholders})`)
+    .all(...unique.map(uuidToBytes));
+
+  const byId = new Map(hydrate(db, rows).map((bookmark) => [bookmark.id, bookmark]));
+  return unique
+    .map((id) => byId.get(id))
+    .filter((bookmark): bookmark is BookmarkWithTags => bookmark !== undefined);
+}
+
+/**
+ * Keyword candidates from FTS5, BM25-ranked (lower/negative is better). This is
+ * the only SQL in the keyword path; `packages/search` fuses the ranked lists.
+ */
+export function keywordSearch(db: Database, params: KeywordSearchParams): RankedCandidate[] {
+  const match = toFtsMatch(params.q);
+  if (!match) {
+    return [];
+  }
+
+  const { limit, offset } = clampPagination(params.limit, params.offset);
+  const where = ['bookmark_fts MATCH ?'];
+  const bind: SQLQueryBindings[] = [match];
+
+  if (params.categoryId) {
+    where.push('b.category_id = ?');
+    bind.push(uuidToBytes(params.categoryId));
+  }
+  if (params.tagId) {
+    where.push('b.id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?)');
+    bind.push(uuidToBytes(params.tagId));
+  }
+  if (params.dateFrom !== undefined) {
+    where.push('b.created_at >= ?');
+    bind.push(params.dateFrom);
+  }
+  if (params.dateTo !== undefined) {
+    where.push('b.created_at <= ?');
+    bind.push(params.dateTo);
+  }
+
+  const rows = db
+    .query<{ id: Uint8Array; score: number; snippet: string }, SQLQueryBindings[]>(
+      `SELECT b.id AS id, bm25(bookmark_fts) AS score, snippet(bookmark_fts, 3, '[', ']', '…', 12) AS snippet
+         FROM bookmark_fts
+         JOIN bookmarks b ON b.id = bookmark_fts.bookmark_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY score
+        LIMIT ? OFFSET ?`,
+    )
+    .all(...bind, limit, offset);
+
+  return rows.map((row, index) => ({
+    bookmarkId: bytesToUuid(row.id),
+    rank: index + 1,
+    score: row.score,
+    snippet: row.snippet,
+  }));
+}
+
+/** Number of FTS5 matches for a keyword query (same filters as `keywordSearch`). */
+export function countKeywordMatches(db: Database, params: KeywordSearchParams): number {
+  const match = toFtsMatch(params.q);
+  if (!match) {
+    return 0;
+  }
+
+  const where = ['bookmark_fts MATCH ?'];
+  const bind: SQLQueryBindings[] = [match];
+
+  if (params.categoryId) {
+    where.push('b.category_id = ?');
+    bind.push(uuidToBytes(params.categoryId));
+  }
+  if (params.tagId) {
+    where.push('b.id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?)');
+    bind.push(uuidToBytes(params.tagId));
+  }
+  if (params.dateFrom !== undefined) {
+    where.push('b.created_at >= ?');
+    bind.push(params.dateFrom);
+  }
+  if (params.dateTo !== undefined) {
+    where.push('b.created_at <= ?');
+    bind.push(params.dateTo);
+  }
+
+  return (
+    db
+      .query<{ count: number }, SQLQueryBindings[]>(
+        `SELECT COUNT(*) AS count
+           FROM bookmark_fts
+           JOIN bookmarks b ON b.id = bookmark_fts.bookmark_id
+          WHERE ${where.join(' AND ')}`,
+      )
+      .get(...bind)?.count ?? 0
+  );
+}

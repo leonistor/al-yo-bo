@@ -21,7 +21,8 @@
     "react/jsx-key": "error",
     "react/react-in-jsx-scope": "off",
     "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn"
+    "react-hooks/exhaustive-deps": "warn",
+    "react/set-state-in-effect": "off"
   },
   "overrides": [
     {
@@ -32,5 +33,11 @@
       }
     }
   ],
-  "ignorePatterns": ["dist/**", ".output/**", "node_modules/**", "**/routeTree.gen.ts"]
+  "ignorePatterns": [
+    "dist/**",
+    ".output/**",
+    "node_modules/**",
+    "**/routeTree.gen.ts",
+    "**/components/ui/**"
+  ]
 }

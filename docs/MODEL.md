@@ -27,6 +27,20 @@ bookmarks ──< bookmark_fts          (keyword index)
 bookmarks ──< bookmark_embeddings   (vector index)
 ```
 
+## Identifiers
+
+**UUIDv7 values are generated in application code**, not by SQL. `bun:sqlite` (Bun 1.4.x) does not
+expose user-defined SQL functions, so `uuid_v7()` / `is_uuid_v7()` cannot be registered on every
+connection. Instead:
+
+- `packages/db` generates ids with `Bun.randomUUIDv7('buffer')` (a 16-byte UUIDv7) and supplies them
+  on every insert, so no column needs a `DEFAULT`.
+- The schema enforces the storage shape with `CHECK (typeof(id) = 'blob' AND length(id) = 16)`
+  (and the equivalent for nullable/referencing columns), which is what the old `is_uuid_v7()` check
+  was buying us without a SQL function.
+- The API and UI see canonical UUID strings; `packages/shared` converts between `Uint8Array` and
+  string form.
+
 ## Tables
 
 ### `categories`
@@ -35,7 +49,7 @@ Organizing buckets, e.g. `dev`, `web`, `brands`. Flat by design.
 
 ```sql
 CREATE TABLE categories (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   name        TEXT NOT NULL,
   description TEXT,
   created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
@@ -50,14 +64,14 @@ The core record: URL plus scraped and user-provided content.
 
 ```sql
 CREATE TABLE bookmarks (
-  id           BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id           BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   url          TEXT NOT NULL,
   title        TEXT,
   description  TEXT,
   content      TEXT,                              -- scraped page content as markdown
   metadata     TEXT,                              -- JSON: site name, author, favicon, og:*, ...
   category_id  BLOB REFERENCES categories(id) ON DELETE SET NULL
-                    CHECK (category_id IS NULL OR is_uuid_v7(category_id)),
+                    CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
   content_hash TEXT,                              -- hash of scraped content, for change detection
   scraped_at   INTEGER,
   created_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
@@ -74,9 +88,9 @@ Controlled vocabulary. A tag may belong to a category (its classification scope)
 
 ```sql
 CREATE TABLE tags (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   category_id BLOB REFERENCES categories(id) ON DELETE SET NULL
-                   CHECK (category_id IS NULL OR is_uuid_v7(category_id)),
+                   CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
   name        TEXT NOT NULL,
   description TEXT,
   status      TEXT NOT NULL CHECK (status IN ('active', 'proposed', 'deprecated')),
@@ -98,9 +112,9 @@ One row per classifier invocation over a bookmark. Immutable.
 
 ```sql
 CREATE TABLE classification_runs (
-  id                 BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id                 BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   bookmark_id        BLOB NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE
-                          CHECK (is_uuid_v7(bookmark_id)),
+                          CHECK (typeof(bookmark_id) = 'blob' AND length(bookmark_id) = 16),
   classifier         TEXT NOT NULL,               -- e.g. "ollaya"
   classifier_version TEXT,                        -- runtime version
   model              TEXT,                        -- decision model id, e.g. "laya"
@@ -117,11 +131,11 @@ Per-tag output of a run. Immutable. Keeps the classifier's raw label even if the
 
 ```sql
 CREATE TABLE classification_results (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
-                   CHECK (is_uuid_v7(run_id)),
+                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
   tag_id      BLOB NOT NULL REFERENCES tags(id) ON DELETE CASCADE
-                   CHECK (is_uuid_v7(tag_id)),
+                   CHECK (typeof(tag_id) = 'blob' AND length(tag_id) = 16),
   probability REAL NOT NULL,
   rank        INTEGER,
   selected    INTEGER NOT NULL DEFAULT 0,         -- 1 = chosen by the assignment policy
@@ -138,15 +152,15 @@ The **effective** assignment shown in the UI. Composite uniqueness prevents dupl
 
 ```sql
 CREATE TABLE bookmark_tags (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(id)) DEFAULT (uuid_v7()),
+  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   bookmark_id BLOB NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE
-                   CHECK (is_uuid_v7(bookmark_id)),
+                   CHECK (typeof(bookmark_id) = 'blob' AND length(bookmark_id) = 16),
   tag_id      BLOB NOT NULL REFERENCES tags(id) ON DELETE CASCADE
-                   CHECK (is_uuid_v7(tag_id)),
+                   CHECK (typeof(tag_id) = 'blob' AND length(tag_id) = 16),
   source      TEXT NOT NULL CHECK (source IN ('classifier', 'user', 'import')),
   confidence  REAL,
   run_id      BLOB REFERENCES classification_runs(id) ON DELETE SET NULL  -- evidence, if classifier-sourced
-                   CHECK (run_id IS NULL OR is_uuid_v7(run_id)),
+                   CHECK (run_id IS NULL OR (typeof(run_id) = 'blob' AND length(run_id) = 16)),
   created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   UNIQUE (bookmark_id, tag_id)
@@ -184,7 +198,7 @@ startup (see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
 
 ```sql
 CREATE TABLE bookmark_embeddings (
-  bookmark_id BLOB PRIMARY KEY NOT NULL CHECK (is_uuid_v7(bookmark_id))
+  bookmark_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(bookmark_id) = 'blob' AND length(bookmark_id) = 16)
                    REFERENCES bookmarks(id) ON DELETE CASCADE,
   model       TEXT NOT NULL,                        -- embedding model id
   dims        INTEGER NOT NULL,                     -- must equal dimension(model)
@@ -207,6 +221,8 @@ Hybrid ranking combines FTS5 (BM25) and the KNN scan results, e.g. with reciproc
   is never auto-assigned.
 - **Referential integrity** is enforced with foreign keys (`PRAGMA foreign_keys = ON`); deletes cascade
   as shown, or set the referencing column to `NULL` where noted.
+- **App-generated identifiers.** UUIDv7 primary keys come from `packages/db`
+  (`Bun.randomUUIDv7('buffer')`); the schema enforces `typeof(id) = 'blob' AND length(id) = 16`.
 - **Server-set timestamps.** `AFTER INSERT` triggers in the migrations force
   `created_at` / `updated_at` to server time on every insert, and `AFTER UPDATE` triggers bump
   `updated_at` — client-sent values are always overridden (a raw authenticated UPDATE could still

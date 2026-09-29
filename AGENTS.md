@@ -5,9 +5,10 @@ Technical reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Project status
 
-**Docs-first scaffold.** The architecture, data model, and design are decided; application code is
-not written yet. Do not invent structure, dependencies, or conventions that contradict the docs — if
-something is genuinely missing, update the docs first or ask.
+**In implementation.** The architecture, data model, and design are decided. The Bun workspace and
+`packages/shared|db|search|classifier|importer` plus `apps/server|web` are being built. Do not invent
+structure, dependencies, or conventions that contradict the docs — if something is genuinely missing,
+update the docs first or ask.
 
 ## Sources of truth
 
@@ -43,9 +44,14 @@ package allowed to depend on concrete subsystem implementations; no cycles. See 
 | Task                     | Command                |
 | ------------------------ | ---------------------- |
 | Install                  | `bun install`          |
+| Dev (server + web)       | `bun run dev`          |
+| Build (web → dist)       | `bun run build`        |
+| Start (prod, one process)| `bun run start`        |
+| Seed demo data           | `bun run db:seed`      |
 | Lint                     | `bunx oxlint .`        |
 | Format                   | `bunx oxfmt .`         |
-| Tests (once code exists) | `bun test`             |
+| Typecheck (all)          | `bun run typecheck`    |
+| Tests                    | `bun test`             |
 
 - **Browser QA:** use **Playwriter**, never Playwright. The project-scoped Chrome launcher
   (`bun run browser:start`, headed, `./.playwriter-profile`, gitignored) is planned but **not

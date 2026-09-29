@@ -13,6 +13,9 @@ build/
 *.tsbuildinfo
 *.log
 
+# Local SQLite database and WAL sidecars (seed with `bun run db:seed`)
+data/
+
 # Secrets and local config
 .env
 .env.*

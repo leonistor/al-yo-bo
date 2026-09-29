@@ -9,8 +9,8 @@ about them.
 - Chat with an AI assistant to search and get suggestions, without losing your place in the UI.
 - Import bookmarks from markdown collection files.
 
-> **Status:** docs-first scaffold. The architecture, data model, and design are decided; application
-> code is not written yet.
+> **Status:** early implementation. The architecture, data model, and design are decided; the Bun
+> workspace, database, search, importer, server API, and web UI are in place.
 
 ## Documentation
 
@@ -26,10 +26,16 @@ about them.
 Requires [Bun](https://bun.com).
 
 ```sh
-bun install     # install dependencies
-bunx oxlint .   # lint
-bunx oxfmt .    # format
+bun install       # install dependencies
+bun run dev       # server (:3000) + web dev server (Vite)
+bun run db:seed   # load the synthetic demo seed data
+bun run build     # build the web app into apps/web/dist
+bun run start     # production: one Bun process serves API + web
+bunx oxlint .     # lint
+bunx oxfmt .      # format
+bun run typecheck # typecheck every workspace
+bun test          # tests
 ```
 
-The app is not implemented yet; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target
-layout (`apps/server`, `apps/web`, `packages/*`).
+The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
+target layout (`apps/server`, `apps/web`, `packages/*`).
