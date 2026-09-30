@@ -1,0 +1,21 @@
+{
+  "name": "@al-yo-bo/vectordb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@al-yo-bo/shared": "workspace:*",
+    "@qdrant/js-client-rest": "1.19.0"
+  }
+}

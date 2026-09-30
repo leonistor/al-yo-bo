@@ -11,8 +11,10 @@
    Unmatched output is recorded as a `proposed` tag that requires explicit user approval before use.
 4. **Provenance is always recoverable.** Every effective tag assignment points back to the run that
    produced it, and each result keeps the classifier's original label.
-5. **One store.** Relational data, full-text search (FTS5), and vector search (in-process KNN over
-   BLOB-stored embeddings) all live in the same SQLite file.
+5. **One durable store.** Relational data, the full-text index (FTS5), and the durable copy of the
+   vector data all live in the same SQLite file. A Qdrant collection holds a *rebuildable serving
+   copy* of the embeddings (ARCHITECTURE §6): it is never the only copy of anything and is repaired
+   from `bookmark_embeddings` at startup.
 
 ## Entity overview
 
@@ -189,25 +191,26 @@ CREATE VIRTUAL TABLE bookmark_fts USING fts5(
 `bookmark_id` stores the **BLOB** UUID, so `bookmarks.id = bookmark_fts.bookmark_id` joins directly in
 any SQLite connection (no extension needed). Kept in sync with `bookmarks` by triggers.
 
-### Semantic search — in-process KNN
+### Semantic search — Qdrant serving, SQLite durable copy
 
-Vectors are stored as little-endian `Float32` BLOBs in a normal `STRICT` table and scanned in memory
-by `packages/search`; cosine similarity reduces to a dot product on pre-normalized vectors. The
-dimension is fixed by the embedding model, and `packages/search` loads all rows into one matrix at
-startup (see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
+Vectors are stored as little-endian `Float32` BLOBs in a normal `STRICT` table. This table is the
+**durable** copy and the rebuild source for the Qdrant collection (one point per row: point id =
+bookmark UUID string, cosine space, payload `{ model, dims, categoryId, tagIds }`, collection
+metadata `{ model }`). `packages/search` also loads all rows into one in-memory matrix at startup as
+the offline fallback; cosine similarity reduces to a dot product on pre-normalized vectors there.
+The dimension is fixed by the embedding model, and all rows must share it
+(see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
 
 ```sql
 CREATE TABLE bookmark_embeddings (
   bookmark_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(bookmark_id) = 'blob' AND length(bookmark_id) = 16)
-                   REFERENCES bookmarks(id) ON DELETE CASCADE,
+                    REFERENCES bookmarks(id) ON DELETE CASCADE,
   model       TEXT NOT NULL,                        -- embedding model id
   dims        INTEGER NOT NULL,                     -- must equal dimension(model)
   embedding   BLOB NOT NULL,                        -- little-endian Float32 array, length = dims * 4 bytes
   updated_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
 ```
-
-Hybrid ranking combines FTS5 (BM25) and the KNN scan results, e.g. with reciprocal rank fusion.
 
 ## Invariants & rules
 
@@ -232,7 +235,7 @@ Hybrid ranking combines FTS5 (BM25) and the KNN scan results, e.g. with reciproc
 
 | Deleted            | Effect                                                                                                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets) |
+| bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
 | tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                        |
 | category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                             |
 | classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains                                                                                                                       |

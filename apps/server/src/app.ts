@@ -31,6 +31,7 @@ import {
 } from '@al-yo-bo/db';
 import { importMarkdown, parseCollection } from '@al-yo-bo/importer';
 import { fuseSearch } from '@al-yo-bo/search';
+import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import {
   clampPagination,
   isHttpUrl,
@@ -40,10 +41,17 @@ import {
   type SearchMode,
   type SearchResponse,
   type TagStatus,
+  type VectorIndex,
 } from '@al-yo-bo/shared';
 
 import type { ServerConfig } from './env.ts';
 import { AppError, NotFoundError, ValidationError } from './errors.ts';
+
+/** Subsystems optional to request handling; absent entries degrade gracefully. */
+export interface AppServices {
+  vector: VectorIndex;
+  embeddings?: EmbeddingClient;
+}
 
 // Declaring the JSON shape as a validator is what lets Hono RPC infer the request
 // body type for `apps/web` (`c.req.valid('json')`).
@@ -113,8 +121,66 @@ function bookmarkView(db: Database, id: string): BookmarkWithTags {
   return view;
 }
 
-function searchResponse(
+/**
+ * Semantic candidate list for the search query. Requires the whole chain to be
+ * available (vector index with vectors, embedding client, configured model);
+ * any missing link or failure returns an empty list, which degrades the search
+ * to keyword-only — a normal state, never an error (ARCHITECTURE §6).
+ */
+async function semanticCandidates(
+  services: AppServices | undefined,
+  config: ServerConfig,
+  input: { q: string; mode: SearchMode; categoryId?: string; tagId?: string; limit: number; offset: number },
+): Promise<RankedCandidate[]> {
+  if (input.mode === 'keyword') {
+    return [];
+  }
+  const { vector, embeddings } = services ?? {};
+  const model = config.embeddings.model;
+  if (!vector || !embeddings || !model || vector.size === 0) {
+    return [];
+  }
+  try {
+    const [queryVector] = (await embeddings.embed([input.q])).vectors;
+    if (!queryVector) {
+      return [];
+    }
+    // Category/tag filters are pushed into the vector query (server-side on
+    // Qdrant, client-side overfetch on the in-memory fallback).
+    return await vector.search(queryVector, input.offset + input.limit, {
+      categoryId: input.categoryId,
+      tagId: input.tagId,
+    });
+  } catch (error) {
+    console.warn('semantic search unavailable; returning keyword-only results', error);
+    return [];
+  }
+}
+
+/** Mirrors a tag/category change into the vector index payload (best-effort). */
+async function syncVectorPayload(
+  services: AppServices,
   db: Database,
+  bookmarkId: string,
+): Promise<void> {
+  if (services.vector.size === 0) {
+    return;
+  }
+  const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
+  if (!bookmark) {
+    await services.vector.delete(bookmarkId);
+    return;
+  }
+  await services.vector.updatePayload(bookmarkId, {
+    categoryId: bookmark.categoryId,
+    tagIds: bookmark.tags.map((tag) => tag.tagId),
+  });
+}
+
+async function searchResponse(
+  db: Database,
+  services: AppServices | undefined,
+  config: ServerConfig,
   input: {
     q: string;
     mode: SearchMode;
@@ -125,7 +191,7 @@ function searchResponse(
     limit?: number;
     offset?: number;
   },
-): SearchResponse {
+): Promise<SearchResponse> {
   const { limit, offset } = clampPagination(input.limit, input.offset);
 
   if (!input.q) {
@@ -152,7 +218,14 @@ function searchResponse(
     limit,
     offset,
   });
-  const semantic: RankedCandidate[] = [];
+  const semantic = await semanticCandidates(services, config, {
+    q: input.q,
+    mode: input.mode,
+    categoryId: input.categoryId,
+    tagId: input.tagId,
+    limit,
+    offset,
+  });
   const fused = fuseSearch(keyword, semantic, input.mode);
   const items = getBookmarksWithTagsByIds(
     db,
@@ -187,13 +260,13 @@ async function readImportText(c: Context): Promise<string> {
 
 // All API routes are chained on one Hono instance so `ReturnType<typeof createApp>`
 // produces usable Hono RPC types for apps/web.
-export function createApp(db: Database, config: ServerConfig) {
+export function createApp(db: Database, config: ServerConfig, services?: AppServices) {
   const app = new Hono()
     .get('/api/health', (c) => c.json({ status: 'ok', version: '0.0.0' } as const))
 
-    .get('/api/bookmarks', (c) =>
+    .get('/api/bookmarks', async (c) =>
       c.json(
-        searchResponse(db, {
+        await searchResponse(db, services, config, {
           q: c.req.query('q')?.trim() ?? '',
           mode: parseMode(c.req.query('mode')),
           categoryId: c.req.query('categoryId') || undefined,
@@ -245,14 +318,19 @@ export function createApp(db: Database, config: ServerConfig) {
       return c.json(bookmarkView(db, updated.id));
     })
 
-    .delete('/api/bookmarks/:id', (c) => {
-      if (!deleteBookmark(db, c.req.param('id'))) {
+    .delete('/api/bookmarks/:id', async (c) => {
+      const id = c.req.param('id');
+      if (!deleteBookmark(db, id)) {
         throw new NotFoundError('Bookmark not found');
+      }
+      // SQLite cascaded the embedding row; mirror the removal into the index.
+      if (services && services.vector.size > 0) {
+        await services.vector.delete(id);
       }
       return c.body(null, 204);
     })
 
-    .post('/api/bookmarks/:id/tags', jsonBody, (c) => {
+    .post('/api/bookmarks/:id/tags', jsonBody, async (c) => {
       const bookmarkId = c.req.param('id');
       const tagId = requiredString(c.req.valid('json'), 'tagId');
       if (!getBookmarkById(db, bookmarkId)) {
@@ -262,12 +340,19 @@ export function createApp(db: Database, config: ServerConfig) {
         throw new NotFoundError('Tag not found');
       }
       assignTag(db, { bookmarkId, tagId, source: 'user' });
+      if (services) {
+        await syncVectorPayload(services, db, bookmarkId);
+      }
       return c.json(bookmarkView(db, bookmarkId));
     })
 
-    .delete('/api/bookmarks/:id/tags/:tagId', (c) => {
-      if (!removeBookmarkTag(db, c.req.param('id'), c.req.param('tagId'))) {
+    .delete('/api/bookmarks/:id/tags/:tagId', async (c) => {
+      const bookmarkId = c.req.param('id');
+      if (!removeBookmarkTag(db, bookmarkId, c.req.param('tagId'))) {
         throw new NotFoundError('Assignment not found');
+      }
+      if (services) {
+        await syncVectorPayload(services, db, bookmarkId);
       }
       return c.body(null, 204);
     })
@@ -355,11 +440,14 @@ export function createApp(db: Database, config: ServerConfig) {
       c.json(listBelowThresholdCandidates(db, config.autoAssignThreshold)),
     )
 
-    .post('/api/review/candidates/accept', jsonBody, (c) => {
+    .post('/api/review/candidates/accept', jsonBody, async (c) => {
       const body = c.req.valid('json');
       const bookmarkId = requiredString(body, 'bookmarkId');
       const tagId = requiredString(body, 'tagId');
       assignTag(db, { bookmarkId, tagId, source: 'user' });
+      if (services) {
+        await syncVectorPayload(services, db, bookmarkId);
+      }
       return c.json(bookmarkView(db, bookmarkId));
     })
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { VectorUpsert } from '@al-yo-bo/shared';
+
 import {
   KnnIndex,
   fuseSearch,
@@ -12,6 +14,12 @@ const rank = (id: string, position: number, score: number) => ({
   bookmarkId: id,
   rank: position,
   score,
+});
+
+const point = (bookmarkId: string, values: number[]): VectorUpsert => ({
+  bookmarkId,
+  vector: new Float32Array(values),
+  payload: { model: 'test', dims: values.length, categoryId: null, tagIds: [] },
 });
 
 describe('reciprocal rank fusion', () => {
@@ -46,7 +54,7 @@ describe('pack / unpack', () => {
 });
 
 describe('KnnIndex', () => {
-  test('returns nearest neighbours by cosine similarity', () => {
+  test('returns nearest neighbours by cosine similarity', async () => {
     const index = new KnnIndex();
     index.load([
       { bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) },
@@ -54,23 +62,42 @@ describe('KnnIndex', () => {
       { bookmarkId: 'z', embedding: packFloat32(new Float32Array([0.9, 0.1])) },
     ]);
 
-    const hits = index.search(new Float32Array([1, 0]), 2);
+    const hits = await index.search(new Float32Array([1, 0]), 2);
     expect(hits.map((hit) => hit.bookmarkId)).toEqual(['x', 'z']);
   });
 
-  test('upsert adds a new vector write-through', () => {
+  test('upsert adds a new vector write-through', async () => {
     const index = new KnnIndex();
     index.load([{ bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) }]);
-    index.upsert('new', packFloat32(new Float32Array([0, 1])));
+    await index.upsert(point('new', [0, 1]));
 
     expect(index.size).toBe(2);
-    expect(index.search(new Float32Array([0, 1]), 1)[0]?.bookmarkId).toBe('new');
+    expect((await index.search(new Float32Array([0, 1]), 1))[0]?.bookmarkId).toBe('new');
   });
 
-  test('rejects dimension mismatches', () => {
+  test('rejects dimension mismatches', async () => {
     const index = new KnnIndex();
     index.load([{ bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) }]);
-    expect(() => index.upsert('y', packFloat32(new Float32Array([1, 0, 0])))).toThrow();
-    expect(() => index.search(new Float32Array([1, 0, 0]), 1)).toThrow();
+    await expect(index.upsert(point('y', [1, 0, 0]))).rejects.toThrow();
+    await expect(index.search(new Float32Array([1, 0, 0]), 1)).rejects.toThrow();
+  });
+
+  test('delete removes the vector and shrinks the index', async () => {
+    const index = new KnnIndex();
+    index.load([
+      { bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) },
+      { bookmarkId: 'y', embedding: packFloat32(new Float32Array([0, 1])) },
+      { bookmarkId: 'z', embedding: packFloat32(new Float32Array([0.9, 0.1])) },
+    ]);
+
+    await index.delete('x');
+    expect(index.size).toBe(2);
+    expect((await index.search(new Float32Array([1, 0]), 3)).map((hit) => hit.bookmarkId)).toEqual([
+      'z',
+      'y',
+    ]);
+
+    await index.delete('unknown');
+    expect(index.size).toBe(2);
   });
 });

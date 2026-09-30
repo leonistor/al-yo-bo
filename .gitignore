@@ -16,6 +16,9 @@ build/
 # Local SQLite database and WAL sidecars (seed with `bun run db:seed`)
 data/
 
+# Qdrant sidecar marker file (dropped in the process working directory)
+.qdrant-initialized
+
 # Secrets and local config
 .env
 .env.*

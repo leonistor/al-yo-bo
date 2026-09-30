@@ -10,6 +10,19 @@ export interface ServerConfig {
     apiKey?: string;
     model: string;
   };
+  /** Vector-serving sidecar (ARCHITECTURE §6); disabled when `url` is undefined. */
+  qdrant: {
+    url?: string;
+    collection: string;
+    apiKey?: string;
+    timeoutMs: number;
+  };
+  /** Query-embedding provider; semantic search is off without a key and model. */
+  embeddings: {
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+  };
 }
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
@@ -31,6 +44,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       baseUrl: env.OLLAYA_URL ?? 'http://127.0.0.1:11435',
       apiKey: env.OLLAYA_API_KEY,
       model: env.OLLAYA_MODEL ?? 'laya',
+    },
+    qdrant: {
+      // On by default (matching the sidecar deployment); `QDRANT_URL=""` turns it off.
+      url: env.QDRANT_URL === '' ? undefined : (env.QDRANT_URL ?? 'http://127.0.0.1:6333'),
+      collection: env.QDRANT_COLLECTION ?? 'bookmarks',
+      apiKey: env.QDRANT_API_KEY,
+      timeoutMs: numberFromEnv(env.QDRANT_TIMEOUT_MS, 5_000),
+    },
+    embeddings: {
+      apiKey: env.OPENROUTER_API_KEY,
+      model: env.EMBEDDING_MODEL,
+      baseUrl: env.OPENROUTER_BASE_URL,
     },
   };
 }

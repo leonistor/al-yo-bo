@@ -1,30 +1,17 @@
+import type {
+  RankedCandidate,
+  VectorFilter,
+  VectorIndex,
+  VectorPayloadPatch,
+  VectorUpsert,
+} from '@al-yo-bo/shared';
+import { unpackFloat32 } from '@al-yo-bo/shared';
+
+export { packFloat32, unpackFloat32 } from '@al-yo-bo/shared';
+
 export interface KnnRecord {
   bookmarkId: string;
   embedding: Uint8Array;
-}
-
-export interface KnnHit {
-  bookmarkId: string;
-  score: number;
-  rank: number;
-}
-
-export function packFloat32(values: Float32Array): Uint8Array {
-  const bytes = new Uint8Array(values.length * 4);
-  const view = new DataView(bytes.buffer);
-  for (let i = 0; i < values.length; i++) {
-    view.setFloat32(i * 4, values[i] ?? 0, true);
-  }
-  return bytes;
-}
-
-export function unpackFloat32(bytes: Uint8Array): Float32Array {
-  const values = new Float32Array(bytes.byteLength / 4);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  for (let i = 0; i < values.length; i++) {
-    values[i] = view.getFloat32(i * 4, true);
-  }
-  return values;
 }
 
 function normalize(values: Float32Array): void {
@@ -45,8 +32,11 @@ function normalize(values: Float32Array): void {
  * In-process brute-force KNN over embeddings loaded into one contiguous matrix.
  * Vectors are normalized once, so cosine similarity is a dot product. At personal
  * scale this is millisecond-level and dependency-free (ARCHITECTURE §6).
+ *
+ * Implements `VectorIndex` so it can serve as the offline fallback when Qdrant is
+ * unreachable, and as the primary index when the sidecar is not configured.
  */
-export class KnnIndex {
+export class KnnIndex implements VectorIndex {
   private dims = 0;
   private ids: string[] = [];
   private matrix = new Float32Array(0);
@@ -85,9 +75,13 @@ export class KnnIndex {
     this.matrix = matrix;
   }
 
-  /** Write-through upsert so newly embedded bookmarks are searchable immediately. */
-  upsert(bookmarkId: string, embedding: Uint8Array): void {
-    const vector = unpackFloat32(embedding);
+  /**
+   * Write-through upsert so newly embedded bookmarks are searchable immediately.
+   * The payload is ignored: the in-memory index stores only vectors, and SQLite
+   * remains canonical for category/tag filters.
+   */
+  async upsert(point: VectorUpsert): Promise<void> {
+    const vector = point.vector;
     if (this.dims === 0) {
       this.dims = vector.length;
     }
@@ -96,19 +90,50 @@ export class KnnIndex {
     }
     normalize(vector);
 
-    const index = this.ids.indexOf(bookmarkId);
+    const index = this.ids.indexOf(point.bookmarkId);
     if (index === -1) {
       const grown = new Float32Array(this.matrix.length + this.dims);
       grown.set(this.matrix);
       grown.set(vector, this.matrix.length);
       this.matrix = grown;
-      this.ids.push(bookmarkId);
+      this.ids.push(point.bookmarkId);
       return;
     }
     this.matrix.set(vector, index * this.dims);
   }
 
-  search(query: Float32Array, topK: number): KnnHit[] {
+  /**
+   * Deliberate no-op: the in-memory index carries no payloads, so payload-only
+   * updates are irrelevant here (SQLite is canonical).
+   */
+  async updatePayload(_bookmarkId: string, _patch: VectorPayloadPatch): Promise<void> {}
+
+  /** Removes a row by rebuilding the matrix without it; dims stays unchanged. */
+  async delete(bookmarkId: string): Promise<void> {
+    const index = this.ids.indexOf(bookmarkId);
+    if (index === -1) {
+      return;
+    }
+
+    const rebuilt = new Float32Array(this.matrix.length - this.dims);
+    const before = index * this.dims;
+    rebuilt.set(this.matrix.subarray(0, before));
+    rebuilt.set(this.matrix.subarray(before + this.dims), before);
+
+    this.matrix = rebuilt;
+    this.ids.splice(index, 1);
+  }
+
+  /**
+   * Top-k by cosine similarity. The `filter` argument is ignored: the in-memory
+   * matrix stores no payloads, so category/tag filtering is applied by the caller
+   * (FallbackVectorIndex) after the scan.
+   */
+  async search(
+    query: Float32Array,
+    topK: number,
+    _filter?: VectorFilter,
+  ): Promise<RankedCandidate[]> {
     if (this.ids.length === 0) {
       return [];
     }
@@ -131,6 +156,6 @@ export class KnnIndex {
     return hits
       .toSorted((a, b) => b.score - a.score)
       .slice(0, Math.max(0, topK))
-      .map((hit, index) => ({ ...hit, rank: index + 1 }));
+      .map((hit, index) => ({ bookmarkId: hit.bookmarkId, score: hit.score, rank: index + 1 }));
   }
 }

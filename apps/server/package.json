@@ -19,9 +19,11 @@
   "dependencies": {
     "@al-yo-bo/classifier": "workspace:*",
     "@al-yo-bo/db": "workspace:*",
+    "@al-yo-bo/embeddings": "workspace:*",
     "@al-yo-bo/importer": "workspace:*",
     "@al-yo-bo/search": "workspace:*",
     "@al-yo-bo/shared": "workspace:*",
+    "@al-yo-bo/vectordb": "workspace:*",
     "hono": "^4.9.0"
   }
 }

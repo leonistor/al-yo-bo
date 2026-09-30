@@ -12,10 +12,13 @@
 These constrain every later decision. A change that violates one needs an explicit note here first.
 
 1. **Bun-native.** Prefer Bun's built-in APIs and ecosystem. Node only when a dependency forces it.
-2. **One SQLite file.** Relational data, full-text search, and vector data live in the same SQLite
-   database. No second store, no side-car database file.
-3. **Self-hosted, no external server.** A single-user tool. Running it must not require Meilisearch,
-   Qdrant, Redis, or a hosted vector service.
+2. **One durable store.** Relational data, full-text search, and the durable copy of the vector data
+   live in one SQLite file. Nothing else ever holds the only copy of durable data. Rebuildable
+   *serving* structures may live outside the file (FTS5 inside it; a local Qdrant collection outside
+   it): losing one is repaired from SQLite without re-embedding (§6).
+3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted or
+   cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every feature
+   must degrade gracefully when a sidecar is down.
 4. **Docs-first.** Architecture, data model, and design are decided in `docs/` before code. Prefer
    well-documented, open-source components over bespoke infrastructure.
 5. **Classifier is optional.** Search, tagging, and browsing must all work with the classifier
@@ -35,8 +38,9 @@ depends on it.
 | Chat UI         | **assistant-ui**                     | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
 | Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon                                      | [ollaya.dev](https://ollaya.dev)                                                                     |
 | LLM access      | **AI SDK**                           | Ollama locally, OpenRouter in production                                                 | [ai-sdk.com](https://ai-sdk.com)                                                                     |
-| Embeddings      | **OpenRouter** + **SQLite BLOBs**    | vectors stored in the same DB file                                                       | [openrouter.com](https://openrouter.com)                                                             |
-| Search          | **SQLite FTS5** + **in-process KNN** | keyword + semantic, same DB, RRF fusion                                                  | [sqlite.org](https://sqlite.org)                                                                     |
+| Embeddings      | **OpenRouter** + **SQLite BLOBs**    | durable vector copy in the DB file; query text embedded at request time                  | [openrouter.com](https://openrouter.com)                                                             |
+| Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
+| Search          | **SQLite FTS5** + **RRF fusion**     | keyword (FTS5) + semantic (Qdrant/KNN), fused app-side                                   | [sqlite.org](https://sqlite.org)                                                                     |
 | Background jobs | **OpenWorkflow**                     | durable workflows, SQLite, Bun-native                                                    | [openworkflow.dev](https://openworkflow.dev)                                                         |
 | Configuration   | **env**                              |                                                                                          | [bun.com/docs/runtime/environment-variables](https://bun.com/docs/runtime/environment-variables)     |
 | Deployment      | **shell scripts**                    | a `nohup bun run server.ts` on the server, shell script to copy and unpack a dist archive |                                                                                                      |
@@ -64,13 +68,14 @@ flowchart LR
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
     Worker["OpenWorkflow worker\nscrape · embed · classify · reindex"]
-    Search["Search module\nFTS5 + in-process KNN + RRF"]
+    Search["Search module\nFTS5 + vector top-k + RRF"]
   end
 
-  DB[("bookmarks.db\n(SQLite: data + FTS5 + vectors)")]
+  DB[("bookmarks.db\n(SQLite: data + FTS5 + vector copies)")]
 
   subgraph sidecars [Sidecars]
     Ollaya["Ollaya daemon\n127.0.0.1:11435"]
+    Qdrant["Qdrant\n127.0.0.1:6333"]
   end
 
   OR["OpenRouter\nembeddings"]
@@ -79,11 +84,13 @@ flowchart LR
   Web -- "type-safe RPC (Hono AppType)" --> API
   API --> Search
   API --> DB
+  API --> OR
   Worker --> DB
   Worker --> Ollaya
   Worker --> OR
   Worker --> Sites
   Search --> DB
+  Search --> Qdrant
 ```
 
 **Processes.** The API and the worker are separate entry points of the same repo; in the default
@@ -94,8 +101,10 @@ durability boundary (see §8), so it is shown separately.
 
 - **Ollaya** — the classifier decision daemon, an independent single binary. Runs next to the Bun
   server as a sidecar (§7, §9). Never a Node dependency.
-- **OpenRouter** — embedding provider. Optional at the database level: bookmarks without embeddings
-  are still findable by keyword.
+- **Qdrant** — the vector-serving sidecar, a single local binary (§6). Holds only a rebuildable
+  serving copy of the embeddings; SQLite is canonical.
+- **OpenRouter** — embedding provider (document vectors in the worker, query vectors in the API).
+  Optional at the database level: bookmarks without embeddings are still findable by keyword.
 - **The open web** — fetched by the scraper job only; the app never proxies page loads for the UI.
 
 ## 4. Monorepo layout
@@ -108,7 +117,9 @@ apps/
   web/             React 19 app (shadcn/ui, assistant-ui), talks to server via Hono RPC
 packages/
   db/              schema, migrations, PRAGMAs, typed queries
-  search/          FTS5 + in-process KNN + RRF fusion
+  search/          FTS5 + RRF fusion + in-process KNN (fallback VectorIndex)
+  vectordb/        Qdrant client (VectorIndex adapter, collection sync)
+  embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
   importer/        markdown collection-file parser and ingest
   shared/          domain types + utilities (no framework imports)
@@ -118,15 +129,20 @@ packages/
 
 ```
 web ─▶ shared
-server ─▶ db, search, classifier, importer, shared
-db, search, classifier, importer ─▶ shared
+server ─▶ db, search, vectordb, embeddings, classifier, importer, shared
+db, search, vectordb, embeddings, classifier, importer ─▶ shared
 ```
 
 Rules:
 
 - `shared` imports nothing from the app (no Hono, no Bun-specific runtime, no database client).
-- `db` owns all SQL; no other package opens the database directly.
-- `search` and `classifier` take and return plain data, so they are testable without a running server.
+  It owns the `VectorIndex` interface and the LE-Float32 BLOB codec shared by `search` and
+  `vectordb`.
+- `db` owns all SQL; no other package opens the database directly. Orchestrations that read SQLite
+  (e.g. the Qdrant startup sync) live in `apps/server`, which passes plain records into the
+  packages.
+- `search`, `vectordb`, `embeddings`, and `classifier` take and return plain data, so they are
+  testable without a running server.
 - No cycles. `server` is the only package allowed to depend on a concrete implementation of each
   subsystem.
 
@@ -139,8 +155,9 @@ place and adds no build-time coupling to server code.
 The schema, invariants, and deletion semantics are owned by [MODEL.md](./MODEL.md). Architecture only
 fixes the storage posture:
 
-- **Single file.** All tables, the FTS5 index, and the embedding vectors live in one SQLite database
-  (constraint §1.2). Backups are a file copy.
+- **Single durable file.** All tables, the FTS5 index, and the embedding vectors live in one SQLite
+  database (constraint §1.2). Backups are a file copy. The Qdrant collection is a derived serving
+  structure (§6) and never needs backing up.
 - **Migrations.** Numbered, forward-only SQL files under `packages/db`, applied at startup in a
   transaction. The server-set timestamp triggers (`created_at`/`updated_at`) belong here.
 - **PRAGMAs.** `foreign_keys = ON`, WAL journaling, and a sensible `busy_timeout` are set on every
@@ -148,30 +165,42 @@ fixes the storage posture:
 
 ## 6. Search subsystem
 
-**Decision: SQLite FTS5 (keyword) + in-process brute-force KNN (semantic), fused app-side with
-Reciprocal Rank Fusion (RRF).** Vectors are stored as BLOBs in a regular table and scanned in
-memory.
+**Decision: SQLite FTS5 (keyword) + a Qdrant sidecar (semantic top-k), fused app-side with
+Reciprocal Rank Fusion (RRF).** Vectors are durably stored as BLOBs in `bookmark_embeddings`;
+Qdrant serves filtered top-k queries. An in-process brute-force KNN scan over the SQLite rows is
+the automatic fallback whenever the sidecar is unreachable — it is kept warm at startup and never
+a separately maintained path.
 
-### Why this and not a dedicated engine
+### Why a vector sidecar, and why Qdrant
 
-The alternative search layers were evaluated against the constraints in §1 and rejected:
+The v1 plan served semantic search entirely from an in-process brute-force scan (kept below as the
+fallback). Serving moved to Qdrant (decided Sep 2026) for three reasons: **server-side filtered
+top-k** (category/tag filters are evaluated inside the vector query instead of after fusion), an
+HNSW index with headroom past the brute-force revisit trigger, and a real ops story (snapshot API,
+memory tiers). Both single-binary options were evaluated:
 
-- **zvec-node** (Alibaba Zvec Node bindings) — a real, active engine with native BM25 + ANN + hybrid
-  fusion (Logseq ships it), but it stores a **directory per collection** (breaks the one-file rule),
-  is a native N-API addon with **no Bun support/testing**, and its binding repo is tiny and pre-v1.
-  Worth revisiting only if the collection outgrows brute force and the constraints can relax.
-- **ruvector** (ruvnet) — experimental: effectively single-author, open correctness bugs in core
-  query paths, hybrid search not integrated into the main API, and it uses a **second storage file**
-  (redb). Rejected.
-- **sqlite-vec** — the previous plan. It works with `bun:sqlite` on Linux with zero configuration,
-  but on macOS `bun:sqlite` uses Apple's system SQLite, which disables extension loading; loading
-  `sqlite-vec` therefore requires `brew install sqlite` plus `Database.setCustomSQLite(...)` **before
-  the first database is opened**. This is still true in current Bun releases. It stays as the
-  documented fallback if SQL-integrated vectors are preferred over zero native dependencies.
-- **Orama / LanceDB / DuckDB VSS / Meilisearch / Typesense / Qdrant** — either a second persistence
-  format, an N-API fragility, or an external server. All fail §1.2 or §1.3.
+- **Qdrant** (chosen) — one static binary (~30 MB, macOS arm64 / Linux musl), snapshot API for
+  backups, payload filtering with per-field keyword indexes inside top-k, point ids are native UUID
+  strings (our bookmark UUIDv7s map directly), mmap-based memory control. REST client works under
+  Bun (gRPC does not; the undici dispatcher it configures is ignored by Bun's shim — pinned
+  `@qdrant/js-client-rest`, REST only).
+- **Chroma** (rejected) — the fetch-only JS client is explicitly Bun-tested (a plus), but the OSS
+  server has **no backup API** (consistent copy requires quiescing writers and copying the data
+  directory), hybrid/RRF is Chroma-Cloud-only, the Linux binary is ~512 MB, HNSW memory cannot be
+  tuned down, and unpatched advisories existed at evaluation time.
 
-### At personal scale, brute force is enough
+Both contradict the original "no side-car database file" reading, which is why §1.2 was reworded to
+separate the **durable** store (SQLite) from **rebuildable serving** structures. Qdrant is to
+semantic search exactly what FTS5 is to keyword search: derived, disposable, repaired from the
+database at startup. **sqlite-vec** remains the documented fallback if a SQL-integrated index is
+ever preferred over a sidecar (same trade as before: system SQLite on macOS cannot load
+extensions).
+
+The remaining v1 rejections stand: **zvec-node** (collection-per-directory, native addon without
+Bun support), **ruvector** (experimental, second storage file), **Orama / LanceDB / DuckDB VSS /
+Meilisearch / Typesense** (second persistence format, N-API fragility, or external server).
+
+### At personal scale, the fallback alone is enough
 
 A benchmark on the reference machine (Bun 1.4.2, arm64, top-k = 10) measured a pre-normalized
 `Float32Array` matrix scan (cosine = dot product):
@@ -181,30 +210,38 @@ A benchmark on the reference machine (Bun 1.4.2, arm64, top-k = 10) measured a p
 | 1536 | 1.4 ms p50 | 14.2 ms p50 | 68.9 ms p50 | 61 MB        |
 | 512  | 0.5 ms p50 | 4.8 ms p50  | 22.7 ms p50 | 20 MB        |
 
-`sqlite-vec` is itself brute-force internally — its ANN indexes exist only as unreleased alphas — so
-the only real difference is *where* the loop runs, not the algorithm. For a single user's bookmark
-collection this is millisecond-level and dependency-free. The revisit conditions are in §11.
+This is why the fallback is viable: when Qdrant is down, semantic search still answers in
+milliseconds at bookmark-collection scale. The Qdrant sidecar buys filtered top-k and headroom, not
+raw speed at this size. The revisit conditions are in §11.
 
 ### Data layout and lifecycle
 
-- `bookmark_embeddings` is a regular STRICT table: `bookmark_id` (BLOB UUIDv7, PK, FK cascade),
-  `dims`, `model`, `embedding` (BLOB, little-endian Float32), `updated_at`. See MODEL.md.
-- On startup, `packages/search` loads all embeddings into one contiguous matrix and normalizes it
-  once. The bookmark id order is kept alongside the matrix so a top-k index maps back to a bookmark.
-- Writes go through the table **and** update the in-memory matrix (write-through), so newly embedded
-  bookmarks are searchable without a reload.
-- Embedding dimension is determined by `EMBEDDING_MODEL`. All rows must share it; a model change
-  requires a re-embed pass, not a mixed matrix.
+- `bookmark_embeddings` is the **durable** copy: a regular STRICT table (`bookmark_id` BLOB UUIDv7,
+  PK, FK cascade, `dims`, `model`, `embedding` BLOB little-endian Float32, `updated_at`). See
+  MODEL.md. Backups are the SQLite file copy.
+- The Qdrant collection (default `bookmarks`) holds one point per embedding: point id = bookmark
+  UUID, cosine space, payload `{ model, dims, categoryId, tagIds }` with keyword payload indexes on
+  the filter fields, and collection metadata `{ model }`.
+- **All rows must share one dimension** (fixed by `EMBEDDING_MODEL`); a model change requires a
+  re-embed pass. On startup the collection is checked against the SQLite rows: a dims/model
+  mismatch drops and recreates it, and `sync` replays SQLite rows into missing points and deletes
+  orphans. Qdrant data loss is therefore free to recover — never re-embed.
+- Write-through order: SQLite first (canonical), then the index (Qdrant point and in-memory matrix).
+  Index writes are best-effort; a missed write is repaired by the next startup sync.
+- `packages/search` loads all SQLite embeddings into one contiguous normalized matrix at startup
+  (the fallback), and `FallbackVectorIndex` routes reads/writes to Qdrant with a 30 s failure
+  cooldown before falling back. Filters are pushed into the Qdrant query; on the fallback path they
+  are applied client-side after an 8× overfetch, with payloads resolved from SQLite in one query.
 
 ### Query path
 
 1. Keyword candidate list from FTS5 (BM25 ranked).
-2. Semantic candidate list from the in-memory top-k scan.
-3. RRF fusion (`k = 60`) merges the two ranked lists into the final order; optional filters
-   (category/tag) are applied to the fused candidates.
+2. Semantic candidate list: embed the query text via OpenRouter, then filtered top-k from the
+   vector index (Qdrant server-side filter, or fallback overfetch+filter).
+3. RRF fusion (`k = 60`) merges the two ranked lists into the final order.
 
-**Degradation.** If embeddings are unavailable (no OpenRouter key, empty matrix, not yet loaded),
-search automatically returns keyword-only results. This is a normal state, not an error.
+**Degradation.** Any missing link — no OpenRouter key/model, empty vector set, Qdrant down —
+returns keyword-only results. This is a normal state, not an error.
 
 ## 7. Classifier workflow
 
@@ -354,7 +391,12 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | unset — must be chosen   |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
+| `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | unset — must be chosen   |
+| `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
+| `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
+| `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
+| `QDRANT_TIMEOUT_MS`     | Client fetch timeout for Qdrant requests      | `5000`                   |
 
 ## 8. Background jobs
 
@@ -363,9 +405,9 @@ Durable work runs on **OpenWorkflow** (SQLite-backed, Bun-native). Job types:
 | Job        | Input            | Effect                                                          |
 | ---------- | ---------------- | --------------------------------------------------------------- |
 | `scrape`   | bookmark id      | fetch page → content/metadata/hash; enqueue `embed`, `classify` |
-| `embed`    | bookmark id      | vector via OpenRouter → `bookmark_embeddings`                   |
+| `embed`    | bookmark id      | vector via OpenRouter → `bookmark_embeddings` (durable), then write-through to the vector index |
 | `classify` | bookmark id      | Ollaya → runs/results → assignment policy                       |
-| `reindex`  | bookmark/tag/all | rebuild FTS rows or refresh the in-memory matrix                |
+| `reindex`  | bookmark/tag/all | rebuild FTS rows, or sync the Qdrant collection from SQLite rows |
 
 Retries are exponential with a bounded cap; jobs are idempotent (safe to re-run). Concurrency guards:
 one in-flight classification per bookmark and one scrape per URL. Failures never lose a bookmark —
@@ -374,22 +416,29 @@ the row is always saved first, enrichment is best-effort.
 ## 9. Deployment
 
 Single-user, shell-script driven. The documented shape is `nohup bun run apps/server …` on the host,
-with a scripted archive copy to ship a new build. Two processes must be running:
+with a scripted archive copy to ship a new build. Three processes must be running:
 
-0. the **web build** (`bun run build` → `apps/web/dist`), produced ahead of the server start, and
-1. the **Bun server** (API + worker, which also serves `apps/web/dist`), and
+0. the **web build** (`bun run build` → `apps/web/dist`), produced ahead of the server start,
+1. the **Bun server** (API + worker, which also serves `apps/web/dist`),
 2. the **Ollaya sidecar** (systemd unit or Docker), with its models pulled once
-   (`ollaya pull laya`).
+   (`ollaya pull laya`),
+3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the gitignored
+   `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
+   `config/qdrant.yaml`; loopback only, storage under `data/qdrant/`).
 
-The SQLite file and its WAL sidecars are the only state to back up. Ollaya keeps no bookmark state —
-it is stateless with respect to this app. Configuration is entirely environment variables (§7).
+The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
+only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API
+(`POST /collections/{name}/snapshots`) to skip the startup resync after a restore. Ollaya keeps no
+bookmark state — it is stateless with respect to this app. Configuration is entirely environment
+variables (§7).
 
 ## 10. Failure modes & degradation
 
 | Failure                   | Effect                                                                     |
 | ------------------------- | -------------------------------------------------------------------------- |
-| OpenRouter unreachable    | Embeddings not produced; search is keyword-only; classification still runs |
+| OpenRouter unreachable    | Document embeddings not produced; query embedding fails → keyword-only search; classification still runs |
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
+| Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync |
 | Scrape fails              | Bookmark persists as URL + note; keyword search still matches it           |
 | Classifier model upgraded | New runs recorded; old runs retained; effective tags re-policyable         |
 | Search matrix not loaded  | Automatic keyword-only fallback                                            |
@@ -401,7 +450,8 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 
 | Decision                         | Revisit when                                                                                                                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Brute-force KNN (§6)             | Collection exceeds ~50,000 bookmarks, semantic p95 exceeds ~100 ms, or the matrix exceeds ~512 MB of RAM. Re-evaluate sqlite-vec's ANN alphas, zvec, or another engine then.          |
+| Qdrant serving (§6)              | The sidecar's footprint outweighs the collection (e.g. serving well under ~1,000 vectors), or its upgrade cadence becomes a burden; the in-process KNN fallback is the documented exit path and stays green under tests. Also re-evaluate `sqlite-vec` if a SQL-integrated index is preferred. |
+| Brute-force fallback limits (§6) | The collection exceeds ~50,000 bookmarks, fallback p95 exceeds ~100 ms, or the matrix exceeds ~512 MB of RAM; then Qdrant is carrying the load and the fallback may degrade to keyword-only.                                                        |
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
