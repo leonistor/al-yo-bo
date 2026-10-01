@@ -10,6 +10,7 @@
 
 import type { Database } from 'bun:sqlite';
 
+import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/classifier';
 import {
   assignTag,
   createClassificationResult,
@@ -19,7 +20,6 @@ import {
   listActiveTagsForScope,
   listUserTagIds,
 } from '@al-yo-bo/db';
-import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/classifier';
 import { hostFromUrl, type BookmarkWithTags, type Tag, type VectorIndex } from '@al-yo-bo/shared';
 
 import type { CoreConfig } from '../config.ts';
@@ -49,7 +49,10 @@ export interface ClassifyOutcome {
 }
 
 /** Builds the state string: title, description, URL host, lead content excerpt. */
-export function buildStateString(bookmark: BookmarkWithTags, excerptChars = STATE_EXCERPT_CHARS): string {
+export function buildStateString(
+  bookmark: BookmarkWithTags,
+  excerptChars = STATE_EXCERPT_CHARS,
+): string {
   const lines: string[] = [];
   if (bookmark.title?.trim()) {
     lines.push(`Title: ${bookmark.title.trim()}`);
@@ -87,11 +90,12 @@ export function buildQuestions(tagNames: string[]): Record<string, NoulQuestion>
 
 /**
  * Candidate tags keyed by name. Candidates are active tags in the bookmark's
- * scope; duplicate names across scopes collapse to one question (the scoped tag
- * wins) because question labels are tag names.
+ * dataset (narrowed to the bookmark's category scope when it has one); duplicate
+ * names across scopes collapse to one question (the scoped tag wins) because
+ * question labels are tag names.
  */
 function candidatesForBookmark(db: Database, bookmark: BookmarkWithTags): Map<string, Tag> {
-  const tags = listActiveTagsForScope(db, bookmark.categoryId);
+  const tags = listActiveTagsForScope(db, bookmark.datasetId, bookmark.categoryId);
   const map = new Map<string, Tag>();
   for (const tag of tags) {
     map.set(tag.name, tag);
@@ -135,17 +139,18 @@ export async function classifyBookmark(
   const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, proposed: 0 };
 
   /** Persists one result row and applies the assignment policy. */
-  const recordResult = (
-    runId: string,
-    name: string,
-    probability: number,
-    rank: number,
-  ): void => {
+  const recordResult = (runId: string, name: string, probability: number, rank: number): void => {
     let tag = candidates.get(name);
     if (!tag) {
       // The daemon answered a label we did not ask for (or a name vanished):
-      // record it as a `proposed` tag — it is never auto-assigned (§3).
-      tag = createTag(db, { name, categoryId: bookmark.categoryId, status: 'proposed' });
+      // record it as a `proposed` tag in the bookmark's dataset — it is never
+      // auto-assigned (§3).
+      tag = createTag(db, {
+        datasetId: bookmark.datasetId,
+        name,
+        categoryId: bookmark.categoryId,
+        status: 'proposed',
+      });
       candidates.set(name, tag);
       outcome.proposed += 1;
     }
@@ -211,7 +216,9 @@ export async function classifyBookmark(
     }
   }
 
-  const extraRanked = [...extras.entries()].toSorted(([, a], [, b]) => b.probability - a.probability);
+  const extraRanked = [...extras.entries()].toSorted(
+    ([, a], [, b]) => b.probability - a.probability,
+  );
   for (const [index, [name, extra]] of extraRanked.entries()) {
     recordResult(extra.runId, name, extra.probability, index + 1);
   }

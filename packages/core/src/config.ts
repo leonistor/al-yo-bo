@@ -8,6 +8,8 @@
 export interface CoreConfig {
   /** Probability at/above which the classifier may auto-assign an active tag. */
   autoAssignThreshold: number;
+  /** Dataset new bookmarks/imports land in when none is specified. */
+  defaultDataset: string;
   /** Query-embedding identity; semantic search is off without a model. */
   embeddings: {
     model?: string;

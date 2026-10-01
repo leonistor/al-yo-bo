@@ -29,6 +29,7 @@ import type { VectorProvider } from '../vector/provider.ts';
 export interface SearchInput {
   q: string;
   mode: SearchMode;
+  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   status: BookmarkListStatus;
@@ -43,12 +44,14 @@ export interface SearchServiceDeps {
   config: CoreConfig;
   vector: VectorProvider;
   embeddings?: EmbeddingClient;
+  /** Dataset searches are scoped to. */
+  datasetId: string;
 }
 
 export interface SearchService {
   search(input: SearchInput): Promise<SearchResponse>;
   chatHits(query: string, limit: number): Promise<BookmarkHit[]>;
-  /** Library browse/stats read (counts per category/tag); owned here alongside search. */
+  /** Library browse/stats read (counts per section/category/tag); owned here alongside search. */
   aggregates(): Aggregates;
 }
 
@@ -79,7 +82,7 @@ function filterCandidatesByStatus(
  * by the next query.
  */
 export function createSearchService(deps: SearchServiceDeps): SearchService {
-  const { db, config, vector, embeddings } = deps;
+  const { db, config, vector, embeddings, datasetId } = deps;
 
   /**
    * Semantic candidate list for the search query. Requires the whole chain to be
@@ -125,6 +128,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     if (!input.q) {
       const { items, total } = listBookmarks(db, {
+        datasetId: input.datasetId ?? datasetId,
         categoryId: input.categoryId,
         tagId: input.tagId,
         status: input.status,
@@ -143,6 +147,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     const keywordTotal = countKeywordMatches(db, {
       q: input.q,
+      datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
       status: input.status,
@@ -171,6 +176,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     const keyword = keywordSearch(db, {
       q: input.q,
+      datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
       status: input.status,
@@ -238,7 +244,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       offset: 0,
     });
     const categoryNameById = new Map(
-      listCategories(db).map((category) => [category.id, category.name]),
+      listCategories(db, datasetId).map((category) => [category.id, category.name]),
     );
     return response.items.map((item) => ({
       id: item.id,
@@ -252,7 +258,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   }
 
   function aggregates(): Aggregates {
-    return getAggregates(db);
+    return getAggregates(db, datasetId);
   }
 
   return { search, chatHits, aggregates };

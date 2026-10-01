@@ -24,10 +24,7 @@ export {
 
 export type { BookmarkHit } from './dto.ts';
 
-export {
-  createVectorProvider,
-  type VectorProvider,
-} from './vector/provider.ts';
+export { createVectorProvider, type VectorProvider } from './vector/provider.ts';
 export { syncVectorPayload } from './vector/sync.ts';
 
 export {
@@ -63,6 +60,7 @@ export {
   type ImportServiceDeps,
   type ImportOptions,
   type ImportPreview,
+  type StagedBatch,
 } from './services/import.ts';
 export {
   createEnrichmentService,

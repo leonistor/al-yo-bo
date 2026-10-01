@@ -11,20 +11,16 @@ import {
   updateBookmark,
   type BookmarkInput as DbBookmarkInput,
 } from '@al-yo-bo/db';
-import {
-  isHttpUrl,
-  isUuid,
-  normalizeUrl,
-  type BookmarkWithTags,
-} from '@al-yo-bo/shared';
+import { isHttpUrl, isUuid, normalizeUrl, type BookmarkWithTags } from '@al-yo-bo/shared';
 
 import { NotFoundError, ValidationError } from '../errors.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
-import type { JobScheduler } from './enrichment.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
+import type { JobScheduler } from './enrichment.ts';
 
 export interface BookmarkInput {
+  datasetId?: string;
   url: string;
   title?: string | null;
   description?: string | null;
@@ -43,6 +39,8 @@ export interface BookmarkServiceDeps {
   db: Database;
   jobs: JobScheduler;
   vector: VectorProvider;
+  /** Dataset new bookmarks land in when none is specified. */
+  datasetId: string;
 }
 
 export interface BookmarkService {
@@ -61,7 +59,7 @@ export interface BookmarkService {
  * payload filters. Everything else is passive.
  */
 export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkService {
-  const { db, jobs, vector } = deps;
+  const { db, jobs, vector, datasetId } = deps;
 
   async function syncPayload(bookmarkId: string): Promise<void> {
     const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
@@ -78,6 +76,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
         throw new ValidationError('Only HTTP(S) URLs can be saved');
       }
       const bookmark = createBookmark(db, {
+        datasetId: input.datasetId ?? datasetId,
         url: input.url,
         title: input.title ?? null,
         description: input.description ?? null,

@@ -1,22 +1,19 @@
 import type { Database } from 'bun:sqlite';
 
-import { rebuildFts } from '@al-yo-bo/db';
 import type { ClassifierClient } from '@al-yo-bo/classifier';
+import { createDataset, getDatasetByName, rebuildFts } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 
 import type { CoreConfig } from './config.ts';
 import type { ScrapeFn } from './scrape.ts';
-import type { VectorProvider } from './vector/provider.ts';
-import { createSearchService, type SearchService } from './services/search.ts';
 import { createBookmarkService, type BookmarkService } from './services/bookmarks.ts';
-import { createVocabularyService, type VocabularyService } from './services/vocabulary.ts';
-import { createReviewService, type ReviewService } from './services/review.ts';
-import { createImportService, type ImportService } from './services/import.ts';
-import {
-  createEnrichmentService,
-  type EnrichmentService,
-} from './services/enrichment.ts';
+import { createEnrichmentService, type EnrichmentService } from './services/enrichment.ts';
 import { createHealthService, type HealthService } from './services/health.ts';
+import { createImportService, type ImportService } from './services/import.ts';
+import { createReviewService, type ReviewService } from './services/review.ts';
+import { createSearchService, type SearchService } from './services/search.ts';
+import { createVocabularyService, type VocabularyService } from './services/vocabulary.ts';
+import type { VectorProvider } from './vector/provider.ts';
 
 export interface CoreDeps {
   db: Database;
@@ -43,6 +40,8 @@ export interface Core {
   import: ImportService;
   enrichment: EnrichmentService;
   health: HealthService;
+  /** The default dataset id (config `defaultDataset`), for routes that need it. */
+  defaultDatasetId: string;
   /** Rebuilds FTS rows, then the vector stack via the injected callback (§8). */
   reindex(): Promise<{ ftsRows: number; vectorBackend: 'qdrant' | 'memory' }>;
   /** Stops the enrichment queue; callers also close their own db. */
@@ -58,6 +57,11 @@ export interface Core {
 export function createCore(deps: CoreDeps): Core {
   const { db, config, vector, embeddings, classifier, scrape } = deps;
 
+  // The default dataset is the scoping boundary for everything that does not
+  // name one explicitly (bookmark CRUD, searches, review queues, imports).
+  const dataset =
+    getDatasetByName(db, config.defaultDataset) ?? createDataset(db, config.defaultDataset);
+
   const enrichment = createEnrichmentService({
     db,
     config,
@@ -69,13 +73,21 @@ export function createCore(deps: CoreDeps): Core {
   });
 
   return {
-    search: createSearchService({ db, config, vector, embeddings }),
-    bookmarks: createBookmarkService({ db, jobs: enrichment, vector }),
-    vocabulary: createVocabularyService({ db, jobs: enrichment }),
-    review: createReviewService({ db, config, vector }),
+    search: createSearchService({ db, config, vector, embeddings, datasetId: dataset.id }),
+    bookmarks: createBookmarkService({ db, jobs: enrichment, vector, datasetId: dataset.id }),
+    vocabulary: createVocabularyService({ db, jobs: enrichment, datasetId: dataset.id }),
+    review: createReviewService({ db, config, vector, datasetId: dataset.id }),
     import: createImportService({ db, jobs: enrichment }),
     enrichment,
-    health: createHealthService({ vector, config, embeddings, jobs: enrichment, scrape, classifier }),
+    defaultDatasetId: dataset.id,
+    health: createHealthService({
+      vector,
+      config,
+      embeddings,
+      jobs: enrichment,
+      scrape,
+      classifier,
+    }),
     async reindex() {
       const ftsRows = rebuildFts(db);
       const { vectorBackend } = deps.reindex
