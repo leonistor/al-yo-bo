@@ -99,7 +99,10 @@ function BookmarkCard({
           <Trash2Icon />
         </Button>
       </div>
-      <p className="truncate text-xs text-muted-foreground">{hostOf(bookmark.url)}</p>
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="truncate">{hostOf(bookmark.url)}</span>
+        {bookmark.status === 'invalid' && <Badge variant="destructive">Invalid</Badge>}
+      </p>
       {bookmark.description && (
         <p className="line-clamp-2 text-sm text-muted-foreground">{bookmark.description}</p>
       )}

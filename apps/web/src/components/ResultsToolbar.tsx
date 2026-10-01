@@ -1,7 +1,8 @@
 import { LayoutGridIcon, ListIcon, RefreshCwIcon } from 'lucide-react';
 
-import type { BookmarkSort } from '@al-yo-bo/shared';
+import type { BookmarkListStatus, BookmarkSort } from '@al-yo-bo/shared';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -15,9 +16,13 @@ import type { Layout } from '@/lib/useLayout';
 interface ResultsToolbarProps {
   total: number;
   loading: boolean;
+  status: BookmarkListStatus;
+  /** Total invalid bookmarks from aggregates, shown on the Invalid option. */
+  invalidCount: number;
   sort: BookmarkSort;
   direction: 'asc' | 'desc';
   layout: Layout;
+  onStatusChange: (status: BookmarkListStatus) => void;
   onSortChange: (sort: BookmarkSort) => void;
   onDirectionChange: (direction: 'asc' | 'desc') => void;
   onLayoutChange: (layout: Layout) => void;
@@ -27,9 +32,12 @@ interface ResultsToolbarProps {
 export function ResultsToolbar({
   total,
   loading,
+  status,
+  invalidCount,
   sort,
   direction,
   layout,
+  onStatusChange,
   onSortChange,
   onDirectionChange,
   onLayoutChange,
@@ -41,6 +49,29 @@ export function ResultsToolbar({
         {total} {total === 1 ? 'result' : 'results'}
         {loading && ' · updating…'}
       </span>
+
+      {/* Active/Invalid state filter; same segmented pattern as the layout toggle. */}
+      <div className="flex items-center rounded-lg border border-border">
+        <Button
+          variant={status === 'active' ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={status === 'active'}
+          onClick={() => onStatusChange('active')}
+        >
+          Active
+        </Button>
+        <Button
+          variant={status === 'invalid' ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={status === 'invalid'}
+          onClick={() => onStatusChange('invalid')}
+        >
+          Invalid
+          <Badge variant="secondary" className="ml-1">
+            {invalidCount}
+          </Badge>
+        </Button>
+      </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
         <Select value={sort} onValueChange={(value) => onSortChange(value as BookmarkSort)}>

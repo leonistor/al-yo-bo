@@ -1,5 +1,11 @@
 import type { BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
-import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react';
+import {
+  CircleAlertIcon,
+  ExternalLinkIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -44,6 +50,33 @@ import {
 } from '@/lib/client';
 import { formatDate, hostOf } from '@/lib/format';
 
+interface ScrapeLastError {
+  at?: number;
+  status?: number;
+  message?: string;
+}
+
+/**
+ * Reads `metadata.scrape.lastError` (written by the server after repeated
+ * dead-link scrape failures) out of the untyped metadata bag.
+ */
+function scrapeLastError(metadata: Record<string, unknown> | null): ScrapeLastError | null {
+  const scrape = metadata?.scrape;
+  if (!scrape || typeof scrape !== 'object') {
+    return null;
+  }
+  const lastError = (scrape as Record<string, unknown>).lastError;
+  if (!lastError || typeof lastError !== 'object') {
+    return null;
+  }
+  const value = lastError as Record<string, unknown>;
+  return {
+    at: typeof value.at === 'number' ? value.at : undefined,
+    status: typeof value.status === 'number' ? value.status : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+  };
+}
+
 interface BookmarkDetailDialogProps {
   bookmark: BookmarkWithTags | null;
   categories: Category[];
@@ -82,6 +115,8 @@ export function BookmarkDetailDialog({
   const availableTags = tags.filter(
     (tag) => !current.tags.some((assigned) => assigned.tagId === tag.id),
   );
+  const isInvalid = current.status === 'invalid';
+  const lastError = isInvalid ? scrapeLastError(current.metadata) : null;
 
   async function save() {
     setSaving(true);
@@ -170,14 +205,37 @@ export function BookmarkDetailDialog({
 
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <Badge variant={current.scrapedAt ? 'secondary' : 'outline'}>
-              {current.scrapedAt ? `Scraped ${formatDate(current.scrapedAt)}` : 'Not scraped'}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={current.scrapedAt ? 'secondary' : 'outline'}>
+                {current.scrapedAt ? `Scraped ${formatDate(current.scrapedAt)}` : 'Not scraped'}
+              </Badge>
+              {isInvalid && <Badge variant="destructive">Invalid</Badge>}
+            </div>
             <Button variant="outline" size="sm" onClick={scrape} disabled={scraping}>
               <RefreshCwIcon data-icon="inline-start" className={scraping ? 'animate-spin' : ''} />
               {scraping ? 'Scraping…' : current.scrapedAt ? 'Re-scrape' : 'Scrape page'}
             </Button>
           </div>
+
+          {isInvalid && (
+            <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/50 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <CircleAlertIcon className="size-4 text-destructive" />
+                This link looks broken
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {lastError
+                  ? `The last fetch failed${lastError.status ? ` (HTTP ${lastError.status})` : ''}${
+                      lastError.message ? `: ${lastError.message}` : '.'
+                    }`
+                  : 'Trying to fetch the page failed more than once.'}
+                {lastError?.at ? ` Last checked ${formatDate(lastError.at)}.` : ''}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                A successful re-scrape marks the bookmark as active again.
+              </p>
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="detail-title">Title</Label>
             <Input

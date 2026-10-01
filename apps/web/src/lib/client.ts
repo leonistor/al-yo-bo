@@ -1,5 +1,6 @@
 import type {
   Aggregates,
+  BookmarkListStatus,
   BookmarkSort,
   BookmarkWithTags,
   Category,
@@ -42,6 +43,7 @@ export interface BookmarkSearchParams {
   mode?: SearchMode;
   categoryId?: string;
   tagId?: string;
+  status?: BookmarkListStatus;
   sort?: BookmarkSort;
   direction?: 'asc' | 'desc';
   limit?: number;
@@ -54,6 +56,7 @@ export function fetchBookmarks(params: BookmarkSearchParams = {}): Promise<Searc
     ...(params.mode ? { mode: params.mode } : {}),
     ...(params.categoryId ? { categoryId: params.categoryId } : {}),
     ...(params.tagId ? { tagId: params.tagId } : {}),
+    ...(params.status ? { status: params.status } : {}),
     ...(params.sort ? { sort: params.sort } : {}),
     ...(params.direction ? { direction: params.direction } : {}),
     ...(params.limit !== undefined ? { limit: params.limit } : {}),

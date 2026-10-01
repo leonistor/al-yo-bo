@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 
 import type {
   Aggregates,
+  BookmarkListStatus,
   BookmarkSort,
   BookmarkWithTags,
   Category,
@@ -91,6 +92,7 @@ export function App() {
   const [mode, setMode] = useState<SearchMode>('keyword');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [tagId, setTagId] = useState<string | null>(null);
+  const [status, setStatus] = useState<BookmarkListStatus>('active');
   const [sort, setSort] = useState<BookmarkSort>('created_at');
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
@@ -183,6 +185,7 @@ export function App() {
           mode,
           categoryId: categoryId ?? undefined,
           tagId: tagId ?? undefined,
+          status,
           sort,
           direction,
           limit: PAGE_SIZE,
@@ -194,7 +197,7 @@ export function App() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, mode, categoryId, tagId, sort, direction, page]);
+  }, [searchQuery, mode, categoryId, tagId, status, sort, direction, page]);
 
   useEffect(() => {
     void refreshMeta();
@@ -262,12 +265,13 @@ export function App() {
     setSearchQuery('');
     setCategoryId(null);
     setTagId(null);
+    setStatus('active');
     setPage(0);
   }
 
   const reviewCount = proposed.length + candidates.length;
   const total = bookmarks?.total ?? 0;
-  const filtered = searchQuery !== '' || categoryId !== null || tagId !== null;
+  const filtered = searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
 
   const sidebarProps = {
     aggregates,
@@ -321,9 +325,15 @@ export function App() {
               <ResultsToolbar
                 total={total}
                 loading={loading}
+                status={status}
+                invalidCount={aggregates?.invalidCount ?? 0}
                 sort={sort}
                 direction={direction}
                 layout={layout}
+                onStatusChange={(next) => {
+                  setStatus(next);
+                  setPage(0);
+                }}
                 onSortChange={(next) => {
                   setSort(next);
                   setPage(0);
