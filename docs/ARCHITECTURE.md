@@ -445,10 +445,18 @@ and reconciliation retries it on the next start. Stored content is truncated to
 stored; an unchanged hash skips the embed job. Scrape provenance (timestamp, content type, final
 URL after redirects, truncated flag) is merged under `metadata.scrape`.
 
+Failures are classified. A **dead link** (HTTP 404/410) increments `bookmarks.scrape_attempts`; once it
+reaches `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` — kept, but excluded from default views
+and from startup reconciliation so it is not retried forever. Every other failure (timeout, 5xx,
+missing/converting binary) is transient: it records `metadata.scrape.lastError` but never invalidates,
+and reconciliation retries it on the next start. A successful scrape (or a URL edit) resets the counter
+and restores `active`; `POST /api/bookmarks/:id/scrape` is the manual recovery path.
+
 | Env var                    | Purpose                                    | Default            |
 | -------------------------- | ------------------------------------------ | ------------------ |
 | `SCRAPE_TIMEOUT_MS`        | Page fetch timeout                          | `15000`            |
 | `SCRAPE_MAX_CONTENT_CHARS` | Stored markdown cap (hash applies to this)  | `200000`           |
+| `SCRAPE_MAX_ATTEMPTS`      | Dead-link failures before a bookmark is marked `invalid` (shared with the job retry cap) | `3` |
 | `HTML_TO_MARKDOWN_BIN`     | html-to-markdown CLI binary                 | `html-to-markdown` |
 
 ## 9. Deployment
@@ -479,7 +487,8 @@ variables (§7).
 | OpenRouter unreachable    | Document embeddings not produced; query embedding fails → keyword-only search; classification still runs |
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
 | Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync. A sidecar still starting at boot is retried for a few seconds before this kicks in |
-| Scrape fails              | Bookmark persists as URL + note; keyword search still matches it           |
+| Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
+| Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
 | html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
 | Embedding model changed   | Startup reconciliation re-embeds stale-model rows; until then keyword-only for those bookmarks |
 | Classifier model upgraded | New runs recorded; old runs retained; effective tags re-policyable         |

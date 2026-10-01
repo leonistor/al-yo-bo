@@ -76,6 +76,9 @@ CREATE TABLE bookmarks (
                     CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
   content_hash TEXT,                              -- hash of scraped content, for change detection
   scraped_at   INTEGER,
+  status       TEXT NOT NULL DEFAULT 'active'     -- effective scrape lifecycle (see below)
+                    CHECK (status IN ('active', 'invalid')),
+  scrape_attempts INTEGER NOT NULL DEFAULT 0,     -- consecutive dead-link failures (reset on success)
   created_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
@@ -83,6 +86,16 @@ CREATE TABLE bookmarks (
 CREATE UNIQUE INDEX bookmarks_url_unique ON bookmarks(url);
 CREATE INDEX bookmarks_category ON bookmarks(category_id);
 ```
+
+**Lifecycle:** `active ⇄ invalid`. A bookmark becomes `invalid` only after repeated **dead-link**
+failures (HTTP 404/410) reach the configured cap (`SCRAPE_MAX_ATTEMPTS`, §8 of ARCHITECTURE). Invalid
+bookmarks are **kept** — default list/search views and startup reconciliation exclude them, so a dead
+URL is not retried forever, but a `status` filter and the manual re-scrape action keep them
+reviewable. A successful scrape resets `scrape_attempts` and restores `active`; editing the URL does
+the same, because failure evidence for the old URL no longer applies. Transient failures (timeouts,
+5xx, `html-to-markdown` missing) never invalidate and do not count toward the cap. `status` is
+effective state (principle 2), not evidence: the failure detail (`{ at, status, message }`) lives in
+`metadata.scrape.lastError`.
 
 ### `tags`
 
@@ -222,6 +235,9 @@ CREATE TABLE bookmark_embeddings (
   retained as evidence, and the tag is surfaced for review (via `candidate`).
 - **No auto-creation.** A classifier label that maps to no existing tag creates a `proposed` tag, which
   is never auto-assigned.
+- **Bookmark scrape lifecycle.** Only repeated **dead-link** failures (404/410) move a bookmark to
+  `invalid`; the row is retained, excluded from default views and reconciliation, and restored to
+  `active` by a successful scrape or a URL edit. Transient failures never invalidate.
 - **Referential integrity** is enforced with foreign keys (`PRAGMA foreign_keys = ON`); deletes cascade
   as shown, or set the referencing column to `NULL` where noted.
 - **App-generated identifiers.** UUIDv7 primary keys come from `packages/db`
