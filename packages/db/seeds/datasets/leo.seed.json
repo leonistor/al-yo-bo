@@ -1,0 +1,3760 @@
+{
+  "$comment": "Real bookmark collections from Leo's personal Zen archive — a five-file representative sample. Not project content.",
+  "source": "docs/examples-mds/",
+  "extractedAt": "2026-10-01T08:47:43.846Z",
+  "categories": [
+    "AI",
+    "AI design",
+    "AI dev",
+    "AI scrape",
+    "AI skills",
+    "MDX",
+    "ML",
+    "React +  Tailwind + Framer Motion",
+    "React UI",
+    "Rust ML",
+    "Rust web",
+    "agno",
+    "bun APIs",
+    "collect 16 Nov 2025",
+    "comps",
+    "dev",
+    "fonts",
+    "forms",
+    "jotai",
+    "libs",
+    "macos open source",
+    "next",
+    "next.js",
+    "nextjs ollama",
+    "ollama",
+    "open source tools",
+    "payload",
+    "pdf to md",
+    "playwright helpers",
+    "pw insp",
+    "react utils",
+    "react video",
+    "shadcn UI libs",
+    "terminal trove",
+    "tools",
+    "utils",
+    "vitrina",
+    "vitrina / branding",
+    "web",
+    "wordnotexist syllabes"
+  ],
+  "tags": [
+    "imported"
+  ],
+  "bookmarks": [
+    {
+      "url": "https://github.com/Dailogue/topic-breakdown",
+      "title": "Topic Breakdown is a web application that helps users break down complex topics into fundamental subtopics for better understanding.",
+      "description": "Topic Breakdown is a web application that helps users break down complex topics into fundamental subtopics for better understanding.",
+      "category": "AI",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/Osmantic/ODS",
+      "title": "Linux box into an AI server. LLM inference, chat UI, voice, agents, workflows, RAG, and image generation.",
+      "description": "Linux box into an AI server. LLM inference, chat UI, voice, agents, workflows, RAG, and image generation.",
+      "category": "AI",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://osmantic.com/",
+      "title": "Linux box into an AI server. LLM inference, chat UI, voice, agents, workflows, RAG, and image generation.",
+      "description": "Linux box into an AI server. LLM inference, chat UI, voice, agents, workflows, RAG, and image generation.",
+      "category": "AI",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/us/crw",
+      "title": "[⭐] Fast, lightweight Firecrawl/Tavily alternative in Rust. Web scraper, crawler & search API with MCP server for AI agents.",
+      "description": "[⭐] Fast, lightweight Firecrawl/Tavily alternative in Rust. Web scraper, crawler & search API with MCP server for AI agents.",
+      "category": "AI scrape",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI scrape",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/CloakHQ/CloakBrowser",
+      "title": "GitHub - CloakHQ/CloakBrowser: Stealth Chromium that passes every bot detection test. Drop-in Playwright replacement with source-level fingerprint patches. 30/30 tests passed. · GitHub",
+      "description": "GitHub - CloakHQ/CloakBrowser: Stealth Chromium that passes every bot detection test. Drop-in Playwright replacement with source-level fingerprint patches. 30/30 tests passed. · GitHub",
+      "category": "AI scrape",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI scrape",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/CloakHQ/CloakBrowser/issues/206",
+      "title": "MCP server? · Issue #206 · CloakHQ/CloakBrowser",
+      "description": "MCP server? · Issue #206 · CloakHQ/CloakBrowser",
+      "category": "AI scrape",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI scrape",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://swimmwatch.github.io/cloakbrowser-mcp/getting-started/",
+      "title": "Getting Started - CloakBrowser MCP",
+      "description": "Getting Started - CloakBrowser MCP",
+      "category": "AI scrape",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI scrape",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://playwright.dev/mcp/tools/navigation",
+      "title": "Navigation | Playwright",
+      "description": "Navigation | Playwright",
+      "category": "AI scrape",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI scrape",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/antfu/skills-npm",
+      "title": "GitHub - antfu/skills-npm: Install agent skills from npm · GitHub",
+      "description": "GitHub - antfu/skills-npm: Install agent skills from npm · GitHub",
+      "category": "AI skills",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI skills",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.skills.sh/anthropics/knowledge-work-plugins/documentation",
+      "title": "documentation — anthropics/knowledge-work-plugins",
+      "description": "documentation — anthropics/knowledge-work-plugins",
+      "category": "AI skills",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI skills",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.skills.sh/bobmatnyc/claude-mpm-skills/drizzle-orm",
+      "title": "drizzle-orm — bobmatnyc/claude-mpm-skills",
+      "description": "drizzle-orm — bobmatnyc/claude-mpm-skills",
+      "category": "AI skills",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI skills",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.skills.sh/giuseppe-trisciuoglio/developer-kit/drizzle-orm-patterns",
+      "title": "drizzle-orm-patterns — giuseppe-trisciuoglio/developer-kit",
+      "description": "drizzle-orm-patterns — giuseppe-trisciuoglio/developer-kit",
+      "category": "AI skills",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI skills",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.skills.sh/wshobson/agents/python-design-patterns",
+      "title": "python-design-patterns — wshobson/agents",
+      "description": "python-design-patterns — wshobson/agents",
+      "category": "AI skills",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI skills",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.aihero.dev/things-people-get-wrong-with-grill-me-and-grill-with-docs",
+      "title": "/grill-me skill",
+      "description": "/grill-me skill",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/mattpocock/skills",
+      "title": "/grill-me skill",
+      "description": "/grill-me skill",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/HoneycombHairDevelopers/Meterbility",
+      "title": "The debugger for AI agents",
+      "description": "The debugger for AI agents",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/ALucek/QuicKB",
+      "title": "tokenizers comparison: Optimize Document Retrieval with Fine-Tuned KnowledgeBases",
+      "description": "tokenizers comparison: Optimize Document Retrieval with Fine-Tuned KnowledgeBases",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/punkpeye/awesome-mcp-servers",
+      "title": null,
+      "description": null,
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/Mingye-Lu/AgenticCrawler",
+      "title": "acrawl — LLM-powered web crawler. Rust binary",
+      "description": "acrawl — LLM-powered web crawler. Rust binary",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/swimmwatch/cloakbrowser-mcp",
+      "title": "CloakBrowser MCP server for AI agents",
+      "description": "CloakBrowser MCP server for AI agents",
+      "category": "AI dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.openui.com/",
+      "title": "OpenUI lang: Open Standard for Generative UI",
+      "description": "OpenUI lang: Open Standard for Generative UI",
+      "category": "AI design",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI design",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://daub.dev/",
+      "title": "Daub (again)",
+      "description": "Daub (again)",
+      "category": "AI design",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI design",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ai-interaction.com/",
+      "title": "The Atlas of AI Interaction Design",
+      "description": "The Atlas of AI Interaction Design",
+      "category": "AI design",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "AI design",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/hyscaler/HyCanvas",
+      "title": "hycanvas: free, self-hostable, AI-native design software",
+      "description": "hycanvas: free, self-hostable, AI-native design software",
+      "category": "tools",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "tools",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/iOfficeAI/AionUi",
+      "title": "AionUi - Free, local, open-source 24/7 Cowork app",
+      "description": "AionUi - Free, local, open-source 24/7 Cowork app",
+      "category": "tools",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "tools",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://windshift.sh/",
+      "title": "self-hosted alternative to Jira, single-binary",
+      "description": "self-hosted alternative to Jira, single-binary",
+      "category": "tools",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "tools",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.btw.so/",
+      "title": "Open source Medium alternative",
+      "description": "Open source Medium alternative",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/btw-so/btw",
+      "title": "Open source Medium alternative",
+      "description": "Open source Medium alternative",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://dub.co/home",
+      "title": "link attribution platform. Loved by world-class marketing teams",
+      "description": "link attribution platform. Loved by world-class marketing teams",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/dubinc/dub",
+      "title": "link attribution platform. Loved by world-class marketing teams",
+      "description": "link attribution platform. Loved by world-class marketing teams",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/calesthio/OpenMontage",
+      "title": "World's first open-source, agentic video production system",
+      "description": "World's first open-source, agentic video production system",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.notifuse.com/",
+      "title": "Notifuse is a modern, self-hosted emailing platform that allows you to send newsletters and transactional emails",
+      "description": "Notifuse is a modern, self-hosted emailing platform that allows you to send newsletters and transactional emails",
+      "category": "vitrina / branding",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "vitrina / branding",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://marmelab.com/shadcn-admin-kit/",
+      "title": "Admin Kit For Shadcn",
+      "description": "Admin Kit For Shadcn",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/prismelabs/analytics",
+      "title": "self-hosted and privacy-focused web analytics service. Written in Go.",
+      "description": "self-hosted and privacy-focused web analytics service. Written in Go.",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/microsoft/docfind/",
+      "title": "docfind - document search engine built in Rust with WebAssembly support",
+      "description": "docfind - document search engine built in Rust with WebAssembly support",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.extend.ai/ui",
+      "title": "Open source UI kit for modern document apps",
+      "description": "Open source UI kit for modern document apps",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.tomaarsen.com/nltk/api/_api/nltk.tokenize.SyllableTokenizer.html",
+      "title": null,
+      "description": null,
+      "category": "wordnotexist syllabes",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "wordnotexist syllabes",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://arxiv.org/abs/2406.15358",
+      "title": null,
+      "description": null,
+      "category": "wordnotexist syllabes",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "wordnotexist syllabes",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://yomguithereal.github.io/talisman/tokenizers/syllables",
+      "title": null,
+      "description": null,
+      "category": "wordnotexist syllabes",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "wordnotexist syllabes",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://hono.dev/examples/with-remix",
+      "title": "Remix - Hono",
+      "description": "Remix - Hono",
+      "category": "bun APIs",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "bun APIs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://logtape.org/manual/install",
+      "title": "Installation | LogTape",
+      "description": "Installation | LogTape",
+      "category": "bun APIs",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "bun APIs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://elysiajs.com/integrations/drizzle.html",
+      "title": "Integration with Drizzle - ElysiaJS | ElysiaJS",
+      "description": "Integration with Drizzle - ElysiaJS | ElysiaJS",
+      "category": "bun APIs",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "bun APIs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/sc30gsw/elysiajs-cli",
+      "title": "GitHub - sc30gsw/elysiajs-cli: CLI tool for ElysiaJS - docs, search, request, serve, optimize · GitHub",
+      "description": "GitHub - sc30gsw/elysiajs-cli: CLI tool for ElysiaJS - docs, search, request, serve, optimize · GitHub",
+      "category": "bun APIs",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "bun APIs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/stevez/playwright-repl",
+      "title": "GitHub - stevez/playwright-repl: Interactive REPL for Playwright browser automation with record & replay · GitHub",
+      "description": "GitHub - stevez/playwright-repl: Interactive REPL for Playwright browser automation with record & replay · GitHub",
+      "category": "playwright helpers",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "playwright helpers",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://selectorgadget.com/",
+      "title": "SelectorGadget: point and click CSS selectors",
+      "description": "SelectorGadget: point and click CSS selectors",
+      "category": "playwright helpers",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "playwright helpers",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://abbadata.com/selector_finder.html",
+      "title": "ABBA Data CSS Selector Finder",
+      "description": "ABBA Data CSS Selector Finder",
+      "category": "playwright helpers",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "playwright helpers",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/abbadata/css_selector_finder/pull/2",
+      "title": "Upgrade to Manifest V3 (Chrome no longer supports MV2) by djs326 · Pull Request #2 · abbadata/css_selector_finder · GitHub",
+      "description": "Upgrade to Manifest V3 (Chrome no longer supports MV2) by djs326 · Pull Request #2 · abbadata/css_selector_finder · GitHub",
+      "category": "playwright helpers",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "playwright helpers",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/djs326/css_selector_finder",
+      "title": "GitHub - djs326/css_selector_finder · GitHub",
+      "description": "GitHub - djs326/css_selector_finder · GitHub",
+      "category": "playwright helpers",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "playwright helpers",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://docs.fastcrw.com/integrations",
+      "title": "Framework Integrations — CRW",
+      "description": "Framework Integrations — CRW",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/agno-agi/agno",
+      "title": "GitHub - agno-agi/agno: Build, run, and manage agent platforms. · GitHub",
+      "description": "GitHub - agno-agi/agno: Build, run, and manage agent platforms. · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://docs.agno.com/features/observability",
+      "title": "Agent Observability - Agno",
+      "description": "Agent Observability - Agno",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://milvus.io/blog/how-to-build-productionready-multiagent-systems-with-agno-and-milvus.md",
+      "title": "How to Build Production-Ready Multi-Agent Systems with Agno and Milvus - Milvus Blog",
+      "description": "How to Build Production-Ready Multi-Agent Systems with Agno and Milvus - Milvus Blog",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/arthi-arumugam-git/whatbroke",
+      "title": "GitHub - arthi-arumugam-git/whatbroke: Diff your AI agent's behavior between two runs. See exactly which tool calls, args, costs and outputs changed when you swap models or edit prompts. · GitHub",
+      "description": "GitHub - arthi-arumugam-git/whatbroke: Diff your AI agent's behavior between two runs. See exactly which tool calls, args, costs and outputs changed when you swap models or edit prompts. · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/CENFARG/agno-docs-mcp",
+      "title": "GitHub - CENFARG/agno-docs-mcp: MCP server exposing Agno framework documentation via FTS5-powered full-text search with BM25 ranking · GitHub",
+      "description": "GitHub - CENFARG/agno-docs-mcp: MCP server exposing Agno framework documentation via FTS5-powered full-text search with BM25 ranking · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/devalexandre/AgnoLab",
+      "title": "GitHub - devalexandre/AgnoLab · GitHub",
+      "description": "GitHub - devalexandre/AgnoLab · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/polsebas/agno-dev-toolkit",
+      "title": "GitHub - polsebas/agno-dev-toolkit: MCP server that gives Cursor and Claude Code deep Agno framework knowledge — architecture plans, anti-pattern detection, and RAG over the official test suite · GitHub",
+      "description": "GitHub - polsebas/agno-dev-toolkit: MCP server that gives Cursor and Claude Code deep Agno framework knowledge — architecture plans, anti-pattern detection, and RAG over the official test suite · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/harishkotra/screenshot-sage",
+      "title": "GitHub - harishkotra/screenshot-sage: Screenshot Sage is a privacy-first local AI assistant that lets you chat with your screenshots. · GitHub",
+      "description": "GitHub - harishkotra/screenshot-sage: Screenshot Sage is a privacy-first local AI assistant that lets you chat with your screenshots. · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/shubh-vedi/ai-storyboard-generator",
+      "title": "GitHub - shubh-vedi/ai-storyboard-generator · GitHub",
+      "description": "GitHub - shubh-vedi/ai-storyboard-generator · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/0xJaeg3r/production-rag-pipeline",
+      "title": "GitHub - 0xJaeg3r/production-rag-pipeline: Production-grade RAG pipeline: PDF ingestion via vision models, semantic chunking, vector search with reranking, MLflow tracing, and RAGAS evaluation. Built end-to-end from scratch. · GitHub",
+      "description": "GitHub - 0xJaeg3r/production-rag-pipeline: Production-grade RAG pipeline: PDF ingestion via vision models, semantic chunking, vector search with reranking, MLflow tracing, and RAGAS evaluation. Built end-to-end from scratch. · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/tylerprogramming/ai-courses/tree/main",
+      "title": "GitHub - tylerprogramming/ai-courses: All AI Courses · GitHub",
+      "description": "GitHub - tylerprogramming/ai-courses: All AI Courses · GitHub",
+      "category": "agno",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "AI-dev-skills-scrape.md",
+          "section": "agno",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/msminhas93/nviwatch",
+      "title": "nviwatch (nviwatch --watch 3000 --cpu)",
+      "description": "nviwatch (nviwatch --watch 3000 --cpu)",
+      "category": "dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://yazi-rs.github.io/docs/installation",
+      "title": "lf alt",
+      "description": "lf alt",
+      "category": "dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/AnirudhG07/awesome-yazi",
+      "title": "lf alt",
+      "description": "lf alt",
+      "category": "dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://lasantosr.github.io/intelli-shell/index.html",
+      "title": "intelli shell",
+      "description": "intelli shell",
+      "category": "dev",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ollaman.com/docs",
+      "title": "Ollama Model Management Assistant",
+      "description": "Ollama Model Management Assistant",
+      "category": "ollama",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/LarHope/ollama-benchmark",
+      "title": "benchmarks",
+      "description": "benchmarks",
+      "category": "ollama",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/BScrk/ollama-benchmark",
+      "title": "benchmarks",
+      "description": "benchmarks",
+      "category": "ollama",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/Diwaker-Singh/ollama-fast",
+      "title": "Optimized Ollama model variants with capped context (64K) — faster inference, lower RAM, minimal quality loss. Runs 9B models on 8-16 GB machines.",
+      "description": "Optimized Ollama model variants with capped context (64K) — faster inference, lower RAM, minimal quality loss. Runs 9B models on 8-16 GB machines.",
+      "category": "ollama",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.extractcss.dev/",
+      "title": "extract CSS",
+      "description": "extract CSS",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.cssdesignawards.com/",
+      "title": "insp",
+      "description": "insp",
+      "category": "web",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.aspensearch.com/",
+      "title": null,
+      "description": null,
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://victorfuruya.com/about",
+      "title": "links hiver",
+      "description": "links hiver",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://benjamincreative.me/about-me",
+      "title": "font spacing",
+      "description": "font spacing",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://flowty.co/",
+      "title": "accordion auto-play (\"Stay in flow\")",
+      "description": "accordion auto-play (\"Stay in flow\")",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://noho.ink/#blog-section",
+      "title": "overlapping cards",
+      "description": "overlapping cards",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://orgnzm.studio/",
+      "title": "footer hero - text color on scroll",
+      "description": "footer hero - text color on scroll",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://likova.space/en/",
+      "title": "intro motion",
+      "description": "intro motion",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://riotters.com/case-studies",
+      "title": "smart",
+      "description": "smart",
+      "category": "pw insp",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pw insp",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.melius.com/",
+      "title": "gen AI",
+      "description": "gen AI",
+      "category": "vitrina",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "vitrina",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://yazi-rs.github.io/docs/quick-start",
+      "title": "Yazi",
+      "description": "Yazi",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": 3
+        }
+      }
+    },
+    {
+      "url": "https://getfresh.dev/docs/getting-started/",
+      "title": "Fresh editor",
+      "description": "Fresh editor",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": 2
+        }
+      }
+    },
+    {
+      "url": "https://xplr.dev/en/introduction",
+      "title": "lf alt: - xplr book",
+      "description": "lf alt: - xplr book",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/artempyanykh/marksman",
+      "title": "md LSP · artempyanykh/marksman · GitHub",
+      "description": "md LSP · artempyanykh/marksman · GitHub",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/imsnif/bandwhich",
+      "title": "Terminal bandwidth utilization tool",
+      "description": "Terminal bandwidth utilization tool",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/dalance/procs",
+      "title": "A modern replacement for ps written in Rust",
+      "description": "A modern replacement for ps written in Rust",
+      "category": "terminal trove",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "terminal trove",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://lilex.myrt.co/",
+      "title": "Lilex — Free Monospaced Font with Ligatures for Developers",
+      "description": "Lilex — Free Monospaced Font with Ligatures for Developers",
+      "category": "fonts",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "fonts",
+          "subsection": null,
+          "priority": 3
+        }
+      }
+    },
+    {
+      "url": "https://vercel.com/font?type=mono#get",
+      "title": "Geist Font",
+      "description": "Geist Font",
+      "category": "fonts",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "fonts",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/evilmartians/grotesk",
+      "title": "nice geom font",
+      "description": "nice geom font",
+      "category": "fonts",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "fonts",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/MarkEdit-app/MarkEdit",
+      "title": "GitHub - MarkEdit-app/MarkEdit: Just like TextEdit on Mac but dedicated to Markdown. · GitHub",
+      "description": "GitHub - MarkEdit-app/MarkEdit: Just like TextEdit on Mac but dedicated to Markdown. · GitHub",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/alienator88/Pearcleaner",
+      "title": "GitHub - alienator88/Pearcleaner: A free, source-available and fair-code licensed mac app cleaner · GitHub",
+      "description": "GitHub - alienator88/Pearcleaner: A free, source-available and fair-code licensed mac app cleaner · GitHub",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://aayush9029.github.io/Medo/",
+      "title": "Medo - Open Source macOS todo-list app.",
+      "description": "Medo - Open Source macOS todo-list app.",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/ArabelaTso/easytodo-on-macos",
+      "title": "GitHub - ArabelaTso/easytodo-on-macos: A lightweight free TODO list app for MacOS · GitHub",
+      "description": "GitHub - ArabelaTso/easytodo-on-macos: A lightweight free TODO list app for MacOS · GitHub",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://culturedcode.com/things/",
+      "title": "Things - To-Do List App for Mac & iOS",
+      "description": "Things - To-Do List App for Mac & iOS",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ticktick.com/",
+      "title": "TickTick: A To-Do List and Calendar to keep you organized",
+      "description": "TickTick: A To-Do List and Calendar to keep you organized",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://bear.app/",
+      "title": "Bear - Markdown Notes",
+      "description": "Bear - Markdown Notes",
+      "category": "macos open source",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "macos open source",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/MarkPDFdown/markpdfdown",
+      "title": "A high-quality PDF to Markdown tool based on large language model visual recognition",
+      "description": "A high-quality PDF to Markdown tool based on large language model visual recognition",
+      "category": "pdf to md",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pdf to md",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/magicrew/doc7",
+      "title": "Turn documents into AI-ready Markdown with visual understanding · GitHub",
+      "description": "Turn documents into AI-ready Markdown with visual understanding · GitHub",
+      "category": "pdf to md",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pdf to md",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/MitudruDutta/distill/tree/main",
+      "title": "Any document → clean Markdown, in a single Go binary. PDF, DOCX, XLSX, EPUB, audio, video, and more — built for LLM/RAG pipelines and MCP-native. · GitHub",
+      "description": "Any document → clean Markdown, in a single Go binary. PDF, DOCX, XLSX, EPUB, audio, video, and more — built for LLM/RAG pipelines and MCP-native. · GitHub",
+      "category": "pdf to md",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pdf to md",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/whit3rabbit/unlocr",
+      "title": "Convert PDF to markdown using a GUI/CLI for Unlimited-OCR. Uses GGUF models · GitHub",
+      "description": "Convert PDF to markdown using a GUI/CLI for Unlimited-OCR. Uses GGUF models · GitHub",
+      "category": "pdf to md",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "section": "pdf to md",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://react-searchable-dropdown.netlify.app/",
+      "title": "flexible and customizable searchable dropdown component",
+      "description": "flexible and customizable searchable dropdown component",
+      "category": "comps",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "comps",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ui.shadcn.com/docs/components/form#usage",
+      "title": "React Hook Form - shadcn/ui",
+      "description": "React Hook Form - shadcn/ui",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.prompt-kit.com/docs/code-block",
+      "title": "Code Block - prompt-kit",
+      "description": "Code Block - prompt-kit",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://nextjs.org/docs/app/getting-started/fetching-data#client-components",
+      "title": "Getting Started: Fetching Data | Next.js",
+      "description": "Getting Started: Fetching Data | Next.js",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ai-sdk.dev/cookbook/rsc/generate-text",
+      "title": "React Server Components: Generate Text",
+      "description": "React Server Components: Generate Text",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/iloveitaly/shadcn-copy-button",
+      "title": "GitHub - iloveitaly/shadcn-copy-button: A customizable ShadCN/UI copy button component that supports copying text, HTML, and content from referenced elements to the clipboard with automatic markdown conversion.",
+      "description": "GitHub - iloveitaly/shadcn-copy-button: A customizable ShadCN/UI copy button component that supports copying text, HTML, and content from referenced elements to the clipboard with automatic markdown conversion.",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://modularforms.dev/solid/guides/introduction",
+      "title": "Guide: Introduction (SolidJS) | Modular Forms",
+      "description": "Guide: Introduction (SolidJS) | Modular Forms",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://conform.guide/",
+      "title": "Conform / Overview",
+      "description": "Conform / Overview",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://letsform.dev/",
+      "title": "letsform.dev",
+      "description": "letsform.dev",
+      "category": "forms",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "forms",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://codesandbox.io/embed/jotai-tutorial-05-yml8m?fontsize=14&hidenavigation=1&module=%2Fsrc%2FSvgShapes.tsx&theme=dark",
+      "title": null,
+      "description": null,
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jotaijs/jotai-form",
+      "title": "GitHub - jotaijs/jotai-form: Form atoms for Jotai",
+      "description": "GitHub - jotaijs/jotai-form: Form atoms for Jotai",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jotaijs/jotai-tanstack-query",
+      "title": "GitHub - jotaijs/jotai-tanstack-query: Jotai integration library for TanStack Query",
+      "description": "GitHub - jotaijs/jotai-tanstack-query: Jotai integration library for TanStack Query",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://tanstack.com/query/v5/docs/framework/react/overview",
+      "title": "Overview | TanStack Query React Docs",
+      "description": "Overview | TanStack Query React Docs",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jotaijs/jotai-ai",
+      "title": "GitHub - jotaijs/jotai-ai: A Jōtai utility package compatible with Vercel AI SDK",
+      "description": "GitHub - jotaijs/jotai-ai: A Jōtai utility package compatible with Vercel AI SDK",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jotaijs/jotai-trpc",
+      "title": "GitHub - jotaijs/jotai-trpc",
+      "description": "GitHub - jotaijs/jotai-trpc",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://trpc.io/",
+      "title": "tRPC - Move Fast and Break Nothing. End-to-end typesafe APIs made easy. | tRPC",
+      "description": "tRPC - Move Fast and Break Nothing. End-to-end typesafe APIs made easy. | tRPC",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jotaijs/jotai-transaction",
+      "title": "GitHub - jotaijs/jotai-transaction: Utility package for executing atomic transactions in Jotai.",
+      "description": "GitHub - jotaijs/jotai-transaction: Utility package for executing atomic transactions in Jotai.",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/saasquatch/jotai-hook-form",
+      "title": "GitHub - saasquatch/jotai-hook-form: Build complex forms with jotai, using JSON pointers.",
+      "description": "GitHub - saasquatch/jotai-hook-form: Build complex forms with jotai, using JSON pointers.",
+      "category": "jotai",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "jotai",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/ashbuilds/payload-ai",
+      "title": "payload AI Plugin",
+      "description": "payload AI Plugin",
+      "category": "payload",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "payload",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/invakid404/payload-blurhash-plugin",
+      "title": "payload-blurhash-plugin: Payload CMS plugin for automatic Blurhash encoding of images",
+      "description": "payload-blurhash-plugin: Payload CMS plugin for automatic Blurhash encoding of images",
+      "category": "payload",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "payload",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://swr.vercel.app/docs/with-nextjs",
+      "title": "SWR",
+      "description": "SWR",
+      "category": "payload",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "payload",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/payload-auth/payload-auth",
+      "title": "integrate your favorite auth providers",
+      "description": "integrate your favorite auth providers",
+      "category": "payload",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "payload",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/designcombo/react-video-editor",
+      "title": "Online react video editor using remotion. Capcut and canva clone",
+      "description": "Online react video editor using remotion. Capcut and canva clone",
+      "category": "react video",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react video",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/stefanwittwer/remotion-animated",
+      "title": "A delightful way to animate objects in Remotion",
+      "description": "A delightful way to animate objects in Remotion",
+      "category": "react video",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react video",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/gyoridavid/short-video-maker",
+      "title": "Creates short videos for TikTok, Instagram Reels, and YouTube Shorts using the Model Context Protocol (MCP) and a REST API.",
+      "description": "Creates short videos for TikTok, Instagram Reels, and YouTube Shorts using the Model Context Protocol (MCP) and a REST API.",
+      "category": "react video",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react video",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.remotion.dev/docs/resources",
+      "title": "remotion",
+      "description": "remotion",
+      "category": "react video",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react video",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.jollyui.dev/",
+      "title": "JollyUI - React Aria UI w/ shadcn",
+      "description": "JollyUI - React Aria UI w/ shadcn",
+      "category": "React UI",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React UI",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://retroui.dev/",
+      "title": "Retro Styled React UI Library",
+      "description": "Retro Styled React UI Library",
+      "category": "React UI",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React UI",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.reactbits.dev/",
+      "title": "React Bits - Animated UI Components For React",
+      "description": "React Bits - Animated UI Components For React",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.fancycomponents.dev/docs/installation",
+      "title": "Fancy Components",
+      "description": "Fancy Components",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://kokonutui.com/",
+      "title": "Kokonut UI - Open Source Components",
+      "description": "Kokonut UI - Open Source Components",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://originui.com/",
+      "title": "Origin UI",
+      "description": "Origin UI",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.prismui.tech/docs",
+      "title": "Prism UI",
+      "description": "Prism UI",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.kibo-ui.com/",
+      "title": "Kibo UI",
+      "description": "Kibo UI",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://reablocks.dev/docs",
+      "title": "Reablocks",
+      "description": "Reablocks",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://rosencharts.com/",
+      "title": "Charts",
+      "description": "Charts",
+      "category": "React +  Tailwind + Framer Motion",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "React +  Tailwind + Framer Motion",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://techhub.iodigital.com/articles/building-scalable-micro-frontends-with-next-js-multi-zones",
+      "title": "Next.js Multi Zones - iO tech_hub",
+      "description": "Next.js Multi Zones - iO tech_hub",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://techhub.iodigital.com/articles/minimal-state-management-tools",
+      "title": "Minimal state management tools - iO tech_hub",
+      "description": "Minimal state management tools - iO tech_hub",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://jstack.app/docs/getting-started/first-steps",
+      "title": "JStack - Full-Stack Next.js & TypeScript Toolkit",
+      "description": "JStack - Full-Stack Next.js & TypeScript Toolkit",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://blog.6nok.org/building-a-semantic-movie-search-demo-with-pgvector-and-next.js/",
+      "title": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
+      "description": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=c-hKSbzooAg",
+      "title": "My Biggest Tutorial Ever (Build A FULL Google Drive Clone with React, Next, TypeScript and more) - YouTube",
+      "description": "My Biggest Tutorial Ever (Build A FULL Google Drive Clone with React, Next, TypeScript and more) - YouTube",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://nextjs.org/blog/building-apis-with-nextjs",
+      "title": "Building APIs with Next.js | Next.js",
+      "description": "Building APIs with Next.js | Next.js",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://next-intl.dev/",
+      "title": "Internationalization (i18n) for Next.js",
+      "description": "Internationalization (i18n) for Next.js",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/premieroctet/digestclub/",
+      "title": "nextjs + prisma app",
+      "description": "nextjs + prisma app",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next.js",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://jsrepo.dev/docs",
+      "title": "jsrepo - Introduction",
+      "description": "jsrepo - Introduction",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/ieedan/std",
+      "title": "TypeScript utilities brokered by jsrepo.",
+      "description": "TypeScript utilities brokered by jsrepo.",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://melvinoostendorp.nl/blog/tauri-v2-nextjs-monorepo-guide",
+      "title": "Tauri v2 with Next.js: A Monorepo Guide",
+      "description": "Tauri v2 with Next.js: A Monorepo Guide",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/Arbarwings/tauri-v2-nextjs-monorepo",
+      "title": "Tauri v2 with Next.js: A Monorepo Guide",
+      "description": "Tauri v2 with Next.js: A Monorepo Guide",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://techhub.iodigital.com/articles/what-is-webllm",
+      "title": "What is WebLLM",
+      "description": "What is WebLLM",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/gajus/slonik",
+      "title": "Node.js PostgreSQL client with runtime and build time type safety, and composable SQL.",
+      "description": "Node.js PostgreSQL client with runtime and build time type safety, and composable SQL.",
+      "category": "dev",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "dev",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://javascript.plainenglish.io/building-an-ai-photo-reviewer-for-free-with-nextjs-vercel-ai-sdk-and-ollama-llava-llama3-model-6f400ea560da",
+      "title": "AI Photo Reviewer",
+      "description": "AI Photo Reviewer",
+      "category": "nextjs ollama",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "nextjs ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://sdk.vercel.ai/",
+      "title": "The AI Toolkit for TypeScript",
+      "description": "The AI Toolkit for TypeScript",
+      "category": "nextjs ollama",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "nextjs ollama",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://usehooks-ts.com/react-hook/use-boolean",
+      "title": "usehooks-ts",
+      "description": "usehooks-ts",
+      "category": "react utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/liam-hq/liam",
+      "title": "GitHub - liam-hq/liam: Automatically generates beautiful and easy-to-read ER diagrams from your database.",
+      "description": "GitHub - liam-hq/liam: Automatically generates beautiful and easy-to-read ER diagrams from your database.",
+      "category": "react utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://houseform.dev/guides/basic-usage.html",
+      "title": "Basic Usage | HouseForm",
+      "description": "Basic Usage | HouseForm",
+      "category": "react utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://rjsf-team.github.io/react-jsonschema-form/docs/usage/",
+      "title": "Usage and Customization | react-jsonschema-form",
+      "description": "Usage and Customization | react-jsonschema-form",
+      "category": "react utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "react utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/code-hike/codehike",
+      "title": "codehike: Build rich content websites with Markdown and React",
+      "description": "codehike: Build rich content websites with Markdown and React",
+      "category": "MDX",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "MDX",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/mdx-editor/editor",
+      "title": "GitHub - mdx-editor/editor: A rich text editor React component for markdown",
+      "description": "GitHub - mdx-editor/editor: A rich text editor React component for markdown",
+      "category": "MDX",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "MDX",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.content-collections.dev/docs/content/mdx",
+      "title": "MDX",
+      "description": "MDX",
+      "category": "MDX",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "MDX",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/kottster/kottster",
+      "title": "GitHub - kottster/kottster: A simple Node.js admin panel for your app. Build admin panel in minutes.",
+      "description": "GitHub - kottster/kottster: A simple Node.js admin panel for your app. Build admin panel in minutes.",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://next-admin.js.org/",
+      "title": "next-admin.js.org",
+      "description": "next-admin.js.org",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.prisma.io/docs/orm/overview/databases/sqlite",
+      "title": "SQLite database connector | Prisma Documentation",
+      "description": "SQLite database connector | Prisma Documentation",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://wasp.sh/",
+      "title": "Wasp",
+      "description": "Wasp",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.next-forge.com/",
+      "title": "Production-grade Turborepo template for Next.js apps",
+      "description": "Production-grade Turborepo template for Next.js apps",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://zenstack.dev/",
+      "title": "ZenStack - Simplified Full-Stack Development with Prisma ORM | ZenStack",
+      "description": "ZenStack - Simplified Full-Stack Development with Prisma ORM | ZenStack",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/saasfly/saasfly",
+      "title": "GitHub - saasfly/saasfly: Your Next SaaS Template or Boilerplate ! A magic trip start with `bun create saasfly` . The more stars the more surprises",
+      "description": "GitHub - saasfly/saasfly: Your Next SaaS Template or Boilerplate ! A magic trip start with `bun create saasfly` . The more stars the more surprises",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.freecodecamp.org/news/how-to-create-a-nextjs-pwa/",
+      "title": "How To Create a Progressive Web App (PWA) Using Next.js",
+      "description": "How To Create a Progressive Web App (PWA) Using Next.js",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://kirimase.dev/tutorials",
+      "title": "command-line tool (CLI) for building full-stack Next.js apps faster",
+      "description": "command-line tool (CLI) for building full-stack Next.js apps faster",
+      "category": "next",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "next",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://rallly.co/",
+      "title": "Rallly: Group Scheduling Tool",
+      "description": "Rallly: Group Scheduling Tool",
+      "category": "open source tools",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "open source tools",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/Codehagen/Badget",
+      "title": "GitHub - Codehagen/Badget: Badget aims to simplify financial management with a user-friendly interface and robustbackend",
+      "description": "GitHub - Codehagen/Badget: Badget aims to simplify financial management with a user-friendly interface and robustbackend",
+      "category": "open source tools",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "section": "open source tools",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://freedium.cfd/https://leapcell.medium.com/simplifying-rust-error-handling-with-thiserror-02e65911f2a0",
+      "title": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
+      "description": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://crates.io/crates/cargo-make",
+      "title": "cargo-make - crates.io: Rust Package Registry",
+      "description": "cargo-make - crates.io: Rust Package Registry",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://docs.rs/itertools/latest/itertools/structs/index.html",
+      "title": "itertools::structs - Rust",
+      "description": "itertools::structs - Rust",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://freedium.cfd/https://medium.com/@sagiegurari/automating-your-rust-workflows-with-cargo-make-part-1-of-5-introduction-and-basics-b19ced7e7057",
+      "title": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
+      "description": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "utils",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://lancedb.com/docs/tutorials/rag/",
+      "title": "RAG Tutorials",
+      "description": "RAG Tutorials",
+      "category": "ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/huggingface/candle",
+      "title": "GitHub - huggingface/candle: Minimalist ML framework for Rust",
+      "description": "GitHub - huggingface/candle: Minimalist ML framework for Rust",
+      "category": "ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://burn.dev/books/burn/overview.html",
+      "title": "Overview - The Burn Book 🔥",
+      "description": "Overview - The Burn Book 🔥",
+      "category": "ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/tracel-ai/burn?tab=readme-ov-file",
+      "title": "GitHub - tracel-ai/burn: Burn is a next generation tensor library and Deep Learning Framework that doesn't compromise on flexibility, efficiency and portability.",
+      "description": "GitHub - tracel-ai/burn: Burn is a next generation tensor library and Deep Learning Framework that doesn't compromise on flexibility, efficiency and portability.",
+      "category": "ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/LaurentMazare/tch-rs",
+      "title": "GitHub - LaurentMazare/tch-rs: Rust bindings for the C++ api of PyTorch.",
+      "description": "GitHub - LaurentMazare/tch-rs: Rust bindings for the C++ api of PyTorch.",
+      "category": "ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/milvus-io/milvus",
+      "title": "GitHub - milvus-io/milvus: Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search",
+      "description": "GitHub - milvus-io/milvus: Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/chroma-core/chroma",
+      "title": "GitHub - chroma-core/chroma: Open-source search and retrieval database for AI applications.",
+      "description": "GitHub - chroma-core/chroma: Open-source search and retrieval database for AI applications.",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/weaviate/weaviate",
+      "title": "GitHub - weaviate/weaviate: Weaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.",
+      "description": "GitHub - weaviate/weaviate: Weaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://cloud.qdrant.io/",
+      "title": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
+      "description": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/qdrant/qdrant",
+      "title": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
+      "description": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/vdaas/vald",
+      "title": "GitHub - vdaas/vald: Vald. A Highly Scalable Distributed Vector Search Engine",
+      "description": "GitHub - vdaas/vald: Vald. A Highly Scalable Distributed Vector Search Engine",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/facebookresearch/faiss",
+      "title": "GitHub - facebookresearch/faiss: A library for efficient similarity search and clustering of dense vectors.",
+      "description": "GitHub - facebookresearch/faiss: A library for efficient similarity search and clustering of dense vectors.",
+      "category": "collect 16 Nov 2025",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "collect 16 Nov 2025",
+          "subsection": "vector dbs",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://app.ailog.fr/blog/guides",
+      "title": "Nice! Quick guides",
+      "description": "Nice! Quick guides",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://app.ailog.fr/blog/guides/rag-evaluation",
+      "title": "Nice! Quick guides",
+      "description": "Nice! Quick guides",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ben.clavie.eu/ragatouille/",
+      "title": "RAGatouille State-of-the-art document retrieval methods",
+      "description": "RAGatouille State-of-the-art document retrieval methods",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://huggingface.co/knowledgator/gliner-x-large",
+      "title": "knowledgator/gliner-x-large · Hugging Face",
+      "description": "knowledgator/gliner-x-large · Hugging Face",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/fbilhaut/gline-rs",
+      "title": "GitHub - fbilhaut/gline-rs: Inference engine for GLiNER models, in Rust",
+      "description": "GitHub - fbilhaut/gline-rs: Inference engine for GLiNER models, in Rust",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/huggingface/tokenizers",
+      "title": "GitHub - huggingface/tokenizers: 💥 Fast State-of-the-Art Tokenizers optimized for Research and Production",
+      "description": "GitHub - huggingface/tokenizers: 💥 Fast State-of-the-Art Tokenizers optimized for Research and Production",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/benbrandt/text-splitter",
+      "title": "GitHub - benbrandt/text-splitter: Split text into semantic chunks, up to a desired chunk size. Supports calculating length by characters and tokens, and is callable from Rust and Python.",
+      "description": "GitHub - benbrandt/text-splitter: Split text into semantic chunks, up to a desired chunk size. Supports calculating length by characters and tokens, and is callable from Rust and Python.",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://huggingface.github.io/candle/index.html",
+      "title": "Introduction - Candle Documentation",
+      "description": "Introduction - Candle Documentation",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/nerdai/llms-from-scratch-rs",
+      "title": "GitHub - nerdai/llms-from-scratch-rs: A comprehensive Rust translation of the code from Sebastian Raschka's Build an LLM from Scratch book.",
+      "description": "GitHub - nerdai/llms-from-scratch-rs: A comprehensive Rust translation of the code from Sebastian Raschka's Build an LLM from Scratch book.",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://burn.dev/books/burn/",
+      "title": "Overview - The Burn Book 🔥",
+      "description": "Overview - The Burn Book 🔥",
+      "category": "Rust ML",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust ML",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://sycamore.dev/",
+      "title": "Sycamore",
+      "description": "Sycamore",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://cheats.rs/",
+      "title": "Rust Language Cheat Sheet",
+      "description": "Rust Language Cheat Sheet",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://lborb.github.io/book/unofficial.html",
+      "title": "Unofficial Rust Books - The Little Book of Rust Books",
+      "description": "Unofficial Rust Books - The Little Book of Rust Books",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://google.github.io/comprehensive-rust/",
+      "title": "Welcome to Comprehensive Rust 🦀 - Comprehensive Rust 🦀",
+      "description": "Welcome to Comprehensive Rust 🦀 - Comprehensive Rust 🦀",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://fasterthanli.me/articles/a-half-hour-to-learn-rust#variable-bindings",
+      "title": "A half-hour to learn Rust",
+      "description": "A half-hour to learn Rust",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/inference-gateway/inference-gateway",
+      "title": null,
+      "description": null,
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/jondot/awesome-rust-llm",
+      "title": null,
+      "description": null,
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://llamaedge.com/docs/intro/",
+      "title": null,
+      "description": null,
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://hackmd.io/@Hamze/Hy5LiRV1gg",
+      "title": "Rust Ecosystem for AI & LLMs",
+      "description": "Rust Ecosystem for AI & LLMs",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://book.leptos.dev/getting_started/community_crates.html",
+      "title": "The Leptos Community and leptos-* Crates",
+      "description": "The Leptos Community and leptos-* Crates",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/leptos-rs/awesome-leptos",
+      "title": "GitHub - leptos-rs/awesome-leptos: A collection of awesome libraries in the Leptos ecosystem.",
+      "description": "GitHub - leptos-rs/awesome-leptos: A collection of awesome libraries in the Leptos ecosystem.",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/flosse/rust-web-framework-comparison",
+      "title": "GitHub - flosse/rust-web-framework-comparison: A comparison of some web frameworks and libs written in Rust",
+      "description": "GitHub - flosse/rust-web-framework-comparison: A comparison of some web frameworks and libs written in Rust",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://lmvr.rantai.dev/docs/table-of-contents/",
+      "title": "Large Language Models via Rust",
+      "description": "Large Language Models via Rust",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://sebszyller.com/blog/2024/rustwithllmsneedleinhaystack",
+      "title": "Learning Rust with Large Language Models (Part III)",
+      "description": "Learning Rust with Large Language Models (Part III)",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://prompthive.sh/",
+      "title": "PromptHive - Lightning-fast open source prompt manager",
+      "description": "PromptHive - Lightning-fast open source prompt manager",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://github.com/andrisgauracs/Vector-DB-Benchmark-for-Music-Semantic-Search/blob/main/ui/backend/server.py",
+      "title": "Vector-DB-Benchmark-for-Music-Semantic-Search/ui/backend/server.py at main · andrisgauracs/Vector-DB-Benchmark-for-Music-Semantic-Search · GitHub",
+      "description": "Vector-DB-Benchmark-for-Music-Semantic-Search/ui/backend/server.py at main · andrisgauracs/Vector-DB-Benchmark-for-Music-Semantic-Search · GitHub",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "section": "Rust web",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://shadcn.batchtool.com/",
+      "title": "awesome",
+      "description": "awesome",
+      "category": null,
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": null,
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://www.cult-ui.com/",
+      "title": null,
+      "description": null,
+      "category": "shadcn UI libs",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": "shadcn UI libs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://magicui.design/",
+      "title": null,
+      "description": null,
+      "category": "shadcn UI libs",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": "shadcn UI libs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://bundui.io/",
+      "title": null,
+      "description": null,
+      "category": "shadcn UI libs",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": "shadcn UI libs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://ui.spectrumhq.in/docs/installation",
+      "title": null,
+      "description": null,
+      "category": "shadcn UI libs",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": "shadcn UI libs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://basecoatui.com/",
+      "title": "All of the shadcn/ui magic, none of the React",
+      "description": "All of the shadcn/ui magic, none of the React",
+      "category": "libs",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "shadcn.md",
+          "section": "libs",
+          "subsection": null,
+          "priority": null
+        }
+      }
+    }
+  ]
+}

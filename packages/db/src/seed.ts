@@ -14,7 +14,10 @@ import { createTag, getTagByName } from './queries/tags.ts';
 /** Seed datasets live in `packages/db/seeds/datasets/<name>.seed.json`. */
 export const SEED_DATASETS_DIR = join(import.meta.dir, '../seeds/datasets');
 
-export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'grimoire.seed.json');
+/** Dataset `bun run db:seed` loads when `SEED_DATASET` is unset. */
+export const DEFAULT_DATASET = 'leo';
+
+export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'leo.seed.json');
 
 export interface SeedDataset {
   /** Dataset name used in `SEED_DATASET`. */
@@ -26,14 +29,15 @@ export interface SeedDataset {
 }
 
 /**
- * Known seed datasets. `grimoire` is the synthetic Grimoire demo fixture. `leo`
- * is reserved for Leo's real collections imported from `docs/examples-mds/` —
- * implementing it means generating its JSON via the importer; until then it
- * must stay `implemented: false` so selection fails with a clear message.
+ * Known seed datasets. `leo` (the default) is Leo's real collections imported
+ * from `docs/examples-mds/`; its fixture is regenerated with
+ * `bun run scripts/extract-leo-seed.ts`. `grimoire` is the synthetic Grimoire
+ * demo fixture the tests use. Datasets must be registered here — dropping a file
+ * in the directory does not make it selectable.
  */
 const DATASETS: SeedDataset[] = [
+  { name: 'leo', file: 'leo.seed.json', implemented: true },
   { name: 'grimoire', file: 'grimoire.seed.json', implemented: true },
-  { name: 'leo', file: 'leo.seed.json', implemented: false },
 ];
 
 export class UnknownSeedDatasetError extends Error {
@@ -104,8 +108,8 @@ export function resetSeedData(db: Database): void {
 }
 
 /**
- * Loads a seed fixture (default: the synthetic Grimoire demo dataset). Idempotent:
- * categories and tags are reused by name and bookmarks are upserted by URL.
+ * Loads a seed fixture (default: the `leo` dataset). Idempotent: categories and
+ * tags are reused by name and bookmarks are upserted by URL.
  */
 export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedReport {
   const seed = JSON.parse(readFileSync(filePath, 'utf8')) as SeedFile;
@@ -179,7 +183,7 @@ if (import.meta.main) {
   // Bun auto-loads the repo-root .env, so SEED_DATASET/SEED_RESET work via
   // `bun run db:seed` with no extra wiring (.env.example documents both; the
   // README covers them in the same change set).
-  const datasetName = process.env.SEED_DATASET || 'grimoire';
+  const datasetName = process.env.SEED_DATASET || DEFAULT_DATASET;
   const filePath = resolveSeedDataset(datasetName);
   if (process.env.SEED_RESET === '1') {
     resetSeedData(db);

@@ -426,7 +426,7 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
 | `QDRANT_TIMEOUT_MS`     | Client fetch timeout for Qdrant requests      | `5000`                   |
-| `SEED_DATASET`          | Dataset `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `grimoire` |
+| `SEED_DATASET`          | Dataset `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `leo` |
 | `SEED_RESET`            | When `1`, `db:seed` wipes bookmarks/tags/categories before loading (seed-script only) | unset |
 
 ## 8. Background jobs

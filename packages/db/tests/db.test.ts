@@ -19,6 +19,7 @@ import {
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
   listBookmarks,
+  DEFAULT_SEED_PATH,
   listEmbeddingModelMismatches,
   openDatabase,
   resetSeedData,
@@ -221,14 +222,15 @@ describe('listing & aggregates', () => {
 describe('seed fixture', () => {
   test('loads the synthetic demo dataset and is idempotent', () => {
     const db = freshDb();
+    const grimoire = resolveSeedDataset('grimoire');
 
-    const first = seedFromFile(db);
+    const first = seedFromFile(db, grimoire);
     expect(first.bookmarksAdded).toBe(26);
     expect(first.categoriesCreated).toBe(8);
     expect(first.tagsCreated).toBe(51);
     expect(first.assignments).toBeGreaterThan(0);
 
-    const second = seedFromFile(db);
+    const second = seedFromFile(db, grimoire);
     expect(second.bookmarksAdded).toBe(0);
     expect(second.bookmarksUpdated).toBe(26);
     expect(second.categoriesCreated).toBe(0);
@@ -239,23 +241,33 @@ describe('seed fixture', () => {
     expect(keywordSearch(db, { q: 'sqlite' }).length).toBeGreaterThan(0);
   });
 
-  test('resolves the grimoire dataset path by default and by name', () => {
+  test('loads the leo dataset from the default path', () => {
+    const db = freshDb();
+
+    const report = seedFromFile(db);
+    expect(report.bookmarksAdded).toBe(217);
+    expect(report.categoriesCreated).toBe(40);
+    expect(report.tagsCreated).toBe(1);
+    expect(report.assignments).toBe(118);
+    expect(getAggregates(db).total).toBe(217);
+  });
+
+  test('resolves the leo dataset by default and both datasets by name', () => {
+    expect(DEFAULT_SEED_PATH).toContain('seeds/datasets/leo.seed.json');
+    expect(resolveSeedDataset('leo')).toBe(DEFAULT_SEED_PATH);
     expect(resolveSeedDataset('grimoire')).toContain('seeds/datasets/grimoire.seed.json');
   });
 
   test('rejects unknown dataset names with the available list', () => {
     expect(() => resolveSeedDataset('nope')).toThrow(UnknownSeedDatasetError);
-    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: grimoire, leo \(not yet implemented\)/);
-  });
-
-  test('refuses reserved but unimplemented datasets', () => {
-    expect(() => resolveSeedDataset('leo')).toThrow(/not implemented yet/);
+    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: leo, grimoire/);
   });
 
   test('reset wipes content so a re-seed starts clean', () => {
     const db = freshDb();
+    const grimoire = resolveSeedDataset('grimoire');
 
-    seedFromFile(db);
+    seedFromFile(db, grimoire);
     expect(getAggregates(db).total).toBe(26);
 
     // A stale bookmark outside the dataset proves the reset, not the upsert,
@@ -269,7 +281,7 @@ describe('seed fixture', () => {
     // The FTS delete trigger must have fired for the wiped rows too.
     expect(keywordSearch(db, { q: 'Stray' })).toHaveLength(0);
 
-    const report = seedFromFile(db);
+    const report = seedFromFile(db, grimoire);
     expect(report.bookmarksAdded).toBe(26);
     expect(report.bookmarksUpdated).toBe(0);
     expect(getAggregates(db).total).toBe(26);

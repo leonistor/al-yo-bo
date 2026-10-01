@@ -49,7 +49,7 @@ export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
 ```sh
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
-bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: grimoire)
+bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: leo)
 bun run build     # build the web app into apps/web/dist
 bun run start     # production: one Bun process serves API + web
 bun run lint      # lint
@@ -65,17 +65,25 @@ their page content and vectors automatically when scraping and embeddings are av
 ### Seed datasets
 
 Seed fixtures live in `packages/db/seeds/datasets/` and `bun run db:seed` loads the dataset named
-by `SEED_DATASET` (default `grimoire`, the synthetic demo fixture; unset or empty falls back to
-the default). Datasets are registered explicitly in `packages/db/src/seed.ts` — dropping a file
-in the directory doesn't make it selectable:
+by `SEED_DATASET` (default `leo`, Leo's real collections; unset or empty falls back to the default).
+Datasets are registered explicitly in `packages/db/src/seed.ts` — dropping a file in the directory
+doesn't make it selectable:
 
 ```sh
-SEED_DATASET=grimoire   # which dataset db:seed loads (set in .env or via export)
+SEED_DATASET=leo        # which dataset db:seed loads (set in .env or via export)
+# SEED_DATASET=grimoire # the synthetic Grimoire demo fixture the tests use
 # SEED_RESET=1          # uncomment to wipe existing bookmarks/tags/categories first
 ```
 
-Seeding is otherwise idempotent (bookmarks are upserted by URL). The `leo` dataset (real
-collections imported from `docs/examples-mds/`) is reserved but not implemented yet.
+`leo` is generated from the five-file representative sample in `docs/examples-mds/`; regenerate it
+after editing those collections with:
+
+```sh
+bun run scripts/extract-leo-seed.ts
+```
+
+Seeding is otherwise idempotent (bookmarks are upserted by URL).
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
-target layout (`apps/server`, `apps/web`, `packages/*`).
+target layout (`apps/server`, `apps/web`, `packages/core` + the subsystem packages `db`, `search`,
+`vectordb`, `embeddings`, `classifier`, `importer`, `shared`).
