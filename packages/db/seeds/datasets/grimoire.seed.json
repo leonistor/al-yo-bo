@@ -71,7 +71,11 @@
       "title": "View Transition API",
       "description": "A practical reference for animating document and single-page transitions.",
       "category": "Frontend",
-      "tags": ["animation", "frontend", "web-platform"],
+      "tags": [
+        "animation",
+        "frontend",
+        "web-platform"
+      ],
       "createdAt": 1787301900000,
       "metadata": {
         "seed": {
@@ -86,7 +90,11 @@
       "title": "You Might Not Need an Effect",
       "description": "A clear guide to keeping derived data in render instead of synchronising it with effects.",
       "category": "Frontend",
-      "tags": ["architecture", "frontend", "react"],
+      "tags": [
+        "architecture",
+        "frontend",
+        "react"
+      ],
       "createdAt": 1787239200000,
       "metadata": {
         "seed": {
@@ -97,26 +105,15 @@
       }
     },
     {
-      "url": "https://web.dev/articles/deferring-non-critical-css",
-      "title": "Deferring non-critical CSS",
-      "description": "Performance patterns for keeping initial rendering focused on what is visible first.",
-      "category": "Frontend",
-      "tags": ["css", "frontend", "performance"],
-      "createdAt": 1787140800000,
-      "metadata": {
-        "seed": {
-          "source": "grimoire-demo",
-          "demoId": "demo-003",
-          "note": null
-        }
-      }
-    },
-    {
       "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
       "title": "TypeScript: Narrowing",
       "description": "The handbook chapter on turning runtime checks into precise static types.",
       "category": "Frontend",
-      "tags": ["tooling", "types", "typescript"],
+      "tags": [
+        "tooling",
+        "types",
+        "typescript"
+      ],
       "createdAt": 1787045400000,
       "metadata": {
         "seed": {
@@ -131,7 +128,11 @@
       "title": "Vite production build guide",
       "description": "The reference for building, previewing, and tuning a Vite application.",
       "category": "Tooling",
-      "tags": ["build", "tooling", "vite"],
+      "tags": [
+        "build",
+        "tooling",
+        "vite"
+      ],
       "createdAt": 1786976100000,
       "metadata": {
         "seed": {
@@ -146,7 +147,11 @@
       "title": "An introduction to the npm package manager",
       "description": "A compact explanation of package manifests, dependencies, and reproducible installs.",
       "category": "Tooling",
-      "tags": ["node", "npm", "tooling"],
+      "tags": [
+        "node",
+        "npm",
+        "tooling"
+      ],
       "createdAt": 1786880400000,
       "metadata": {
         "seed": {
@@ -161,7 +166,11 @@
       "title": "Bun SQLite API",
       "description": "Notes on using Bun's built-in SQLite runtime with a small local service.",
       "category": "Backend",
-      "tags": ["backend", "bun", "sqlite"],
+      "tags": [
+        "backend",
+        "bun",
+        "sqlite"
+      ],
       "createdAt": 1786811100000,
       "metadata": {
         "seed": {
@@ -176,7 +185,11 @@
       "title": "An overview of HTTP",
       "description": "A durable refresher on requests, responses, methods, headers, and status codes.",
       "category": "Backend",
-      "tags": ["backend", "http", "web-platform"],
+      "tags": [
+        "backend",
+        "http",
+        "web-platform"
+      ],
       "createdAt": 1786701600000,
       "metadata": {
         "seed": {
@@ -191,7 +204,11 @@
       "title": "SQLite foreign key support",
       "description": "A reference for enforcing relationships safely in a small embedded database.",
       "category": "Backend",
-      "tags": ["backend", "data", "sqlite"],
+      "tags": [
+        "backend",
+        "data",
+        "sqlite"
+      ],
       "createdAt": 1786628100000,
       "metadata": {
         "seed": {
@@ -206,7 +223,11 @@
       "title": "Transaction isolation",
       "description": "The PostgreSQL reference on visibility, concurrency, and transaction isolation levels.",
       "category": "Backend",
-      "tags": ["data", "postgres", "transactions"],
+      "tags": [
+        "data",
+        "postgres",
+        "transactions"
+      ],
       "createdAt": 1786528200000,
       "metadata": {
         "seed": {
@@ -221,7 +242,11 @@
       "title": "Multi-stage builds",
       "description": "A guide to keeping production container images small and focused.",
       "category": "Tooling",
-      "tags": ["build", "containers", "docker"],
+      "tags": [
+        "build",
+        "containers",
+        "docker"
+      ],
       "createdAt": 1786467900000,
       "metadata": {
         "seed": {
@@ -232,26 +257,15 @@
       }
     },
     {
-      "url": "https://playwright.dev/docs/test-intro",
-      "title": "Playwright Test introduction",
-      "description": "A practical overview of browser test isolation, locators, and traceable failures.",
-      "category": "Testing",
-      "tags": ["e2e", "playwright", "testing"],
-      "createdAt": 1786274100000,
-      "metadata": {
-        "seed": {
-          "source": "grimoire-demo",
-          "demoId": "demo-013",
-          "note": null
-        }
-      }
-    },
-    {
       "url": "https://vitest.dev/guide/",
       "title": "Vitest guide",
       "description": "Fast unit testing patterns for a Vite-native TypeScript codebase.",
       "category": "Testing",
-      "tags": ["testing", "typescript", "vitest"],
+      "tags": [
+        "testing",
+        "typescript",
+        "vitest"
+      ],
       "createdAt": 1786184400000,
       "metadata": {
         "seed": {
@@ -266,7 +280,11 @@
       "title": "Testing Library queries",
       "description": "A testing philosophy and query guide that keeps assertions close to user behavior.",
       "category": "Testing",
-      "tags": ["accessibility", "frontend", "testing"],
+      "tags": [
+        "accessibility",
+        "frontend",
+        "testing"
+      ],
       "createdAt": 1786093800000,
       "metadata": {
         "seed": {
@@ -281,7 +299,11 @@
       "title": "ARIA Authoring Practices Guide",
       "description": "Patterns for making interactive widgets understandable and keyboard operable.",
       "category": "Design systems",
-      "tags": ["accessibility", "aria", "design-systems"],
+      "tags": [
+        "accessibility",
+        "aria",
+        "design-systems"
+      ],
       "createdAt": 1786021200000,
       "metadata": {
         "seed": {
@@ -296,7 +318,11 @@
       "title": "10 usability heuristics for user interface design",
       "description": "A durable checklist for evaluating feedback, language, control, and error recovery.",
       "category": "Design systems",
-      "tags": ["design", "heuristics", "ux"],
+      "tags": [
+        "design",
+        "heuristics",
+        "ux"
+      ],
       "createdAt": 1785918600000,
       "metadata": {
         "seed": {
@@ -311,7 +337,11 @@
       "title": "Patterns of distributed systems",
       "description": "A catalog of small, named solutions for coordination and consistency problems.",
       "category": "Architecture",
-      "tags": ["architecture", "backend", "distributed-systems"],
+      "tags": [
+        "architecture",
+        "backend",
+        "distributed-systems"
+      ],
       "createdAt": 1785759600000,
       "metadata": {
         "seed": {
@@ -326,7 +356,11 @@
       "title": "The Twelve-Factor App",
       "description": "A concise set of deployment and configuration principles for service applications.",
       "category": "Architecture",
-      "tags": ["architecture", "deployment", "operations"],
+      "tags": [
+        "architecture",
+        "deployment",
+        "operations"
+      ],
       "createdAt": 1785663900000,
       "metadata": {
         "seed": {
@@ -341,7 +375,11 @@
       "title": "OWASP Application Security Verification Standard",
       "description": "A structured security baseline for reviewing authentication, validation, and data handling.",
       "category": "Security",
-      "tags": ["review", "security", "web"],
+      "tags": [
+        "review",
+        "security",
+        "web"
+      ],
       "createdAt": 1785594300000,
       "metadata": {
         "seed": {
@@ -356,7 +394,11 @@
       "title": "Content Security Policy",
       "description": "A reference for constraining browser resource loading and reducing injection impact.",
       "category": "Security",
-      "tags": ["csp", "security", "web-platform"],
+      "tags": [
+        "csp",
+        "security",
+        "web-platform"
+      ],
       "createdAt": 1785496200000,
       "metadata": {
         "seed": {
@@ -371,7 +413,11 @@
       "title": "Authentication cheat sheet",
       "description": "Implementation reminders for passwords, sessions, recovery, and multi-factor authentication.",
       "category": "Security",
-      "tags": ["authentication", "review", "security"],
+      "tags": [
+        "authentication",
+        "review",
+        "security"
+      ],
       "createdAt": 1785400500000,
       "metadata": {
         "seed": {
@@ -386,7 +432,11 @@
       "title": "Attention Is All You Need",
       "description": "The paper page for the transformer architecture, saved as a research reference.",
       "category": "Research",
-      "tags": ["foundations", "machine-learning", "research"],
+      "tags": [
+        "foundations",
+        "machine-learning",
+        "research"
+      ],
       "createdAt": 1785245400000,
       "metadata": {
         "seed": {
@@ -401,7 +451,11 @@
       "title": "asyncio — Asynchronous I/O",
       "description": "The Python standard-library reference for cooperative concurrency and event loops.",
       "category": "Backend",
-      "tags": ["async", "backend", "python"],
+      "tags": [
+        "async",
+        "backend",
+        "python"
+      ],
       "createdAt": 1785147300000,
       "metadata": {
         "seed": {
@@ -416,7 +470,11 @@
       "title": "Pro Git book",
       "description": "A deep but approachable reference for everyday Git workflows and repository internals.",
       "category": "Tooling",
-      "tags": ["git", "tooling", "workflow"],
+      "tags": [
+        "git",
+        "tooling",
+        "workflow"
+      ],
       "createdAt": 1784992800000,
       "metadata": {
         "seed": {
@@ -431,27 +489,16 @@
       "title": "Semantic Versioning 2.0.0",
       "description": "The specification for communicating compatibility through version numbers.",
       "category": "Architecture",
-      "tags": ["release", "tooling", "versioning"],
+      "tags": [
+        "release",
+        "tooling",
+        "versioning"
+      ],
       "createdAt": 1784890800000,
       "metadata": {
         "seed": {
           "source": "grimoire-demo",
           "demoId": "demo-029",
-          "note": null
-        }
-      }
-    },
-    {
-      "url": "https://www.w3.org/TR/wcag-quickref/",
-      "title": "How to meet WCAG quick reference",
-      "description": null,
-      "category": "Design systems",
-      "tags": ["accessibility", "design", "standards"],
-      "createdAt": 1784797200000,
-      "metadata": {
-        "seed": {
-          "source": "grimoire-demo",
-          "demoId": "demo-030",
           "note": null
         }
       }

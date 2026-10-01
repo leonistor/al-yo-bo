@@ -307,20 +307,20 @@ describe('seed fixture', () => {
     const grimoire = resolveSeedDataset('grimoire');
 
     const first = seedFromFile(db, grimoire);
-    expect(first.bookmarksAdded).toBe(26);
+    expect(first.bookmarksAdded).toBe(23);
     expect(first.categoriesCreated).toBe(8);
     expect(first.tagsCreated).toBe(51);
     expect(first.assignments).toBeGreaterThan(0);
 
     const second = seedFromFile(db, grimoire);
     expect(second.bookmarksAdded).toBe(0);
-    expect(second.bookmarksUpdated).toBe(26);
+    expect(second.bookmarksUpdated).toBe(23);
     expect(second.categoriesCreated).toBe(0);
     expect(second.tagsCreated).toBe(0);
 
     const grimoireId = getDatasetByName(db, 'grimoire')!.id;
     const aggregates = getAggregates(db, grimoireId);
-    expect(aggregates.total).toBe(26);
+    expect(aggregates.total).toBe(23);
     expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
   });
 
@@ -328,11 +328,11 @@ describe('seed fixture', () => {
     const db = freshDb();
 
     const report = seedFromFile(db);
-    expect(report.bookmarksAdded).toBe(217);
+    expect(report.bookmarksAdded).toBe(212);
     expect(report.categoriesCreated).toBe(40);
     expect(report.tagsCreated).toBe(1);
-    expect(report.assignments).toBe(118);
-    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(217);
+    expect(report.assignments).toBe(114);
+    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(212);
   });
 
   test('resolves the leo dataset by default and both datasets by name', () => {
@@ -352,7 +352,7 @@ describe('seed fixture', () => {
 
     seedFromFile(db, grimoire);
     const grimoireId = getDatasetByName(db, 'grimoire')!.id;
-    expect(getAggregates(db, grimoireId).total).toBe(26);
+    expect(getAggregates(db, grimoireId).total).toBe(23);
 
     // A stale bookmark outside the dataset proves the reset, not the upsert,
     // produced the post-reset state.
@@ -361,7 +361,7 @@ describe('seed fixture', () => {
       url: 'https://stray.example/only',
       title: 'Stray',
     });
-    expect(getAggregates(db, grimoireId).total).toBe(26);
+    expect(getAggregates(db, grimoireId).total).toBe(23);
     expect(getAggregates(db, db.datasetId).total).toBe(1);
 
     resetSeedData(db);
@@ -371,9 +371,9 @@ describe('seed fixture', () => {
     expect(keywordSearch(db, { q: 'Stray' })).toHaveLength(0);
 
     const report = seedFromFile(db, grimoire);
-    expect(report.bookmarksAdded).toBe(26);
+    expect(report.bookmarksAdded).toBe(23);
     expect(report.bookmarksUpdated).toBe(0);
-    expect(getAggregates(db, grimoireId).total).toBe(26);
+    expect(getAggregates(db, grimoireId).total).toBe(23);
     expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
   });
 });

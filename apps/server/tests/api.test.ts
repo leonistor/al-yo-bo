@@ -144,7 +144,7 @@ describe('bookmark API', () => {
     const response = await app.request('/api/bookmarks');
     expect(response.status).toBe(200);
     const body = (await response.json()) as { total: number; items: unknown[] };
-    expect(body.total).toBe(26);
+    expect(body.total).toBe(23);
     expect(body.items.length).toBe(20);
   });
 
@@ -169,7 +169,7 @@ describe('bookmark API', () => {
       total: number;
       items: { id: string }[];
     };
-    expect(def.total).toBe(26);
+    expect(def.total).toBe(23);
     expect(def.items.some((bookmark) => bookmark.id === invalid.id)).toBe(false);
 
     const onlyInvalid = (await (
@@ -182,7 +182,7 @@ describe('bookmark API', () => {
       total: number;
       items: { id: string }[];
     };
-    expect(all.total).toBe(27);
+    expect(all.total).toBe(24);
     expect(all.items.some((bookmark) => bookmark.id === invalid.id)).toBe(true);
   });
 
@@ -212,7 +212,7 @@ describe('bookmark API', () => {
       items: unknown[];
       pagination: { hasMore: boolean };
     };
-    expect(page1.total).toBe(26);
+    expect(page1.total).toBe(23);
     expect(page1.items.length).toBe(10);
     expect(page1.pagination.hasMore).toBe(true);
 
@@ -220,7 +220,7 @@ describe('bookmark API', () => {
       items: unknown[];
       pagination: { hasMore: boolean };
     };
-    expect(page3.items.length).toBe(6);
+    expect(page3.items.length).toBe(3);
     expect(page3.pagination.hasMore).toBe(false);
   });
 
@@ -290,7 +290,7 @@ describe('bookmark API', () => {
       categories: unknown[];
       tags: unknown[];
     };
-    expect(body.total).toBe(26);
+    expect(body.total).toBe(23);
     expect(body.categories.length).toBe(8);
     expect(body.tags.length).toBe(51);
   });
@@ -476,7 +476,7 @@ describe('reindex API', () => {
     const response = await app.request('/api/reindex', { method: 'POST' });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { ftsRows: number; vectorBackend: string };
-    expect(body.ftsRows).toBe(26);
+    expect(body.ftsRows).toBe(23);
     expect(body.vectorBackend).toBe('memory');
 
     // Keyword search still works over the rebuilt index.
