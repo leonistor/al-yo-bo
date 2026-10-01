@@ -30,7 +30,12 @@ export interface ClassifierClient {
 export interface OllayaConfig {
   baseUrl: string;
   apiKey?: string;
+  /** Per-request fetch timeout; a hung Ollaya daemon must degrade, not hang the worker. */
+  timeoutMs?: number;
 }
+
+/** Default request timeout (ms) when `timeoutMs` is not configured. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 interface OllayaDecideBody {
   model?: string;
@@ -47,11 +52,19 @@ export class OllayaClassifierClient implements ClassifierClient {
       headers.authorization = `Bearer ${this.config.apiKey}`;
     }
 
-    const response = await fetch(`${this.config.baseUrl.replace(/\/$/, '')}/api/decide`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(request),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.config.baseUrl.replace(/\/$/, '')}/api/decide`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // Network failures and timeout aborts land here; rethrow under the same
+      // error message convention so callers skip the job (degraded state §1.5).
+      throw new Error(`Ollaya decide failed: ${describeFetchFailure(error)}`, { cause: error });
+    }
 
     if (!response.ok) {
       throw new Error(`Ollaya decide failed: ${response.status} ${await response.text()}`);
@@ -73,4 +86,12 @@ function normalizeDecideResponse(body: OllayaDecideBody): DecideResult {
     );
   }
   return result;
+}
+
+/** Message for a failed fetch; `AbortSignal.timeout` aborts surface as timeouts. */
+function describeFetchFailure(error: unknown): string {
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return 'request timed out';
+  }
+  return error instanceof Error ? error.message : String(error);
 }
