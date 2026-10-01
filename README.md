@@ -62,6 +62,50 @@ On startup the server reconciles enrichment: bookmarks without scraped content a
 embedded in a background job loop (`docs/ARCHITECTURE.md` §8), so seeded or imported bookmarks get
 their page content and vectors automatically when scraping and embeddings are available.
 
+## Usage
+
+### Importing bookmarks from markdown
+
+The main way to get bookmarks in is a markdown collection file. In the UI, use the **Import** button
+(top bar) and either paste the markdown or upload a file, then **Preview** to see how many bookmarks
+it will parse.
+
+Collection files use headings and bullets:
+
+```md
+## AI dev
+
+- The debugger for AI agents: https://github.com/HoneycombHairDevelopers/Meterbility
+
+### scraping
+
+- Fast scraper: https://example.com/scraper
+```
+
+- `## Heading` (H2) becomes a **section**.
+- `### Heading` (H3) becomes a **category** inside the current section.
+- A bullet with a URL becomes a bookmark; the note text stands in for the title until the page is
+  scraped.
+- A leading `*`/`**`/`***` on a bullet is a personal priority (1–3).
+- YAML frontmatter `tags: [a, b]` attaches existing tags.
+
+**Import is two-phase.** When every heading and tag in the file already exists in your vocabulary,
+the import commits immediately. When the file introduces anything new, the import is **staged**
+instead: no bookmarks are written yet, and the proposed sections/categories/tags appear in the
+**Review queue**. There you can **Accept** or **Reject** each proposal, then **Commit import** (writes
+the bookmarks) or **Discard** (drops the staged batch and its proposals). Rejected names are
+remembered, so re-importing the same file resolves them silently instead of re-proposing them.
+
+### Review queue
+
+The Review queue (left sidebar) has three sections:
+
+- **Proposed vocabulary** — new sections/categories/tags from staged imports; accept, reject, then
+  commit or discard the batch.
+- **Proposed tags** — tags the classifier suggested; approve to allow auto-assignment, or reject.
+- **Below-threshold candidates** — classifier suggestions under the auto-assign threshold; accept to
+  assign them manually.
+
 ### Seed datasets
 
 Seed fixtures live in `packages/db/seeds/datasets/` and `bun run db:seed` loads the dataset named
