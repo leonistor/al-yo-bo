@@ -3,9 +3,24 @@
  * jobs with bounded retries, deduplicated per (bookmark, type). The queue is
  * deliberately in-memory — SQLite holds the durable state that defines what
  * still needs doing, so `reconcileEnrichment` at startup recovers anything a
- * restart dropped. Job types: `scrape` (page → content) and `embed`
- * (content → vector); `classify` joins in M2 via the `onEmbedded` hook.
+ * restart dropped.
+ *
+ * Job types:
+ * - `scrape`    — page → content/metadata/content_hash
+ * - `embed`     — content → vector (OpenRouter + SQLite BLOB)
+ * - `classify`  — content → tag assignments via Ollaya
+ * - `screenshot` — page → image bytes written to `data/screenshots/<uuid>.jpg`
+ *
+ * The screenshot job (2026-10-01 import simplification) is independent of
+ * scrape: it fetches the page itself via the injected `ScreenshotClient`,
+ * stores the buffer under `data/screenshots/`, and records both the local
+ * path and the discovered `og:image` URL on `metadata.image`. A failed
+ * screenshot never invalidates the bookmark — reconciliation retries on the
+ * next start.
  */
+
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { Database } from 'bun:sqlite';
 
@@ -14,7 +29,9 @@ import {
   getBookmarksWithTagsByIds,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
+  listBookmarkIdsMissingScreenshot,
   listEmbeddingModelMismatches,
+  parseBookmarkImage,
   updateBookmark,
   upsertEmbedding,
 } from '@al-yo-bo/db';
@@ -22,10 +39,11 @@ import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { packFloat32, type VectorIndex } from '@al-yo-bo/shared';
 
 import { ScrapeError, type ScrapeFn, type ScrapeResult } from '../scrape.ts';
+import type { ScreenshotClient, ScreenshotResult } from '../screenshot.ts';
 import type { CoreConfig } from '../config.ts';
 import { classifyBookmark, type ClassifyDeps } from './classify.ts';
 
-export type JobType = 'scrape' | 'embed' | 'classify';
+export type JobType = 'scrape' | 'embed' | 'classify' | 'screenshot';
 
 /** Char budget for the composed embed text (~2k tokens, under common model limits). */
 export const EMBED_TEXT_CHAR_LIMIT = 8_000;
@@ -35,6 +53,13 @@ export interface JobDeps {
   vector: VectorIndex;
   embeddings?: EmbeddingClient;
   scrape: ScrapeFn;
+  /**
+   * Absolute path the screenshot job writes image bytes to. Created on demand.
+   * Defaults to `<cwd>/data/screenshots/`.
+   */
+  screenshotsDir?: string;
+  /** Screenshot capture port; absent = screenshot job is a no-op. */
+  screenshot?: ScreenshotClient | null;
   /** Core configuration (embedding model identity, scrape options). */
   config: CoreConfig;
   /** The queue itself, so job handlers can chain the next job type. Optional in workerless contexts. */
@@ -146,6 +171,7 @@ export async function scrapeAndStore(deps: JobDeps, bookmarkId: string): Promise
     status: 'active',
   });
   deps.queue?.enqueue(bookmarkId, 'embed');
+  deps.queue?.enqueue(bookmarkId, 'screenshot');
   return 'scraped';
 }
 
@@ -198,6 +224,62 @@ export async function embedBookmark(deps: JobDeps, bookmarkId: string): Promise<
   return 'embedded';
 }
 
+export type ScreenshotOutcome = 'captured' | 'failed' | 'skipped' | 'missing';
+
+/**
+ * Captures a screenshot (or falls back to `og:image`) and persists the bytes
+ * to `<screenshotsDir>/<bookmarkId>.jpg`. Stores both the local path and the
+ * discovered `og:image` URL under `metadata.image`. Failures are non-fatal:
+ * the bookmark stays; reconciliation retries on the next start.
+ */
+export async function screenshotAndStore(
+  deps: JobDeps,
+  bookmarkId: string,
+): Promise<ScreenshotOutcome> {
+  const bookmark = getBookmarkById(deps.db, bookmarkId);
+  if (!bookmark) {
+    return 'missing';
+  }
+  if (!deps.screenshot) {
+    return 'skipped';
+  }
+
+  const existing = parseBookmarkImage(bookmark.metadata);
+  if (existing.screenshotPath && existing.ogImageUrl) {
+    // Both visuals recorded — nothing to retry until metadata is cleared.
+    return 'skipped';
+  }
+
+  let result: ScreenshotResult | null;
+  try {
+    result = await deps.screenshot.capture(bookmark.url);
+  } catch (error) {
+    console.warn(`[jobs] screenshot ${bookmarkId} capture threw`, error);
+    return 'failed';
+  }
+  if (!result) {
+    return 'failed';
+  }
+
+  const dir = deps.screenshotsDir ?? join(process.cwd(), 'data', 'screenshots');
+  await mkdir(dir, { recursive: true });
+  const filename = `${bookmarkId}.jpg`;
+  const absolutePath = join(dir, filename);
+  await writeFile(absolutePath, result.buffer);
+
+  const ogImageUrl = result.ogImageUrl ?? existing.ogImageUrl ?? null;
+  updateBookmark(deps.db, bookmarkId, {
+    metadata: {
+      ...bookmark.metadata,
+      image: {
+        ogImageUrl,
+        screenshotPath: filename,
+      },
+    },
+  });
+  return 'captured';
+}
+
 /**
  * Starts the sequential worker. One job runs at a time; failures retry with
  * exponential backoff and are logged + dropped after `maxAttempts` (the manual
@@ -237,6 +319,9 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
         },
         id,
       );
+    },
+    screenshot: async (id) => {
+      await screenshotAndStore(deps, id);
     },
   };
 
@@ -336,20 +421,23 @@ export interface ReconcileReport {
   scrape: number;
   embed: number;
   reembed: number;
+  screenshot: number;
 }
 
 /**
  * Startup reconciliation (ARCHITECTURE §8): re-enqueue scrape for never-scraped
  * bookmarks, embed for scraped-but-unembedded bookmarks, and re-embed rows whose
  * stored model differs from the configured one (model changes require a full
- * re-embed pass, §6).
+ * re-embed pass, §6). The screenshot job enqueues for bookmarks without a
+ * screenshot AND without an `og:image` reference (the placeholder fallback).
  */
 export function reconcileEnrichment(
   queue: JobQueue,
   db: Database,
   embeddingsModel?: string,
+  hasScreenshotClient = true,
 ): ReconcileReport {
-  const report: ReconcileReport = { scrape: 0, embed: 0, reembed: 0 };
+  const report: ReconcileReport = { scrape: 0, embed: 0, reembed: 0, screenshot: 0 };
   for (const id of listBookmarkIdsMissingContent(db)) {
     queue.enqueue(id, 'scrape');
     report.scrape += 1;
@@ -362,6 +450,12 @@ export function reconcileEnrichment(
     for (const id of listEmbeddingModelMismatches(db, embeddingsModel)) {
       queue.enqueue(id, 'embed');
       report.reembed += 1;
+    }
+  }
+  if (hasScreenshotClient) {
+    for (const id of listBookmarkIdsMissingScreenshot(db)) {
+      queue.enqueue(id, 'screenshot');
+      report.screenshot += 1;
     }
   }
   return report;

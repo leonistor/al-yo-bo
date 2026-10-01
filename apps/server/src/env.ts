@@ -6,8 +6,8 @@ import type { CoreConfig } from '@al-yo-bo/core';
  * Server-only configuration layered on top of the core config the service layer
  * consumes. `autoAssignThreshold`, `ollaya`, and `scrape` are inherited from
  * `CoreConfig`; `embeddings` widens the core shape with the adapter credentials
- * (OpenRouter), and `qdrant`/`chat` are transport/serving concerns that never
- * reach core.
+ * (OpenRouter), and `qdrant`/`chat`/`extract`/`screenshot` are transport/serving
+ * concerns that never reach core.
  */
 export interface ServerConfig extends CoreConfig {
   port: number;
@@ -31,6 +31,13 @@ export interface ServerConfig extends CoreConfig {
     ollamaUrl: string;
     model?: string;
   };
+  /** Screenshot enrichment (ARCHITECTURE §8). */
+  screenshot: {
+    width: number;
+    height: number;
+    settleMs: number;
+    timeoutMs: number;
+  };
 }
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
@@ -41,6 +48,7 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
 // Anchored to the repo root so `bun run dev` (which runs with the package as cwd)
 // and `bun run db:seed` point at the same SQLite file.
 const DEFAULT_DB_PATH = join(import.meta.dir, '../../../data/bookmarks.db');
+const DEFAULT_SCREENSHOTS_DIR = join(import.meta.dir, '../../../data/screenshots');
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): ServerConfig {
   return {
@@ -79,5 +87,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       // Chat is off until a model is chosen (degrades to a 503, never an error).
       model: env.OLLAMA_CHAT_MODEL || undefined,
     },
+    screenshot: {
+      width: numberFromEnv(env.SCREENSHOT_WIDTH, 1280),
+      height: numberFromEnv(env.SCREENSHOT_HEIGHT, 800),
+      settleMs: numberFromEnv(env.SCREENSHOT_SETTLE_MS, 1_500),
+      timeoutMs: numberFromEnv(env.SCREENSHOT_TIMEOUT_MS, 15_000),
+    },
   };
 }
+
+export const SCREENSHOTS_DIR = DEFAULT_SCREENSHOTS_DIR;

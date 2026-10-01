@@ -500,57 +500,35 @@ describe('chat API', () => {
 });
 
 describe('import API', () => {
-  test('previews, stages new vocabulary, and commits after review', async () => {
+  test('previews and direct-commits with auto-created vocabulary', async () => {
     const { app } = makeApp();
     const markdown = '## dev\n\n- ** Tool: https://example.com/tool\n';
 
     const preview = await app.request('/api/import/preview', {
       method: 'POST',
-      headers: { 'content-type': 'text/plain' },
-      body: markdown,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ markdown }),
     });
     expect(preview.status).toBe(200);
     expect(((await preview.json()) as { parsed: number }).parsed).toBe(1);
 
-    // New section "dev": the import stages instead of committing.
+    // Direct commit: auto-creates the new category and returns the imported bookmarks.
     const imported = await app.request('/api/import?file=test.md', {
       method: 'POST',
-      headers: { 'content-type': 'text/plain' },
-      body: markdown,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ markdown }),
     });
     expect(imported.status).toBe(200);
-    const staged = (await imported.json()) as { staged?: boolean; batchId?: string; added: number };
-    expect(staged.staged).toBe(true);
-    expect(staged.batchId).toBeDefined();
-    expect(staged.added).toBe(0);
-
-    // Accept the proposed section, then commit the batch.
-    const stagedBatches = (await (await app.request('/api/import/staged')).json()) as Array<{
-      id: string;
-      proposals: Array<{ kind: string; name: string; id: string }>;
-    }>;
-    const dev = stagedBatches[0]?.proposals.find((p) => p.kind === 'section' && p.name === 'dev');
-    expect(dev).toBeDefined();
-
-    const accepted = await app.request(`/api/review/vocabulary/section/${dev!.id}/accept`, {
-      method: 'POST',
-    });
-    expect(accepted.status).toBe(204);
-
-    const committed = await app.request(`/api/import/batches/${staged.batchId}/commit`, {
-      method: 'POST',
-    });
-    expect(committed.status).toBe(200);
-    expect(((await committed.json()) as { added: number }).added).toBe(1);
+    const body = (await imported.json()) as { bookmarks: unknown[]; provider: string };
+    expect(body.bookmarks).toHaveLength(1);
+    expect(body.provider).toBe('fallback');
   });
 });
 
 describe('review API', () => {
-  test('returns empty queues when nothing was classified', async () => {
+  test('returns an empty below-threshold list when nothing was classified', async () => {
     const { app } = makeApp();
-    const proposed = await app.request('/api/review/proposed-tags');
     const candidates = await app.request('/api/review/candidates');
-    expect(((await proposed.json()) as unknown[]).length).toBe(0);
     expect(((await candidates.json()) as unknown[]).length).toBe(0);
   });
 });

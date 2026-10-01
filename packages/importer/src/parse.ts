@@ -17,18 +17,12 @@ const FRONTMATTER_LIST_ITEM_RE = /^\s*-\s/;
 const FRONTMATTER_TAGS_RE = /^tags\s*:\s*\[(.*)\]\s*$/;
 
 /**
- * Parses a markdown collection file (see ARCHITECTURE §7 Stage 1):
- *
- * - `## Heading` (H2) opens a category (created on demand at ingest).
- * - `### Heading` (H3) only sets section context; it never creates a category or tag.
- * - A leading `*`/`**`/`***` on a bullet is a personal priority (1–3), not a tag.
- * - Every URL in a bullet becomes a bookmark; the remaining note text stands in for
- *   title/description until the page is scraped.
- * - Fenced code blocks are opaque: their lines are never headings, bullets, or URL sources.
- * - YAML frontmatter `tags: [a, b]` accumulates positionally, so a bookmark never gains
- *   tags declared in a later block. Bare `---` separators between concatenated notes are
- *   not frontmatter unless the first interior non-blank line is a key line.
- * - Structural headings never create tags, and inline-tag syntax is deferred (§11).
+ * Parses a markdown collection file (see ARCHITECTURE §7 Stage 1). The
+ * `## Heading` (H2) is the section, `### Heading` (H3) is the category; when
+ * only an H2 is present, the section name doubles as the catch-all category
+ * (same shape as before). Heading context is collapsed into the single
+ * `ImportedBookmark.category` field — the most specific name wins (H3 if
+ * present, else H2). Fenced code blocks and frontmatter are handled as before.
  */
 export function parseCollection(content: string): ParseResult {
   const bookmarks: ImportedBookmark[] = [];
@@ -38,7 +32,6 @@ export function parseCollection(content: string): ParseResult {
   const lines = content.split(/\r?\n/);
   let skipped = 0;
   let category: string | null = null;
-  let subsection: string | null = null;
   let inFence = false;
   let index = 0;
 
@@ -78,7 +71,7 @@ export function parseCollection(content: string): ParseResult {
 
     const h3 = H3_RE.exec(line);
     if (h3) {
-      subsection = h3[1]?.trim() ?? null;
+      category = h3[1]?.trim() ?? null;
       index += 1;
       continue;
     }
@@ -86,7 +79,6 @@ export function parseCollection(content: string): ParseResult {
     const h2 = H2_RE.exec(line);
     if (h2) {
       category = h2[1]?.trim() ?? null;
-      subsection = null;
       index += 1;
       continue;
     }
@@ -125,7 +117,6 @@ export function parseCollection(content: string): ParseResult {
         title: note || null,
         description: note || null,
         category,
-        subsection,
         priority,
         tags: [...tags],
       });
