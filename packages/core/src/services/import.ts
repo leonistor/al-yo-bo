@@ -8,7 +8,7 @@ import {
   type ExtractionClient,
   type ExtractionResult,
 } from '@al-yo-bo/importer';
-import type { ImportedBookmark } from '@al-yo-bo/shared';
+import type { ImportedBookmark, ImportReport } from '@al-yo-bo/shared';
 
 import type { JobScheduler } from './enrichment.ts';
 
@@ -36,8 +36,17 @@ export interface ImportService {
    * writes — used by the Import page's "Extract" button before commit.
    */
   preview(text: string): Promise<ImportPreview>;
-  /** Direct-commit import: resolves vocabulary, ingests, enqueues enrichment. */
-  import(text: string, datasetId: string, options?: ImportOptions): Promise<ImportPreview>;
+  /**
+   * Commits a user-reviewed (and possibly edited) bookmark list without
+   * re-extracting. Resolves vocabulary (auto-creating missing entries as
+   * active), ingests, and enqueues enrichment for newly added bookmarks.
+   * Returns the `ImportReport` verbatim — callers surface `added`/`updated`.
+   */
+  commit(
+    bookmarks: ImportedBookmark[],
+    datasetId: string,
+    options?: ImportOptions,
+  ): ImportReport;
 }
 
 /**
@@ -88,22 +97,15 @@ export function createImportService(deps: ImportServiceDeps): ImportService {
       };
     },
 
-    async import(text, datasetId, options = {}) {
-      const extraction = await extractBookmarks(text);
-      const parsed = parseCollection(text);
-      const bookmarks = extraction.bookmarks;
+    commit(bookmarks, datasetId, options = {}) {
       const resolution = resolveVocabulary(db, datasetId, bookmarks);
       const report = ingestBookmarks(db, datasetId, bookmarks, resolution, {
         file: options.file,
-        skipped: parsed.skipped,
+        // The caller commits an already-reviewed list; nothing is skipped here.
+        skipped: 0,
       });
       enqueueScrapes(report);
-      return {
-        ...extraction,
-        parsed: parsed.bookmarks.length,
-        skipped: parsed.skipped,
-        bookmarks,
-      };
+      return report;
     },
   };
 }

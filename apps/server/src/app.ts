@@ -14,6 +14,7 @@ import {
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { validator } from 'hono/validator';
+import { z } from 'zod';
 
 import { createChatHandler } from './chat.ts';
 import type { ServerConfig } from './env.ts';
@@ -38,6 +39,35 @@ const jsonBody = validator('json', (value, c) => {
     );
   }
   return value as Record<string, unknown>;
+});
+
+/** Mirrors the `ImportedBookmark` contract the preview returns and the client edits. */
+const importedBookmarkSchema = z.object({
+  url: z.string().min(1),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  category: z.string().nullable(),
+  priority: z.number().nullable(),
+  tags: z.array(z.string()),
+});
+
+const importCommitSchema = z.object({
+  bookmarks: z.array(importedBookmarkSchema).min(1),
+});
+
+/**
+ * Commit-body validator. Returning the parsed object (rather than a bare
+ * `Record<string, unknown>`) keeps the Hono RPC input type precise so
+ * `apps/web` can call `api.api.import.$post({ json: { bookmarks } })`.
+ */
+const importCommit = validator('json', (value) => {
+  const parsed = importCommitSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(
+      '"bookmarks" must be a non-empty array of bookmark objects each with a "url"',
+    );
+  }
+  return parsed.data;
 });
 
 function parseMode(value: string | undefined): SearchMode {
@@ -315,15 +345,13 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .post('/api/import/preview', async (c) => c.json(await core.import.preview(await readImportText(c))))
 
-    .post('/api/import', async (c) =>
-      c.json(
-        await core.import.import(
-          await readImportText(c),
-          c.req.query('datasetId') || core.defaultDatasetId,
-          { file: c.req.query('file') || undefined },
-        ),
-      ),
-    )
+    // Commit the user-reviewed/edited list directly (no re-extraction).
+    .post('/api/import', importCommit, (c) => {
+      const { bookmarks } = c.req.valid('json');
+      const datasetId = c.req.query('datasetId') || core.defaultDatasetId;
+      const file = c.req.query('file') || undefined;
+      return c.json(core.import.commit(bookmarks, datasetId, { file }));
+    })
 
     // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the
     // typed RPC surface above stays clean for apps/web.

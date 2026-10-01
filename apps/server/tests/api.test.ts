@@ -14,6 +14,7 @@ import {
 } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import type {
+  ImportedBookmark,
   RankedCandidate,
   VectorFilter,
   VectorIndex,
@@ -21,7 +22,9 @@ import type {
   VectorUpsert,
 } from '@al-yo-bo/shared';
 
-import { createApp } from '../src/app.ts';
+import { hc } from 'hono/client';
+
+import { createApp, type AppType } from '../src/app.ts';
 import { loadConfig, type ServerConfig } from '../src/env.ts';
 
 /** Deterministic VectorIndex stub: candidates come back in insertion order. */
@@ -119,6 +122,16 @@ function jsonRequest(body: unknown, method = 'POST'): RequestInit {
     body: JSON.stringify(body),
   };
 }
+
+/**
+ * Compile-time guard for the frozen RPC contract `apps/web` builds against:
+ * `POST /api/import` must accept `{ bookmarks: ImportedBookmark[] }` and return
+ * `ImportReport`. Referenced only for its types — never called.
+ */
+function assertImportRpcContract(client: ReturnType<typeof hc<AppType>>) {
+  return client.api.import.$post({ json: { bookmarks: [] } });
+}
+void assertImportRpcContract;
 
 describe('bookmark API', () => {
   let app: ReturnType<typeof createApp>;
@@ -500,7 +513,7 @@ describe('chat API', () => {
 });
 
 describe('import API', () => {
-  test('previews and direct-commits with auto-created vocabulary', async () => {
+  test('previews, then commits the reviewed list with auto-created vocabulary', async () => {
     const { app } = makeApp();
     const markdown = '## dev\n\n- ** Tool: https://example.com/tool\n';
 
@@ -510,18 +523,42 @@ describe('import API', () => {
       body: JSON.stringify({ markdown }),
     });
     expect(preview.status).toBe(200);
-    expect(((await preview.json()) as { parsed: number }).parsed).toBe(1);
+    const previewBody = (await preview.json()) as {
+      parsed: number;
+      bookmarks: ImportedBookmark[];
+    };
+    expect(previewBody.parsed).toBe(1);
 
-    // Direct commit: auto-creates the new category and returns the imported bookmarks.
-    const imported = await app.request('/api/import?file=test.md', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ markdown }),
-    });
+    // Commit the (possibly edited) preview list — no markdown, no re-extraction.
+    const imported = await app.request(
+      '/api/import?file=test.md',
+      jsonRequest({ bookmarks: previewBody.bookmarks }),
+    );
     expect(imported.status).toBe(200);
-    const body = (await imported.json()) as { bookmarks: unknown[]; provider: string };
+    const body = (await imported.json()) as {
+      bookmarks: unknown[];
+      parsed: number;
+      added: number;
+    };
     expect(body.bookmarks).toHaveLength(1);
-    expect(body.provider).toBe('fallback');
+    expect(body.parsed).toBe(1);
+    expect(body.added).toBe(1);
+  });
+
+  test('rejects a commit body without a valid bookmark array', async () => {
+    const { app } = makeApp();
+
+    const missing = await app.request('/api/import', jsonRequest({}));
+    expect(missing.status).toBe(400);
+
+    const empty = await app.request('/api/import', jsonRequest({ bookmarks: [] }));
+    expect(empty.status).toBe(400);
+
+    const badEntry = await app.request(
+      '/api/import',
+      jsonRequest({ bookmarks: [{ title: 'no url' }] }),
+    );
+    expect(badEntry.status).toBe(400);
   });
 });
 

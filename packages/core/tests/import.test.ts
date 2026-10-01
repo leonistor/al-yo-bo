@@ -67,15 +67,17 @@ describe('ImportService', () => {
     expect(preview.bookmarks).toHaveLength(2);
   });
 
-  test('an import auto-creates missing vocabulary and enqueues scrape + screenshot', async () => {
+  test('commit auto-creates missing vocabulary and enqueues scrape + screenshot', async () => {
     const db = makeDb();
     const jobs = recordingJobs();
     const service = createImportService({ db, jobs, extract: null });
 
-    const report = await service.import(MARKDOWN, db.datasetId, { file: 'collection.md' });
+    const { bookmarks } = await service.preview(MARKDOWN);
+    const report = service.commit(bookmarks, db.datasetId, { file: 'collection.md' });
 
     expect(report.bookmarks).toHaveLength(2);
-    expect(report.provider).toBe('fallback');
+    expect(report.parsed).toBe(2);
+    expect(report.added).toBe(2);
     const category = db
       .query<{ id: Uint8Array }, [string]>('SELECT id FROM categories WHERE name = ?')
       .get('Dev');
@@ -87,24 +89,26 @@ describe('ImportService', () => {
     expect(screenshotCalls).toHaveLength(2);
   });
 
-  test('a re-import merges by URL (no new bookmark ids)', async () => {
+  test('a re-commit merges by URL (no new bookmark ids)', async () => {
     const db = makeDb();
     const jobs = recordingJobs();
     const service = createImportService({ db, jobs, extract: null });
 
-    await service.import(MARKDOWN, db.datasetId);
+    const { bookmarks } = await service.preview(MARKDOWN);
+    service.commit(bookmarks, db.datasetId);
     jobs.calls.length = 0;
     const firstIds = listBookmarks(db, { datasetId: db.datasetId }).items.map(
       (bookmark) => bookmark.id,
     );
 
-    const second = await service.import(MARKDOWN, db.datasetId);
+    const second = service.commit(bookmarks, db.datasetId);
 
     const secondIds = listBookmarks(db, { datasetId: db.datasetId }).items.map(
       (bookmark) => bookmark.id,
     );
     expect(secondIds.toSorted()).toEqual(firstIds.toSorted());
     expect(second.bookmarks).toHaveLength(2);
-    expect(jobs.calls).toEqual([]); // re-import: no scrape re-enqueue
+    expect(second.updated).toBe(2);
+    expect(jobs.calls).toEqual([]); // re-commit: no scrape re-enqueue
   });
 });
