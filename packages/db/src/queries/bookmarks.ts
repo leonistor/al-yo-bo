@@ -223,6 +223,24 @@ export function countBookmarks(db: Database): number {
 }
 
 /**
+ * Batched id → status lookup, so callers filtering a candidate list (e.g. semantic
+ * search) issue one query instead of one per id. Unknown ids are absent from the map.
+ */
+export function getBookmarkStatuses(db: Database, ids: string[]): Map<string, BookmarkStatus> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) {
+    return new Map();
+  }
+  const placeholders = unique.map(() => '?').join(', ');
+  const rows = db
+    .query<{ id: Uint8Array; status: string }, Uint8Array[]>(
+      `SELECT id, status FROM bookmarks WHERE id IN (${placeholders})`,
+    )
+    .all(...unique.map(uuidToBytes));
+  return new Map(rows.map((row) => [bytesToUuid(row.id), row.status as BookmarkStatus]));
+}
+
+/**
  * Startup-reconciliation input (ARCHITECTURE §8): bookmarks that have never been
  * successfully scraped. A failed scrape leaves `scraped_at` NULL, so it is
  * retried on the next server start.

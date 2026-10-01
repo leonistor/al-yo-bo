@@ -12,6 +12,7 @@ import {
   deleteCategory,
   getAggregates,
   getBookmarkById,
+  getBookmarkStatuses,
   getBookmarkTags,
   getCategoryById,
   keywordSearch,
@@ -147,6 +148,22 @@ describe('bookmark status', () => {
     const aggregates = getAggregates(db);
     expect(aggregates.total).toBe(2);
     expect(aggregates.invalidCount).toBe(1);
+  });
+
+  test('getBookmarkStatuses batches id → status lookups', () => {
+    const active = createBookmark(db, { url: 'https://bs-active.test' });
+    const invalid = createBookmark(db, {
+      url: 'https://bs-invalid.test',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+    const unknown = '00000000-0000-0000-0000-000000000000';
+
+    const statuses = getBookmarkStatuses(db, [active.id, invalid.id, unknown]);
+    expect(statuses.get(active.id)).toBe('active');
+    expect(statuses.get(invalid.id)).toBe('invalid');
+    expect(statuses.has(unknown)).toBe(false);
+    expect(getBookmarkStatuses(db, []).size).toBe(0);
   });
 });
 
