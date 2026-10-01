@@ -1,5 +1,8 @@
 import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   createBookmark,
@@ -18,11 +21,13 @@ import {
   embedBookmark,
   reconcileEnrichment,
   scrapeAndStore,
+  screenshotAndStore,
   startJobQueue,
   type JobDeps,
   type JobQueue,
 } from '../src/enrichment/jobs.ts';
 import { makeScraper, ScrapeError, sha256Hex, type ScrapeFn } from '../src/scrape.ts';
+import type { ScreenshotClient } from '../src/screenshot.ts';
 import { testConfig } from './support.ts';
 
 /** VectorIndex stub that records upserts and answers searches in insertion order. */
@@ -96,7 +101,13 @@ function makeDb(): Database & { datasetId: string } {
 
 function makeDeps(
   db: Database,
-  overrides: { scrape?: ScrapeFn; embeddings?: typeof stubEmbeddings; config?: CoreConfig } = {},
+  overrides: {
+    scrape?: ScrapeFn;
+    embeddings?: typeof stubEmbeddings;
+    config?: CoreConfig;
+    screenshot?: ScreenshotClient;
+    screenshotsDir?: string;
+  } = {},
 ): JobDeps & { vector: RecordingVector; queue: ReturnType<typeof recordingQueue> } {
   const vector = new RecordingVector();
   const queue = recordingQueue();
@@ -111,6 +122,8 @@ function makeDeps(
         throw new ScrapeError('no scraper configured in this test');
       }),
     embeddings: overrides.embeddings ?? stubEmbeddings,
+    screenshot: overrides.screenshot,
+    screenshotsDir: overrides.screenshotsDir,
   };
 }
 
@@ -400,6 +413,90 @@ describe('scrapeAndStore', () => {
     const bookmark = getBookmarkById(db, id)!;
     expect(bookmark.status).toBe('active');
     expect(bookmark.scrapeAttempts).toBe(0);
+  });
+});
+
+describe('screenshotAndStore', () => {
+  test('writes the artifact path and og:image into metadata.image', async () => {
+    const db = makeDb();
+    const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-shot-'));
+    try {
+      const { id } = createBookmark(db, {
+        datasetId: db.datasetId,
+        url: 'https://example.com/og',
+      });
+      const buffer = Buffer.from('jpeg-bytes');
+      const deps = makeDeps(db, {
+        screenshotsDir: dir,
+        screenshot: {
+          async capture() {
+            return { buffer, ogImageUrl: 'https://cdn.example.com/og.png' };
+          },
+        },
+      });
+
+      expect(await screenshotAndStore(deps, id)).toBe('captured');
+
+      const bookmark = getBookmarkById(db, id)!;
+      expect(bookmark.metadata?.image).toEqual({
+        ogImageUrl: 'https://cdn.example.com/og.png',
+        screenshotPath: `${id}.jpg`,
+      });
+      expect(await readFile(join(dir, `${id}.jpg`))).toEqual(buffer);
+      expect(bookmark.status).toBe('active');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a capture throw does not invalidate the bookmark', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/broken',
+    });
+    const deps = makeDeps(db, {
+      screenshot: {
+        async capture() {
+          throw new Error('webview exploded');
+        },
+      },
+    });
+
+    expect(await screenshotAndStore(deps, id)).toBe('failed');
+    const bookmark = getBookmarkById(db, id)!;
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
+    expect(bookmark.metadata?.image).toBeUndefined();
+  });
+
+  test('a null capture result is a failure, not an invalidation', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/null-shot',
+    });
+    const deps = makeDeps(db, {
+      screenshot: {
+        async capture() {
+          return null;
+        },
+      },
+    });
+
+    expect(await screenshotAndStore(deps, id)).toBe('failed');
+    expect(getBookmarkById(db, id)!.status).toBe('active');
+  });
+
+  test('is a no-op without a screenshot client', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/skip-shot',
+    });
+
+    expect(await screenshotAndStore(makeDeps(db), id)).toBe('skipped');
+    expect(getBookmarkById(db, id)!.metadata?.image).toBeUndefined();
   });
 });
 

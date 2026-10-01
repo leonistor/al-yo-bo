@@ -29,6 +29,9 @@ Requires [Bun](https://bun.com). For page scraping, also install the
 [html-to-markdown CLI](https://github.com/xberg-io/html-to-markdown) (e.g. `brew install html-to-markdown`)
 — without it bookmarks still save, but page content is never fetched.
 
+Imported bookmarks also get a screenshot. macOS captures it with `Bun.WebView` (nothing to
+install); on Linux, install the pinned headless Chrome once with `bun run chrome:install`.
+
 Bun auto-loads a root `.env` file — copy `.env.example` and uncomment what you need (see
 `.env.example` for the full list of optional variables).
 

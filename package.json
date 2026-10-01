@@ -17,7 +17,8 @@
     "db:seed": "bun run packages/db/src/seed.ts",
     "db:clear": "bun run packages/db/src/clear-dataset.ts",
     "qdrant:install": "bash scripts/qdrant/install.sh",
-    "qdrant:start": ".tools/qdrant/qdrant --config-path config/qdrant.yaml"
+    "qdrant:start": ".tools/qdrant/qdrant --config-path config/qdrant.yaml",
+    "chrome:install": "bash scripts/chrome/install.sh"
   },
   "devDependencies": {
     "@types/bun": "latest",
