@@ -9,8 +9,10 @@ about them.
 - Chat with an AI assistant to search and get suggestions, without losing your place in the UI.
 - Import bookmarks from markdown collection files.
 
-> **Status:** early implementation. The architecture, data model, and design are decided; the Bun
-> workspace, database, search, importer, server API, and web UI are in place.
+> **Status:** MVP complete. Capture, markdown import, scrape + embed enrichment (background job
+> loop), keyword/semantic/hybrid search, Ollaya classification with a human review queue, and
+> Ollama-backed chat are implemented. Qdrant serving, OpenWorkflow durability, and OpenRouter chat
+> are the documented next steps (see `docs/ARCHITECTURE.md` §11).
 
 ## Documentation
 
