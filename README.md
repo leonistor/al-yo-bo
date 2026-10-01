@@ -10,9 +10,9 @@ about them.
 - Import bookmarks from markdown collection files.
 
 > **Status:** MVP complete. Capture, markdown import, scrape + embed enrichment (background job
-> loop), keyword/semantic/hybrid search, Ollaya classification with a human review queue, and
-> Ollama-backed chat are implemented. Qdrant serving, OpenWorkflow durability, and OpenRouter chat
-> are the documented next steps (see `docs/ARCHITECTURE.md` §11).
+> loop), keyword/semantic/hybrid search, Qdrant-backed semantic serving, Ollaya classification with
+> a human review queue, and Ollama-backed chat are implemented. OpenRouter chat for production is
+> the remaining next step (see `docs/ARCHITECTURE.md` §2).
 
 ## Documentation
 

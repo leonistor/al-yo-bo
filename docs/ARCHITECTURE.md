@@ -41,7 +41,7 @@ depends on it.
 | Embeddings      | **OpenRouter** + **SQLite BLOBs**    | durable vector copy in the DB file; query text embedded at request time                  | [openrouter.com](https://openrouter.com)                                                             |
 | Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
 | Search          | **SQLite FTS5** + **RRF fusion**     | keyword (FTS5) + semantic (Qdrant/KNN), fused app-side                                   | [sqlite.org](https://sqlite.org)                                                                     |
-| Background jobs | **In-process job loop** (Bun)         | sequential, idempotent jobs with bounded retries; OpenWorkflow deferred (§8, §11)        | [openworkflow.dev](https://openworkflow.dev)                                                         |
+| Background jobs | **In-process job loop** (Bun)         | sequential, idempotent jobs with bounded retries (§8)                                     |                                                                                                      |
 | Configuration   | **env**                              |                                                                                          | [bun.com/docs/runtime/environment-variables](https://bun.com/docs/runtime/environment-variables)     |
 | Deployment      | **shell scripts**                    | a `nohup bun run server.ts` on the server, shell script to copy and unpack a dist archive |                                                                                                      |
 
@@ -408,7 +408,7 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 
 ## 8. Background jobs
 
-**Decision (MVP): jobs run on a minimal in-process loop inside the Bun server, not on OpenWorkflow.**
+**Decision: jobs run on a minimal in-process loop inside the Bun server.**
 The loop is sequential (one job at a time), deduplicates per `(bookmark, type)` so at most one job
 of each type is in flight per bookmark, and retries failures with bounded exponential backoff.
 Jobs are idempotent, and SQLite holds the durable state that defines what still needs doing
@@ -416,7 +416,7 @@ Jobs are idempotent, and SQLite holds the durable state that defines what still 
 itself is deliberately in-memory: on startup a **reconciliation pass** re-enqueues scrape for
 bookmarks without scraped content and embed for bookmarks without embeddings, which recovers
 anything a restart dropped. Failures after the retry cap are logged and dropped; the manual
-re-scrape endpoint re-enqueues. The trigger to adopt OpenWorkflow is in §11.
+re-scrape endpoint re-enqueues. The trigger to re-evaluate the job architecture is in §11.
 
 Job types:
 
@@ -495,5 +495,5 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
-| In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then adopt OpenWorkflow as originally planned.                                                                                                              |
+| In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then re-evaluate the job architecture.                                                                                                              |
 | Web bundler (§2)                 | Bun's bundler applies plugins (Tailwind/shadcn) in its production CLI build and the fullstack API stabilizes; then re-evaluate dropping Vite for a fully Bun-native build.            |
