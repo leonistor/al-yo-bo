@@ -22,7 +22,12 @@ export interface OpenRouterEmbeddingsConfig {
   /** Model id, e.g. `openai/text-embedding-3-small`. Fixes the vector dimensions. */
   model: string;
   baseUrl?: string;
+  /** Per-request fetch timeout; a hung OpenRouter must degrade, not hang the worker. */
+  timeoutMs?: number;
 }
+
+/** Default request timeout (ms) when `timeoutMs` is not configured. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 interface OpenAiEmbeddingsBody {
   data?: Array<{ index?: number; embedding?: number[] }>;
@@ -38,14 +43,24 @@ export class OpenRouterEmbeddings implements EmbeddingClient {
       return { vectors: [], dims: 0, model: this.config.model };
     }
 
-    const response = await fetch(`${this.baseUrl()}/embeddings`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({ model: this.config.model, input: texts }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl()}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ model: this.config.model, input: texts }),
+        signal: AbortSignal.timeout(this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // Network failures and timeout aborts land here; rethrow under the same
+      // error message convention so callers degrade to keyword-only search.
+      throw new Error(`OpenRouter embeddings failed: ${describeFetchFailure(error)}`, {
+        cause: error,
+      });
+    }
 
     const body = (await response.json().catch(() => null)) as OpenAiEmbeddingsBody | null;
     if (!response.ok) {
@@ -78,4 +93,12 @@ export class OpenRouterEmbeddings implements EmbeddingClient {
   private baseUrl(): string {
     return (this.config.baseUrl ?? 'https://openrouter.ai/api/v1').replace(/\/$/, '');
   }
+}
+
+/** Message for a failed fetch; `AbortSignal.timeout` aborts surface as timeouts. */
+function describeFetchFailure(error: unknown): string {
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return 'request timed out';
+  }
+  return error instanceof Error ? error.message : String(error);
 }
