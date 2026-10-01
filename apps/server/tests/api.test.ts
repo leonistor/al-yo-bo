@@ -21,7 +21,6 @@ import type {
   VectorPayloadPatch,
   VectorUpsert,
 } from '@al-yo-bo/shared';
-
 import { hc } from 'hono/client';
 
 import { createApp, type AppType } from '../src/app.ts';
@@ -282,6 +281,14 @@ describe('bookmark API', () => {
       method: 'DELETE',
     });
     expect(removed.status).toBe(204);
+  });
+
+  test('rejects a non-UUID tag id on tag removal with a 404', async () => {
+    const response = await app.request(
+      '/api/bookmarks/00000000-0000-0000-0000-000000000000/tags/not-a-uuid',
+      { method: 'DELETE' },
+    );
+    expect(response.status).toBe(404);
   });
 
   test('aggregates report the full library', async () => {
@@ -559,6 +566,26 @@ describe('import API', () => {
       jsonRequest({ bookmarks: [{ title: 'no url' }] }),
     );
     expect(badEntry.status).toBe(400);
+  });
+
+  test('rejects a non-UUID datasetId query param with a 400', async () => {
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/import?datasetId=not-a-uuid',
+      jsonRequest({
+        bookmarks: [
+          {
+            url: 'https://example.com/x',
+            title: null,
+            description: null,
+            category: null,
+            priority: null,
+            tags: [],
+          },
+        ],
+      }),
+    );
+    expect(response.status).toBe(400);
   });
 });
 

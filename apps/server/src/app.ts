@@ -120,11 +120,13 @@ function optionalId(body: Record<string, unknown>, field: string): string | null
 }
 
 /**
- * Validates an `:id` path parameter before it reaches core: non-UUID strings
- * would otherwise surface as a 500 from deep inside the UUID codec.
+ * Validates an `:id`-style path parameter before it reaches core: non-UUID
+ * strings would otherwise surface as a 500 from deep inside the UUID codec.
+ * Invalid (not just unknown) ids map to NotFoundError, matching neighboring
+ * routes so a malformed id cannot distinguish "missing" from "malformed".
  */
-function pathId(c: Context, message: string): string {
-  const id = c.req.param('id') ?? '';
+function pathId(c: Context, message: string, param = 'id'): string {
+  const id = c.req.param(param) ?? '';
   if (!isUuid(id)) {
     throw new NotFoundError(message);
   }
@@ -231,7 +233,7 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .delete('/api/bookmarks/:id/tags/:tagId', async (c) => {
       const bookmarkId = pathId(c, 'Bookmark not found');
-      const tagId = c.req.param('tagId');
+      const tagId = pathId(c, 'Tag not found', 'tagId');
       await core.bookmarks.removeTag(bookmarkId, tagId);
       return c.body(null, 204);
     })
@@ -343,12 +345,19 @@ export function createApp(core: Core, config: ServerConfig) {
       return c.json(await core.review.acceptCandidate(bookmarkId, tagId));
     })
 
-    .post('/api/import/preview', async (c) => c.json(await core.import.preview(await readImportText(c))))
+    .post('/api/import/preview', async (c) =>
+      c.json(await core.import.preview(await readImportText(c))),
+    )
 
     // Commit the user-reviewed/edited list directly (no re-extraction).
     .post('/api/import', importCommit, (c) => {
       const { bookmarks } = c.req.valid('json');
-      const datasetId = c.req.query('datasetId') || core.defaultDatasetId;
+      const datasetIdParam = c.req.query('datasetId');
+      // A non-UUID datasetId would 500 inside the UUID codec; fail as 400 first.
+      if (datasetIdParam !== undefined && !isUuid(datasetIdParam)) {
+        throw new ValidationError('"datasetId" must be a valid UUID');
+      }
+      const datasetId = datasetIdParam || core.defaultDatasetId;
       const file = c.req.query('file') || undefined;
       return c.json(core.import.commit(bookmarks, datasetId, { file }));
     })

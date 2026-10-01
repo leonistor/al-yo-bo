@@ -1,6 +1,4 @@
-import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OllayaClassifierClient } from '@al-yo-bo/classifier';
-import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import {
   createCore,
   createVectorProvider,
@@ -9,6 +7,8 @@ import {
   startJobQueue,
   type JobScheduler,
 } from '@al-yo-bo/core';
+import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono, type Context } from 'hono';
 import { serveStatic } from 'hono/bun';
 
@@ -129,12 +129,10 @@ console.log(`al-yo-bo server listening on http://${config.host}:${config.port}`)
 console.log(
   `[vector] backend: ${vector.backend}${embeddings ? `, query embeddings: ${config.embeddings.model}` : ', query embeddings: off'}`,
 );
-console.log(
-  `[extract] provider: ${extractClient ? 'llm' : 'fallback (deterministic parser)'}`,
-);
-console.log(
-  `[screenshot] client: ${screenshotClient ? 'Bun.WebView + og:image fallback' : 'disabled'}`,
-);
+console.log(`[extract] provider: ${extractClient ? 'llm' : 'fallback (deterministic parser)'}`);
+// compositeScreenshotClient always returns a client (primary + fallback), so
+// there is no "disabled" state to report — log the actual composition.
+console.log('[screenshot] capture: Bun.WebView primary, og:image fallback');
 if (
   reconciliation.scrape +
     reconciliation.embed +
