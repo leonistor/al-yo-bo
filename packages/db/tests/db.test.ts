@@ -1,4 +1,7 @@
 import { Database } from 'bun:sqlite';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { bytesToUuid, newIdBytes, uuidToBytes } from '@al-yo-bo/shared';
@@ -24,6 +27,7 @@ import {
   listBookmarks,
   DEFAULT_SEED_PATH,
   listEmbeddingModelMismatches,
+  migrate,
   openDatabase,
   resetSeedData,
   resolveSeedDataset,
@@ -375,5 +379,88 @@ describe('seed fixture', () => {
     expect(report.bookmarksUpdated).toBe(0);
     expect(getAggregates(db, grimoireId).total).toBe(23);
     expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('keyword search snippets', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('a content-only match returns a snippet drawn from content', () => {
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/content-snippet',
+      title: 'Totally Unrelated Title',
+      content: 'The quick brown fox jumps over the lazy dog and drinks from the river bank',
+    });
+
+    const [hit] = keywordSearch(db, { q: 'river' });
+    expect(hit?.snippet).toContain('river');
+    expect(hit?.snippet).toContain('[river]');
+  });
+
+  test('a title-only match falls back to the title', () => {
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/title-fallback',
+      title: 'Rust async guide',
+    });
+
+    const [hit] = keywordSearch(db, { q: 'async' });
+    expect(hit?.snippet).toBe('Rust async guide');
+  });
+});
+
+describe('orphan evidence cleanup migration', () => {
+  test('0005 deletes bookmark_tags and classification_results rows pointing at dropped tags', () => {
+    // Apply only the migrations that precede 0005, then plant orphan evidence
+    // rows the way 0004 left them (FKs disabled while it dropped rejected tags).
+    const migrationsDir = join(import.meta.dir, '../migrations');
+    const preDir = mkdtempSync(join(tmpdir(), 'al-yo-bo-migrations-'));
+    for (const file of readdirSync(migrationsDir).filter(
+      (f) => f.endsWith('.sql') && f < '0005_',
+    )) {
+      writeFileSync(join(preDir, file), readFileSync(join(migrationsDir, file)));
+    }
+
+    const db = openDatabase(':memory:');
+    migrate(db, preDir);
+
+    const datasetId = createDataset(db, 'orphans').id;
+    const bookmark = createBookmark(db, { datasetId, url: 'https://example.com/orphan' });
+    const tag = createTag(db, { datasetId, name: 'survivor' });
+    const runId = newIdBytes();
+    db.query('INSERT INTO classification_runs (id, bookmark_id, classifier) VALUES (?, ?, ?)').run(
+      runId,
+      uuidToBytes(bookmark.id),
+      'test',
+    );
+
+    const orphanTagId = newIdBytes();
+    // PRAGMA foreign_keys is a no-op inside a transaction (see src/migrations.ts),
+    // so the orphan fixtures are planted with bare statements, not wrapped.
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)')
+      .run(newIdBytes(), uuidToBytes(bookmark.id), orphanTagId, 'user');
+    db.query(
+      'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
+    ).run(newIdBytes(), runId, orphanTagId, 0.9);
+    // Valid rows sharing the same tables must survive the cleanup.
+    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)')
+      .run(newIdBytes(), uuidToBytes(bookmark.id), uuidToBytes(tag.id), 'user');
+    db.query(
+      'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
+    ).run(newIdBytes(), runId, uuidToBytes(tag.id), 0.5);
+    db.exec('PRAGMA foreign_keys = ON');
+
+    const applied = setupDatabase(db);
+    expect(applied).toContain('0005_orphan_evidence_cleanup.sql');
+
+    expect(db.query('SELECT COUNT(*) AS count FROM bookmark_tags').get()).toEqual({ count: 1 });
+    expect(db.query('SELECT COUNT(*) AS count FROM classification_results').get()).toEqual({
+      count: 1,
+    });
   });
 });

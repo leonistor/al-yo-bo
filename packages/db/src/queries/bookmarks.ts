@@ -407,7 +407,11 @@ export function keywordSearch(db: Database, params: KeywordSearchParams): Ranked
 
   const rows = db
     .query<{ id: Uint8Array; score: number; snippet: string }, SQLQueryBindings[]>(
-      `SELECT b.id AS id, bm25(bookmark_fts) AS score, snippet(bookmark_fts, 3, '[', ']', '…', 12) AS snippet
+      // FTS5 column 4 is `content` (bookmark_id, url, title, description,
+      // content). snippet() returns '' when the match is only in another
+      // column (e.g. title), so fall back to the title for display.
+      `SELECT b.id AS id, bm25(bookmark_fts) AS score,
+              COALESCE(NULLIF(snippet(bookmark_fts, 4, '[', ']', '…', 12), ''), b.title) AS snippet
          FROM bookmark_fts
          JOIN bookmarks b ON b.id = bookmark_fts.bookmark_id
         WHERE ${where.join(' AND ')}
