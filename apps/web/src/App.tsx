@@ -1,12 +1,11 @@
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
-  Aggregates,
   BookmarkListStatus,
   BookmarkSort,
   BookmarkWithTags,
   Category,
   ReviewCandidate,
   SearchMode,
-  SearchResponse,
   Section,
   Tag,
 } from '@al-yo-bo/shared';
@@ -54,11 +53,20 @@ import {
   fetchTags,
 } from '@/lib/client';
 import { navigate, useRoute } from '@/lib/router';
+import { queryKeys } from '@/lib/queryKeys';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
 
 const PAGE_SIZE = 20;
 type View = 'library' | 'review';
+
+// Stable empty fallbacks: passing a fresh [] as a prop would defeat prop-identity
+// memoization in the list components on every render.
+const NO_ITEMS: BookmarkWithTags[] = [];
+const NO_CATEGORIES: Category[] = [];
+const NO_SECTIONS: Section[] = [];
+const NO_TAGS: Tag[] = [];
+const NO_CANDIDATES: ReviewCandidate[] = [];
 
 /** Chat ships assistant-ui + the AI SDK; keep both out of the initial bundle. */
 const ChatPanel = lazy(() =>
@@ -101,13 +109,6 @@ export function App() {
   const [layout, setLayout] = useLayout();
   const [theme, setTheme] = useTheme();
 
-  const [aggregates, setAggregates] = useState<Aggregates | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [bookmarks, setBookmarks] = useState<SearchResponse | null>(null);
-  const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BookmarkWithTags | null>(null);
   const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
 
@@ -121,6 +122,8 @@ export function App() {
 
   const isTablet = useMediaQuery('(min-width: 768px)');
   const isDesktop = useMediaQuery('(min-width: 1024px)');
+
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -157,72 +160,184 @@ export function App() {
     listScrollRef.current?.scrollTo({ top: 0 });
   }, [page]);
 
-  const refreshMeta = useCallback(async () => {
-    try {
-      const [aggregateData, categoryData, sectionData, tagData, candidateData] = await Promise.all([
-        fetchAggregates(),
-        fetchCategories(),
-        fetchSections(),
-        fetchTags(),
-        fetchReviewCandidates(),
-      ]);
-      setAggregates(aggregateData);
-      setCategories(categoryData);
-      setSections(sectionData);
-      setTags(tagData);
-      setCandidates(candidateData);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load data');
+  const bookmarkParams = {
+    q: searchQuery || undefined,
+    mode,
+    categoryId: categoryId ?? undefined,
+    tagId: tagId ?? undefined,
+    status,
+    sort,
+    direction,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
+
+  // keepPreviousData shows the outgoing page while the next one loads, so
+  // pagination doesn't flash a skeleton list; stale responses can never
+  // overwrite a newer one because each param set is its own cache entry.
+  const bookmarksQuery = useQuery({
+    queryKey: queryKeys.bookmarks.list(bookmarkParams),
+    queryFn: () => fetchBookmarks(bookmarkParams),
+    placeholderData: keepPreviousData,
+  });
+
+  const aggregatesQuery = useQuery({
+    queryKey: queryKeys.aggregates,
+    queryFn: fetchAggregates,
+  });
+  const categoriesQuery = useQuery({
+    queryKey: queryKeys.categories,
+    queryFn: fetchCategories,
+  });
+  const sectionsQuery = useQuery({
+    queryKey: queryKeys.sections,
+    queryFn: fetchSections,
+  });
+  const tagsQuery = useQuery({
+    queryKey: queryKeys.tags,
+    queryFn: fetchTags,
+  });
+  const candidatesQuery = useQuery({
+    queryKey: queryKeys.candidates,
+    queryFn: fetchReviewCandidates,
+  });
+
+  const aggregates = aggregatesQuery.data ?? null;
+  const categories = categoriesQuery.data ?? NO_CATEGORIES;
+  const sections = sectionsQuery.data ?? NO_SECTIONS;
+  const tags = tagsQuery.data ?? NO_TAGS;
+  const candidates = candidatesQuery.data ?? NO_CANDIDATES;
+
+  // Generic refresh (toolbar button, new bookmark created): list + counts.
+  const reload = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+  }, [queryClient]);
+
+  // Detail dialog edits (tag add/remove, save, scrape) touch the list and counts.
+  const onDetailChanged = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+  }, [queryClient]);
+
+  // Deletes also remove a bookmark's review candidates and its tag aggregates.
+  const invalidateAfterDelete = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.candidates });
+  }, [queryClient]);
+
+  // Accepting a candidate assigns the tag and consumes the suggestion.
+  const onAccept = useCallback(
+    async (candidate: ReviewCandidate) => {
+      try {
+        await acceptCandidate(candidate.bookmarkId, candidate.tagId);
+        toast.success('Candidate accepted');
+        void queryClient.invalidateQueries({ queryKey: queryKeys.candidates });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to accept candidate');
+      }
+    },
+    [queryClient],
+  );
+
+  // Vocabulary edits change tag/category/section data; status flips (e.g. a tag
+  // going inactive) also affect bookmark lists and aggregates.
+  const onVocabChanged = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sections });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+  }, [queryClient]);
+
+  // An import can create bookmarks, categories, sections, and tags at once.
+  const onImportCommitted = useCallback(() => {
+    setView('library');
+    void queryClient.invalidateQueries();
+  }, [queryClient]);
+
+  const openAdd = useCallback(() => setAddOpen(true), []);
+  const openNav = useCallback(() => setNavOpen(true), []);
+  const closeNav = useCallback(() => setNavOpen(false), []);
+  const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
+  const goImport = useCallback(() => navigate('import'), []);
+  const openVocab = useCallback(() => setVocabOpen(true), []);
+
+  const onModeChange = useCallback((next: SearchMode) => {
+    setMode(next);
+    setPage(0);
+  }, []);
+
+  const onSelectCategory = useCallback((id: string | null) => {
+    setCategoryId(id);
+    setPage(0);
+  }, []);
+
+  const onSelectTag = useCallback((id: string | null) => {
+    setTagId(id);
+    setPage(0);
+  }, []);
+
+  const onSelectView = useCallback((next: View) => {
+    setView(next);
+    navigate('library');
+  }, []);
+
+  const onStatusChange = useCallback((next: BookmarkListStatus) => {
+    setStatus(next);
+    setPage(0);
+  }, []);
+
+  const onSortChange = useCallback((next: BookmarkSort) => {
+    setSort(next);
+    setPage(0);
+  }, []);
+
+  const onDirectionChange = useCallback((next: 'asc' | 'desc') => {
+    setDirection(next);
+    setPage(0);
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setQuery('');
+    setSearchQuery('');
+    setCategoryId(null);
+    setTagId(null);
+    setStatus('active');
+    setPage(0);
+  }, []);
+
+  const goPrevPage = useCallback(() => {
+    setPage((current) => Math.max(0, current - 1));
+  }, []);
+
+  const goNextPage = useCallback(() => {
+    setPage((current) => current + 1);
+  }, []);
+
+  const closeDetail = useCallback((open: boolean) => {
+    if (!open) {
+      setSelected(null);
     }
   }, []);
 
-  const refreshResults = useCallback(async () => {
-    setLoading(true);
-    try {
-      setBookmarks(
-        await fetchBookmarks({
-          q: searchQuery || undefined,
-          mode,
-          categoryId: categoryId ?? undefined,
-          tagId: tagId ?? undefined,
-          status,
-          sort,
-          direction,
-          limit: PAGE_SIZE,
-          offset: page * PAGE_SIZE,
-        }),
-      );
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load bookmarks');
-    } finally {
-      setLoading(false);
+  const closePendingDelete = useCallback((open: boolean) => {
+    if (!open) {
+      setPendingDelete(null);
     }
-  }, [searchQuery, mode, categoryId, tagId, status, sort, direction, page]);
+  }, []);
 
-  useEffect(() => {
-    void refreshMeta();
-  }, [refreshMeta]);
+  const onDetailDeleted = useCallback(() => {
+    setSelected(null);
+    invalidateAfterDelete();
+  }, [invalidateAfterDelete]);
 
-  useEffect(() => {
-    void refreshResults();
-  }, [refreshResults]);
-
-  const reload = useCallback(() => {
-    void refreshMeta();
-    void refreshResults();
-  }, [refreshMeta, refreshResults]);
-
-  async function accept(candidate: ReviewCandidate) {
-    try {
-      await acceptCandidate(candidate.bookmarkId, candidate.tagId);
-      toast.success('Candidate accepted');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to accept candidate');
-    }
-  }
-
-  async function confirmDelete() {
+  const confirmDelete = useCallback(async () => {
     if (!pendingDelete) {
       return;
     }
@@ -234,23 +349,18 @@ export function App() {
       if (selected?.id === target.id) {
         setSelected(null);
       }
-      reload();
+      invalidateAfterDelete();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete bookmark');
     }
-  }
+  }, [pendingDelete, selected, invalidateAfterDelete]);
 
-  function clearFilters() {
-    setQuery('');
-    setSearchQuery('');
-    setCategoryId(null);
-    setTagId(null);
-    setStatus('active');
-    setPage(0);
-  }
+  const onDeleteConfirmed = useCallback(() => {
+    void confirmDelete();
+  }, [confirmDelete]);
 
   const reviewCount = candidates.length;
-  const total = bookmarks?.total ?? 0;
+  const total = bookmarksQuery.data?.total ?? 0;
   const filtered =
     searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
 
@@ -262,19 +372,10 @@ export function App() {
     reviewCount,
     // Both library and review live under the library route; picking either
     // from the nav must leave the import page.
-    onSelectView: (next: View) => {
-      setView(next);
-      navigate('library');
-    },
-    onSelectCategory: (id: string | null) => {
-      setCategoryId(id);
-      setPage(0);
-    },
-    onSelectTag: (id: string | null) => {
-      setTagId(id);
-      setPage(0);
-    },
-    onManageVocabulary: () => setVocabOpen(true),
+    onSelectView,
+    onSelectCategory,
+    onSelectTag,
+    onManageVocabulary: openVocab,
   };
 
   return (
@@ -282,7 +383,7 @@ export function App() {
       {isDesktop ? (
         <Sidebar {...sidebarProps} />
       ) : isTablet ? (
-        <Sidebar {...sidebarProps} variant="rail" onOpenNav={() => setNavOpen(true)} />
+        <Sidebar {...sidebarProps} variant="rail" onOpenNav={openNav} />
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -293,25 +394,17 @@ export function App() {
           searchRef={searchRef}
           chatOpen={chatOpen}
           onQueryChange={setQuery}
-          onModeChange={(next) => {
-            setMode(next);
-            setPage(0);
-          }}
+          onModeChange={onModeChange}
           onThemeChange={setTheme}
-          onAdd={() => setAddOpen(true)}
-          onImport={() => navigate('import')}
-          onToggleChat={() => setChatOpen((open) => !open)}
-          onOpenNav={() => setNavOpen(true)}
+          onAdd={openAdd}
+          onImport={goImport}
+          onToggleChat={toggleChat}
+          onOpenNav={openNav}
         />
 
         <main className="flex min-h-0 flex-1 gap-3 p-4">
           {route === 'import' ? (
-            <ImportPage
-              onCommitted={() => {
-                setView('library');
-                reload();
-              }}
-            />
+            <ImportPage onCommitted={onImportCommitted} />
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -319,38 +412,31 @@ export function App() {
                   <>
                     <ResultsToolbar
                       total={total}
-                      loading={loading}
+                      loading={bookmarksQuery.isFetching}
                       status={status}
                       invalidCount={aggregates?.invalidCount ?? 0}
                       sort={sort}
                       direction={direction}
                       layout={layout}
-                      onStatusChange={(next) => {
-                        setStatus(next);
-                        setPage(0);
-                      }}
-                      onSortChange={(next) => {
-                        setSort(next);
-                        setPage(0);
-                      }}
-                      onDirectionChange={(next) => {
-                        setDirection(next);
-                        setPage(0);
-                      }}
+                      onStatusChange={onStatusChange}
+                      onSortChange={onSortChange}
+                      onDirectionChange={onDirectionChange}
                       onLayoutChange={setLayout}
                       onRefresh={reload}
                     />
 
                     <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
                       <BookmarkList
-                        items={bookmarks?.items ?? []}
-                        loading={loading}
+                        items={bookmarksQuery.data?.items ?? NO_ITEMS}
+                        // Skeleton only until the first page arrives; keepPreviousData
+                        // keeps the outgoing page visible during pagination/refetch.
+                        loading={bookmarksQuery.isPending}
                         layout={layout}
                         filtered={filtered}
                         onOpen={setSelected}
                         onDelete={setPendingDelete}
-                        onAdd={() => setAddOpen(true)}
-                        onImport={() => navigate('import')}
+                        onAdd={openAdd}
+                        onImport={goImport}
                         onClearFilters={clearFilters}
                       />
                     </div>
@@ -366,15 +452,15 @@ export function App() {
                             variant="outline"
                             size="sm"
                             disabled={page === 0}
-                            onClick={() => setPage((current) => Math.max(0, current - 1))}
+                            onClick={goPrevPage}
                           >
                             Previous
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={!bookmarks?.pagination.hasMore}
-                            onClick={() => setPage((current) => current + 1)}
+                            disabled={!bookmarksQuery.data?.pagination.hasMore}
+                            onClick={goNextPage}
                           >
                             Next
                           </Button>
@@ -386,8 +472,8 @@ export function App() {
                   <div className="min-h-0 flex-1 overflow-auto">
                     <ClassifierSuggestions
                       candidates={candidates}
-                      loading={loading}
-                      onAccept={accept}
+                      loading={candidatesQuery.isPending}
+                      onAccept={onAccept}
                     />
                   </div>
                 )}
@@ -411,7 +497,7 @@ export function App() {
             <SheetDescription>Categories and tags</SheetDescription>
           </SheetHeader>
           <ScrollArea className="min-h-0 flex-1">
-            <SidebarNav {...sidebarProps} onNavigate={() => setNavOpen(false)} />
+            <SidebarNav {...sidebarProps} onNavigate={closeNav} />
           </ScrollArea>
         </SheetContent>
       </Sheet>
@@ -431,11 +517,7 @@ export function App() {
 
       <AlertDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingDelete(null);
-          }
-        }}
+        onOpenChange={closePendingDelete}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -447,7 +529,7 @@ export function App() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void confirmDelete()}>Delete</AlertDialogAction>
+            <AlertDialogAction onClick={onDeleteConfirmed}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -463,22 +545,15 @@ export function App() {
         categories={categories}
         sections={sections}
         onOpenChange={setVocabOpen}
-        onChanged={reload}
+        onChanged={onVocabChanged}
       />
       <BookmarkDetailDialog
         bookmark={selected}
         categories={categories}
         tags={tags}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelected(null);
-          }
-        }}
-        onChanged={reload}
-        onDeleted={() => {
-          setSelected(null);
-          reload();
-        }}
+        onOpenChange={closeDetail}
+        onChanged={onDetailChanged}
+        onDeleted={onDetailDeleted}
       />
     </div>
   );

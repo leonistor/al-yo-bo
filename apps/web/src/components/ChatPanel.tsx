@@ -1,6 +1,7 @@
 import { AssistantRuntimeProvider, makeAssistantToolUI } from '@assistant-ui/react';
 import { AssistantChatTransport, useChatRuntime } from '@assistant-ui/ai-sdk';
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai';
+import { useMemo } from 'react';
 
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { Badge } from '@/components/ui/badge';
@@ -61,8 +62,11 @@ const SearchBookmarksUI = makeAssistantToolUI<Record<string, unknown>, SearchBoo
  * Talks to the server's `/api/chat` (AI SDK UI message stream; Ollama-backed).
  */
 export function ChatPanel() {
+  // Stable across renders: recreating the transport each render would rebuild
+  // the runtime and drop in-progress chat state.
+  const transport = useMemo(() => new AssistantChatTransport({ api: '/api/chat' }), []);
   const runtime = useChatRuntime({
-    transport: new AssistantChatTransport({ api: '/api/chat' }),
+    transport,
     // Tool results are sent back automatically so the model can answer after
     // searching (AI SDK multi-step).
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,

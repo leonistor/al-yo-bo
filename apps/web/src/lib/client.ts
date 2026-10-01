@@ -16,29 +16,24 @@ import type {
 
 import { api } from './api.ts';
 
-interface JsonResponse {
-  ok: boolean;
-  status: number;
-  json: () => Promise<unknown>;
-}
-
-async function unwrap<T>(response: JsonResponse): Promise<T> {
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const body = (await response.json()) as { title?: string };
-      if (body.title) {
-        message = body.title;
-      }
-    } catch {
-      // Non-JSON error bodies are ignored; the status-based message is enough.
+/**
+ * Hono's `ClientResponse.ok` is a literal discriminant (true for 2xx), so
+ * `if (!response.ok)` at the call site removes the route's error variants from
+ * the response union — the surviving `response.json()` is typed by the server
+ * schema via `hc<AppType>` inference, with no caller-side casts. These helpers
+ * split that pattern: `unwrap` for JSON bodies, `unwrapEmpty` for 204 routes.
+ */
+async function toError(response: { status: number; json: () => Promise<unknown> }): Promise<Error> {
+  let message = `Request failed (${response.status})`;
+  try {
+    const body = (await response.json()) as { title?: unknown };
+    if (typeof body?.title === 'string') {
+      message = body.title;
     }
-    throw new Error(message);
+  } catch {
+    // Non-JSON error bodies are ignored; the status-based message is enough.
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+  return new Error(message);
 }
 
 export interface BookmarkSearchParams {
@@ -65,27 +60,57 @@ export function fetchBookmarks(params: BookmarkSearchParams = {}): Promise<Searc
     ...(params.limit !== undefined ? { limit: params.limit } : {}),
     ...(params.offset !== undefined ? { offset: params.offset } : {}),
   };
-  return api.api.bookmarks.$get({ query }).then((response) => unwrap<SearchResponse>(response));
+  return api.api.bookmarks.$get({ query }).then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function fetchAggregates(): Promise<Aggregates> {
-  return api.api.aggregates.$get().then((response) => unwrap<Aggregates>(response));
+  return api.api.aggregates.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function fetchCategories(): Promise<Category[]> {
-  return api.api.categories.$get().then((response) => unwrap<Category[]>(response));
+  return api.api.categories.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function fetchSections(): Promise<Section[]> {
-  return api.api.sections.$get().then((response) => unwrap<Section[]>(response));
+  return api.api.sections.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function fetchTags(): Promise<Tag[]> {
-  return api.api.tags.$get().then((response) => unwrap<Tag[]>(response));
+  return api.api.tags.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function fetchReviewCandidates(): Promise<ReviewCandidate[]> {
-  return api.api.review.candidates.$get().then((response) => unwrap<ReviewCandidate[]>(response));
+  return api.api.review.candidates.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export interface ImportPreview {
@@ -97,9 +122,12 @@ export interface ImportPreview {
 }
 
 export function extractImport(text: string): Promise<ImportPreview> {
-  return api.api.import.preview
-    .$post({ json: { markdown: text } })
-    .then((response) => unwrap<ImportPreview>(response));
+  return api.api.import.preview.$post({ json: { markdown: text } }).then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 /**
@@ -108,9 +136,12 @@ export function extractImport(text: string): Promise<ImportPreview> {
  * ships what the Import page shows as included.
  */
 export function commitImport(bookmarks: ImportedBookmark[]): Promise<ImportReport> {
-  return api.api.import
-    .$post({ json: { bookmarks } })
-    .then((response) => unwrap<ImportReport>(response));
+  return api.api.import.$post({ json: { bookmarks } }).then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export interface CreateBookmarkInput {
@@ -130,7 +161,12 @@ export function createBookmark(input: CreateBookmarkInput): Promise<BookmarkWith
         categoryId: input.categoryId ?? null,
       },
     })
-    .then((response) => unwrap<BookmarkWithTags>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function updateBookmark(
@@ -144,13 +180,23 @@ export function updateBookmark(
   };
   return api.api.bookmarks[':id']
     .$patch({ param: { id }, json })
-    .then((response) => unwrap<BookmarkWithTags>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
+/** 204 routes have no body; the ok guard is all that's needed. */
 export function deleteBookmark(id: string): Promise<void> {
   return api.api.bookmarks[':id']
     .$delete({ param: { id } })
-    .then((response) => unwrap<void>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+    });
 }
 
 export interface ScrapeResponse {
@@ -160,33 +206,55 @@ export interface ScrapeResponse {
 
 /** Manual re-scrape; runs inline (bounded by the server's scrape timeout). */
 export function scrapeBookmark(id: string): Promise<ScrapeResponse> {
-  return api.api.bookmarks[':id'].scrape
-    .$post({ param: { id } })
-    .then((response) => unwrap<ScrapeResponse>(response));
+  return api.api.bookmarks[':id'].scrape.$post({ param: { id } }).then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
 }
 
 export function assignTagToBookmark(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
   return api.api.bookmarks[':id'].tags
     .$post({ param: { id: bookmarkId }, json: { tagId } })
-    .then((response) => unwrap<BookmarkWithTags>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function removeTagFromBookmark(bookmarkId: string, tagId: string): Promise<void> {
   return api.api.bookmarks[':id'].tags[':tagId']
     .$delete({ param: { id: bookmarkId, tagId } })
-    .then((response) => unwrap<void>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+    });
 }
 
 export function setTagStatus(id: string, status: TagStatus): Promise<Tag> {
   return api.api.tags[':id'].status
     .$post({ param: { id }, json: { status } })
-    .then((response) => unwrap<Tag>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function createTag(input: { name: string; categoryId?: string | null }): Promise<Tag> {
   return api.api.tags
     .$post({ json: { name: input.name, categoryId: input.categoryId ?? null } })
-    .then((response) => unwrap<Tag>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function createCategory(input: {
@@ -195,17 +263,32 @@ export function createCategory(input: {
 }): Promise<Category> {
   return api.api.categories
     .$post({ json: { name: input.name, sectionId: input.sectionId ?? null } })
-    .then((response) => unwrap<Category>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function createSection(input: { name: string }): Promise<Section> {
   return api.api.sections
     .$post({ json: { name: input.name } })
-    .then((response) => unwrap<Section>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export function acceptCandidate(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
   return api.api.review.candidates.accept
     .$post({ json: { bookmarkId, tagId } })
-    .then((response) => unwrap<BookmarkWithTags>(response));
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }

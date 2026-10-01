@@ -4,6 +4,30 @@ export type Theme = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'al-yo-bo:theme';
 
+/**
+ * localStorage can throw (sandboxed iframes, privacy modes, quota) — degrade to
+ * an in-memory fallback instead of crashing the app at mount.
+ */
+const storage = (() => {
+  const memory = new Map<string, string>();
+  try {
+    const probe = 'al-yo-bo:probe';
+    localStorage.setItem(probe, probe);
+    localStorage.removeItem(probe);
+    return {
+      get: (key: string) => localStorage.getItem(key),
+      set: (key: string, value: string) => localStorage.setItem(key, value),
+    };
+  } catch {
+    return {
+      get: (key: string) => memory.get(key) ?? null,
+      set: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+    };
+  }
+})();
+
 function resolved(theme: Theme): 'light' | 'dark' {
   if (theme !== 'system') {
     return theme;
@@ -16,9 +40,10 @@ function apply(theme: Theme): void {
 }
 
 export function useTheme(): [Theme, (theme: Theme) => void] {
-  const [theme, setThemeState] = useState<Theme>(
-    () => (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? 'system',
-  );
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const stored = storage.get(STORAGE_KEY);
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  });
 
   useEffect(() => {
     apply(theme);
@@ -32,7 +57,7 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {
-    localStorage.setItem(STORAGE_KEY, next);
+    storage.set(STORAGE_KEY, next);
     setThemeState(next);
   }, []);
 

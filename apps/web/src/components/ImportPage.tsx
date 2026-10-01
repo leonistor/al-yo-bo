@@ -99,8 +99,15 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
     return duplicates;
   }, [included]);
 
+  // file.text() can reject (permission, encoding, removed file) — surface it
+  // instead of leaving the onChange promise unhandled.
   async function readFile(file: File) {
-    setText(await file.text());
+    try {
+      setText(await file.text());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to read file');
+      return;
+    }
     // Show what was loaded — opaque "file picked" state hides parser input.
     setSourceTab('paste');
     clearResults();
