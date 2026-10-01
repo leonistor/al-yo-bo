@@ -24,6 +24,7 @@ import {
   listProposedTags,
   listTags,
   removeBookmarkTag,
+  rebuildFts,
   setTagStatus,
   updateBookmark,
   updateCategory,
@@ -66,6 +67,11 @@ export interface AppServices {
   scrape?: ScrapeFn;
   /** Classification client; absent = classification endpoints report unavailable. */
   classifier?: ClassifierClient;
+  /**
+   * Rebuilds the vector serving stack from SQLite (the `reindex` job, §8) and
+   * hot-swaps it into this same services object.
+   */
+  reindex?: () => Promise<{ vectorBackend: 'qdrant' | 'memory' }>;
 }
 
 // Declaring the JSON shape as a validator is what lets Hono RPC infer the request
@@ -715,7 +721,16 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
 
     // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the
     // typed RPC surface above stays clean for apps/web.
-    .post('/api/chat', (c) => chatHandler(c));
+    .post('/api/chat', (c) => chatHandler(c))
+
+    .post('/api/reindex', async (c) => {
+      const ftsRows = rebuildFts(db);
+      let vectorBackend: 'qdrant' | 'memory' = services?.vectorBackend ?? 'memory';
+      if (services?.reindex) {
+        ({ vectorBackend } = await services.reindex());
+      }
+      return c.json({ ftsRows, vectorBackend });
+    });
 
   app.onError((err, c) => {
     if (err instanceof AppError) {

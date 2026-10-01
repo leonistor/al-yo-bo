@@ -53,6 +53,9 @@ function resolvePayloads(db: Database): (bookmarkIds: string[]) => Map<string, F
  *    and the index is wrapped in `FallbackVectorIndex` for runtime degradation.
  * 3. If Qdrant is unreachable at boot, the in-memory index serves alone until
  *    the next server start.
+ *
+ * Also used by the `reindex` endpoint to rebuild a fresh serving stack from
+ * SQLite (the durable copy) and hot-swap it into the running server.
  */
 export async function initVectorIndex(db: Database, config: ServerConfig): Promise<VectorSearch> {
   const records = listEmbeddings(db);

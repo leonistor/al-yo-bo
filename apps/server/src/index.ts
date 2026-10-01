@@ -4,7 +4,7 @@ import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 
-import { createApp } from './app.ts';
+import { createApp, type AppServices } from './app.ts';
 import { loadConfig } from './env.ts';
 import { reconcileEnrichment, startJobQueue } from './jobs.ts';
 import { makeScraper } from './scrape.ts';
@@ -42,17 +42,23 @@ const jobs = startJobQueue({
 });
 
 const app = new Hono();
-app.route(
-  '/',
-  createApp(db, config, {
-    vector: vector.index,
-    vectorBackend: vector.backend,
-    embeddings,
-    jobs,
-    scrape,
-    classifier,
-  }),
-);
+const services: AppServices = {
+  vector: vector.index,
+  vectorBackend: vector.backend,
+  embeddings,
+  jobs,
+  scrape,
+  classifier,
+  // The `reindex` job (§8): rebuild FTS + vector serving stack from SQLite and
+  // hot-swap it into the same services object every request reads.
+  reindex: async () => {
+    const next = await initVectorIndex(db, config);
+    services.vector = next.index;
+    services.vectorBackend = next.backend;
+    return { vectorBackend: next.backend };
+  },
+};
+app.route('/', createApp(db, config, services));
 
 // In production the single Bun process also serves the built web app.
 if (process.env.NODE_ENV === 'production') {

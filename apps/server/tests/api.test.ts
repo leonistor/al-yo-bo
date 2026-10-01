@@ -332,6 +332,21 @@ describe('classify API', () => {
   });
 });
 
+describe('reindex API', () => {
+  test('rebuilds FTS rows from the bookmarks table', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/reindex', { method: 'POST' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ftsRows: number; vectorBackend: string };
+    expect(body.ftsRows).toBe(26);
+    expect(body.vectorBackend).toBe('memory');
+
+    // Keyword search still works over the rebuilt index.
+    const search = (await (await app.request('/api/bookmarks?q=sqlite')).json()) as { total: number };
+    expect(search.total).toBeGreaterThan(0);
+  });
+});
+
 describe('chat API', () => {
   test('reports 503 problem+json when no chat model is configured', async () => {
     const { app } = makeApp();

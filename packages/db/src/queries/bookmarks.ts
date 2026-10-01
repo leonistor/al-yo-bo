@@ -217,6 +217,23 @@ export function listBookmarkIdsMissingContent(db: Database): string[] {
     .map((row) => bytesToUuid(row.id));
 }
 
+/**
+ * Rebuilds the FTS5 index from the bookmarks table (the `reindex` job, §8). The
+ * trigger-sync normally keeps it current; this repairs drift or corruption.
+ * Returns the number of indexed rows.
+ */
+export function rebuildFts(db: Database): number {
+  const run = db.transaction(() => {
+    db.query('DELETE FROM bookmark_fts').run();
+    db.query(
+      `INSERT INTO bookmark_fts (bookmark_id, url, title, description, content)
+       SELECT id, url, title, description, content FROM bookmarks`,
+    ).run();
+    return db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmark_fts').get()!
+      .count;
+  });
+  return run.immediate();
+}
 
 export function listBookmarks(
   db: Database,
