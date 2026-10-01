@@ -1,7 +1,6 @@
+import type { Category, Section } from '@al-yo-bo/shared';
 import { useState } from 'react';
 import { toast } from 'sonner';
-
-import type { Category } from '@al-yo-bo/shared';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,23 +20,46 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { createCategory, createTag } from '@/lib/client';
+import { createCategory, createSection, createTag } from '@/lib/client';
 
 interface VocabDialogProps {
   open: boolean;
   categories: Category[];
+  sections: Section[];
   onOpenChange: (open: boolean) => void;
   onChanged: () => void;
 }
 
-export function VocabDialog({ open, categories, onOpenChange, onChanged }: VocabDialogProps) {
+export function VocabDialog({
+  open,
+  categories,
+  sections,
+  onOpenChange,
+  onChanged,
+}: VocabDialogProps) {
+  const [sectionName, setSectionName] = useState('');
   const [categoryName, setCategoryName] = useState('');
+  const [categorySectionId, setCategorySectionId] = useState('none');
   const [tagName, setTagName] = useState('');
   const [tagCategoryId, setTagCategoryId] = useState('none');
 
+  async function addSection() {
+    try {
+      await createSection({ name: sectionName.trim() });
+      toast.success('Section created');
+      setSectionName('');
+      onChanged();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create section');
+    }
+  }
+
   async function addCategory() {
     try {
-      await createCategory({ name: categoryName.trim() });
+      await createCategory({
+        name: categoryName.trim(),
+        sectionId: categorySectionId === 'none' ? null : categorySectionId,
+      });
       toast.success('Category created');
       setCategoryName('');
       onChanged();
@@ -64,14 +86,31 @@ export function VocabDialog({ open, categories, onOpenChange, onChanged }: Vocab
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Categories &amp; tags</DialogTitle>
+          <DialogTitle>Sections, categories &amp; tags</DialogTitle>
           <DialogDescription>
-            Tags form the classification vocabulary. New tags are active and can be assigned right
-            away.
+            Sections group categories; tags form the classification vocabulary. New entries are
+            active and can be used right away.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="new-section">New section</Label>
+            <div className="flex gap-2">
+              <Input
+                id="new-section"
+                value={sectionName}
+                onChange={(event) => setSectionName(event.target.value)}
+                placeholder="e.g. AI"
+              />
+              <Button onClick={addSection} disabled={sectionName.trim() === ''}>
+                Create
+              </Button>
+            </div>
+          </div>
+
+          <Separator />
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="new-category">New category</Label>
             <div className="flex gap-2">
@@ -79,8 +118,21 @@ export function VocabDialog({ open, categories, onOpenChange, onChanged }: Vocab
                 id="new-category"
                 value={categoryName}
                 onChange={(event) => setCategoryName(event.target.value)}
-                placeholder="e.g. Research"
+                placeholder="e.g. dev"
               />
+              <Select value={categorySectionId} onValueChange={setCategorySectionId}>
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No section</SelectItem>
+                  {sections.map((section) => (
+                    <SelectItem key={section.id} value={section.id}>
+                      {section.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button onClick={addCategory} disabled={categoryName.trim() === ''}>
                 Create
               </Button>

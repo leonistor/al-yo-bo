@@ -13,15 +13,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { previewImport, runImport, type ImportPreview } from '@/lib/import';
+import { previewImport, runImport, type ImportPreview, type ImportResult } from '@/lib/import';
 
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
+  /** Called when the import was staged for vocabulary review. */
+  onStaged: (result: ImportResult) => void;
 }
 
-export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, onImported, onStaged }: ImportDialogProps) {
   const [markdown, setMarkdown] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -48,6 +50,17 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
     setBusy(true);
     try {
       const result = await runImport(markdown, fileName ?? undefined);
+      if (result.staged) {
+        toast.info(
+          `${result.proposals?.length ?? 0} new vocabulary entries need review before the import commits`,
+        );
+        setMarkdown('');
+        setFileName(null);
+        setPreview(null);
+        onStaged(result);
+        onOpenChange(false);
+        return;
+      }
       toast.success(
         `Imported ${result.added} new, updated ${result.updated}, ${result.categoriesCreated} categories created`,
       );
@@ -69,8 +82,9 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
         <DialogHeader>
           <DialogTitle>Import bookmarks</DialogTitle>
           <DialogDescription>
-            Paste or upload a markdown collection file. Headings become categories; bullets with URLs
-            become bookmarks.
+            Paste or upload a markdown collection file. Headings become sections and categories;
+            bullets with URLs become bookmarks. New vocabulary is reviewed before the import
+            commits.
           </DialogDescription>
         </DialogHeader>
 
@@ -112,7 +126,11 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handlePreview} disabled={busy || markdown.trim() === ''}>
+          <Button
+            variant="outline"
+            onClick={handlePreview}
+            disabled={busy || markdown.trim() === ''}
+          >
             Preview
           </Button>
           <Button onClick={handleImport} disabled={busy || markdown.trim() === ''}>

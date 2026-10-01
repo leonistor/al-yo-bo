@@ -1,13 +1,13 @@
+import type { Aggregates } from '@al-yo-bo/shared';
 import {
   FolderOpenIcon,
   HashIcon,
   InboxIcon,
+  LayersIcon,
   PanelLeftIcon,
   Settings2Icon,
   TagsIcon,
 } from 'lucide-react';
-
-import type { Aggregates } from '@al-yo-bo/shared';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,6 +54,27 @@ function SidebarNav({
 }: SidebarNavProps) {
   const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
   const tags = aggregates?.tags.filter((tag) => tag.count > 0).slice(0, 14) ?? [];
+  const sections = aggregates?.sections.filter((section) => section.count > 0) ?? [];
+  const uncategorized = categories.filter((category) => category.sectionId === null);
+
+  const renderCategory = (category: (typeof categories)[number]) => (
+    <Button
+      key={category.id}
+      variant="ghost"
+      className={cn(rowClass, 'pl-6')}
+      data-active={view === 'library' && selectedCategoryId === category.id}
+      onClick={() => {
+        onSelectView('library');
+        onSelectTag(null);
+        onSelectCategory(selectedCategoryId === category.id ? null : category.id);
+        onNavigate?.();
+      }}
+    >
+      <FolderOpenIcon />
+      <span className="truncate">{category.name}</span>
+      <span className="ml-auto text-xs text-muted-foreground">{category.count}</span>
+    </Button>
+  );
 
   return (
     <nav className="flex flex-col gap-1 px-2 pb-4">
@@ -94,26 +115,31 @@ function SidebarNav({
       </Button>
 
       <div className="mt-4 px-2">
-        <span className="text-xs font-medium text-muted-foreground">Categories</span>
+        <span className="text-xs font-medium text-muted-foreground">Sections</span>
       </div>
-      {categories.map((category) => (
-        <Button
-          key={category.id}
-          variant="ghost"
-          className={rowClass}
-          data-active={view === 'library' && selectedCategoryId === category.id}
-          onClick={() => {
-            onSelectView('library');
-            onSelectTag(null);
-            onSelectCategory(selectedCategoryId === category.id ? null : category.id);
-            onNavigate?.();
-          }}
-        >
-          <FolderOpenIcon />
-          <span className="truncate">{category.name}</span>
-          <span className="ml-auto text-xs text-muted-foreground">{category.count}</span>
-        </Button>
-      ))}
+      {sections.map((section) => {
+        const sectionCategories = categories.filter((c) => c.sectionId === section.id);
+        return (
+          <div key={section.id} className="flex flex-col">
+            <div className="flex items-center gap-2 px-2 py-1">
+              <LayersIcon className="size-3.5 text-muted-foreground" />
+              <span className="truncate text-xs font-medium">{section.name}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{section.count}</span>
+            </div>
+            {sectionCategories.map(renderCategory)}
+          </div>
+        );
+      })}
+
+      {uncategorized.length > 0 && (
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 px-2 py-1">
+            <LayersIcon className="size-3.5 text-muted-foreground" />
+            <span className="truncate text-xs font-medium">Other</span>
+          </div>
+          {uncategorized.map(renderCategory)}
+        </div>
+      )}
 
       <div className="mt-4 px-2">
         <span className="text-xs font-medium text-muted-foreground">Tags</span>

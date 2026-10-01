@@ -1,6 +1,3 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
-
 import type {
   Aggregates,
   BookmarkListStatus,
@@ -10,8 +7,12 @@ import type {
   ReviewCandidate,
   SearchMode,
   SearchResponse,
+  Section,
   Tag,
+  VocabularyProposal,
 } from '@al-yo-bo/shared';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
 import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
@@ -32,6 +33,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
   SheetContent,
@@ -40,22 +42,28 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { VocabDialog } from '@/components/VocabDialog';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   acceptCandidate,
+  acceptProposal,
+  commitImportBatch,
   deleteBookmark,
+  discardImportBatch,
   fetchAggregates,
   fetchBookmarks,
   fetchCategories,
   fetchProposedTags,
   fetchReviewCandidates,
+  fetchSections,
+  fetchStagedBatches,
   fetchTags,
+  rejectProposal,
   setTagStatus,
+  type StagedBatch,
 } from '@/lib/client';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 const PAGE_SIZE = 20;
 type View = 'library' | 'review';
@@ -102,10 +110,12 @@ export function App() {
 
   const [aggregates, setAggregates] = useState<Aggregates | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [bookmarks, setBookmarks] = useState<SearchResponse | null>(null);
   const [proposed, setProposed] = useState<Tag[]>([]);
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
+  const [stagedBatches, setStagedBatches] = useState<StagedBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BookmarkWithTags | null>(null);
   const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
@@ -159,18 +169,30 @@ export function App() {
 
   const refreshMeta = useCallback(async () => {
     try {
-      const [aggregateData, categoryData, tagData, proposedData, candidateData] = await Promise.all([
+      const [
+        aggregateData,
+        categoryData,
+        sectionData,
+        tagData,
+        proposedData,
+        candidateData,
+        batchData,
+      ] = await Promise.all([
         fetchAggregates(),
         fetchCategories(),
+        fetchSections(),
         fetchTags(),
         fetchProposedTags(),
         fetchReviewCandidates(),
+        fetchStagedBatches(),
       ]);
       setAggregates(aggregateData);
       setCategories(categoryData);
+      setSections(sectionData);
       setTags(tagData);
       setProposed(proposedData);
       setCandidates(candidateData);
+      setStagedBatches(batchData);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load data');
     }
@@ -242,6 +264,46 @@ export function App() {
     }
   }
 
+  async function acceptVocabulary(batchId: string, proposalId: string, kind: string) {
+    try {
+      await acceptProposal(kind as VocabularyProposal['kind'], proposalId);
+      toast.success('Vocabulary activated');
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to accept proposal');
+    }
+  }
+
+  async function rejectVocabulary(batchId: string, proposalId: string, kind: string) {
+    try {
+      await rejectProposal(kind as VocabularyProposal['kind'], proposalId);
+      toast.success('Vocabulary rejected');
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to reject proposal');
+    }
+  }
+
+  async function commitBatch(batchId: string) {
+    try {
+      const report = await commitImportBatch(batchId);
+      toast.success(`Committed ${report.added} new, updated ${report.updated}`);
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to commit import');
+    }
+  }
+
+  async function discardBatch(batchId: string) {
+    try {
+      await discardImportBatch(batchId);
+      toast.success('Import discarded');
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to discard import');
+    }
+  }
+
   async function confirmDelete() {
     if (!pendingDelete) {
       return;
@@ -269,9 +331,13 @@ export function App() {
     setPage(0);
   }
 
-  const reviewCount = proposed.length + candidates.length;
+  const reviewCount =
+    proposed.length +
+    candidates.length +
+    stagedBatches.reduce((sum, b) => sum + b.proposals.length, 0);
   const total = bookmarks?.total ?? 0;
-  const filtered = searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
+  const filtered =
+    searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
 
   const sidebarProps = {
     aggregates,
@@ -320,84 +386,89 @@ export function App() {
 
         <main className="flex min-h-0 flex-1 gap-3 p-4">
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-          {view === 'library' ? (
-            <>
-              <ResultsToolbar
-                total={total}
-                loading={loading}
-                status={status}
-                invalidCount={aggregates?.invalidCount ?? 0}
-                sort={sort}
-                direction={direction}
-                layout={layout}
-                onStatusChange={(next) => {
-                  setStatus(next);
-                  setPage(0);
-                }}
-                onSortChange={(next) => {
-                  setSort(next);
-                  setPage(0);
-                }}
-                onDirectionChange={(next) => {
-                  setDirection(next);
-                  setPage(0);
-                }}
-                onLayoutChange={setLayout}
-                onRefresh={reload}
-              />
-
-              <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
-                <BookmarkList
-                  items={bookmarks?.items ?? []}
+            {view === 'library' ? (
+              <>
+                <ResultsToolbar
+                  total={total}
                   loading={loading}
+                  status={status}
+                  invalidCount={aggregates?.invalidCount ?? 0}
+                  sort={sort}
+                  direction={direction}
                   layout={layout}
-                  filtered={filtered}
-                  onOpen={setSelected}
-                  onDelete={setPendingDelete}
-                  onAdd={() => setAddOpen(true)}
-                  onImport={() => setImportOpen(true)}
-                  onClearFilters={clearFilters}
+                  onStatusChange={(next) => {
+                    setStatus(next);
+                    setPage(0);
+                  }}
+                  onSortChange={(next) => {
+                    setSort(next);
+                    setPage(0);
+                  }}
+                  onDirectionChange={(next) => {
+                    setDirection(next);
+                    setPage(0);
+                  }}
+                  onLayoutChange={setLayout}
+                  onRefresh={reload}
+                />
+
+                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
+                  <BookmarkList
+                    items={bookmarks?.items ?? []}
+                    loading={loading}
+                    layout={layout}
+                    filtered={filtered}
+                    onOpen={setSelected}
+                    onDelete={setPendingDelete}
+                    onAdd={() => setAddOpen(true)}
+                    onImport={() => setImportOpen(true)}
+                    onClearFilters={clearFilters}
+                  />
+                </div>
+
+                {total > PAGE_SIZE && (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>
+                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page === 0}
+                        onClick={() => setPage((current) => Math.max(0, current - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!bookmarks?.pagination.hasMore}
+                        onClick={() => setPage((current) => current + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-auto">
+                <ReviewQueue
+                  proposed={proposed}
+                  candidates={candidates}
+                  batches={stagedBatches}
+                  loading={loading}
+                  onApprove={approveTag}
+                  onReject={rejectTag}
+                  onAccept={accept}
+                  onAcceptProposal={acceptVocabulary}
+                  onRejectProposal={rejectVocabulary}
+                  onCommitBatch={commitBatch}
+                  onDiscardBatch={discardBatch}
                 />
               </div>
-
-              {total > PAGE_SIZE && (
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>
-                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page === 0}
-                      onClick={() => setPage((current) => Math.max(0, current - 1))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!bookmarks?.pagination.hasMore}
-                      onClick={() => setPage((current) => current + 1)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <ReviewQueue
-                proposed={proposed}
-                candidates={candidates}
-                loading={loading}
-                onApprove={approveTag}
-                onReject={rejectTag}
-                onAccept={accept}
-              />
-            </div>
-          )}
+            )}
           </div>
 
           {chatOpen && isTablet && (
@@ -463,10 +534,19 @@ export function App() {
         onOpenChange={setAddOpen}
         onCreated={reload}
       />
-      <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={reload} />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={reload}
+        onStaged={() => {
+          setView('review');
+          reload();
+        }}
+      />
       <VocabDialog
         open={vocabOpen}
         categories={categories}
+        sections={sections}
         onOpenChange={setVocabOpen}
         onChanged={reload}
       />

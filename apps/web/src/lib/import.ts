@@ -1,4 +1,4 @@
-import type { ImportedBookmark } from '@al-yo-bo/shared';
+import type { ImportedBookmark, VocabularyProposal } from '@al-yo-bo/shared';
 
 export interface ImportPreview {
   parsed: number;
@@ -12,6 +12,9 @@ export interface ImportResult {
   skipped: number;
   categoriesCreated: number;
   parsed: number;
+  staged?: boolean;
+  batchId?: string;
+  proposals?: VocabularyProposal[];
 }
 
 async function postMarkdown<T>(path: string, markdown: string): Promise<T> {

@@ -7,11 +7,14 @@ import type {
   ReviewCandidate,
   SearchMode,
   SearchResponse,
+  Section,
   Tag,
   TagStatus,
+  VocabularyProposal,
 } from '@al-yo-bo/shared';
 
 import { api } from './api.ts';
+import type { ImportResult } from './import.ts';
 
 interface JsonResponse {
   ok: boolean;
@@ -73,18 +76,31 @@ export function fetchCategories(): Promise<Category[]> {
   return api.api.categories.$get().then((response) => unwrap<Category[]>(response));
 }
 
+export function fetchSections(): Promise<Section[]> {
+  return api.api.sections.$get().then((response) => unwrap<Section[]>(response));
+}
+
 export function fetchTags(): Promise<Tag[]> {
   return api.api.tags.$get().then((response) => unwrap<Tag[]>(response));
 }
 
 export function fetchProposedTags(): Promise<Tag[]> {
-  return api.api.review['proposed-tags']
-    .$get()
-    .then((response) => unwrap<Tag[]>(response));
+  return api.api.review['proposed-tags'].$get().then((response) => unwrap<Tag[]>(response));
 }
 
 export function fetchReviewCandidates(): Promise<ReviewCandidate[]> {
   return api.api.review.candidates.$get().then((response) => unwrap<ReviewCandidate[]>(response));
+}
+
+export interface StagedBatch {
+  id: string;
+  file: string | null;
+  bookmarkCount: number;
+  proposals: VocabularyProposal[];
+}
+
+export function fetchStagedBatches(): Promise<StagedBatch[]> {
+  return api.api.import.staged.$get().then((response) => unwrap<StagedBatch[]>(response));
 }
 
 export interface CreateBookmarkInput {
@@ -163,14 +179,49 @@ export function createTag(input: { name: string; categoryId?: string | null }): 
     .then((response) => unwrap<Tag>(response));
 }
 
-export function createCategory(input: { name: string }): Promise<Category> {
+export function createCategory(input: {
+  name: string;
+  sectionId?: string | null;
+}): Promise<Category> {
   return api.api.categories
-    .$post({ json: { name: input.name } })
+    .$post({ json: { name: input.name, sectionId: input.sectionId ?? null } })
     .then((response) => unwrap<Category>(response));
+}
+
+export function createSection(input: { name: string }): Promise<Section> {
+  return api.api.sections
+    .$post({ json: { name: input.name } })
+    .then((response) => unwrap<Section>(response));
 }
 
 export function acceptCandidate(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
   return api.api.review.candidates.accept
     .$post({ json: { bookmarkId, tagId } })
     .then((response) => unwrap<BookmarkWithTags>(response));
+}
+
+export type ProposalKind = VocabularyProposal['kind'];
+
+export function acceptProposal(kind: ProposalKind, id: string): Promise<void> {
+  return api.api.review.vocabulary[':kind'][':id'].accept
+    .$post({ param: { kind, id } })
+    .then((response) => unwrap<void>(response));
+}
+
+export function rejectProposal(kind: ProposalKind, id: string): Promise<void> {
+  return api.api.review.vocabulary[':kind'][':id'].reject
+    .$post({ param: { kind, id } })
+    .then((response) => unwrap<void>(response));
+}
+
+export function commitImportBatch(batchId: string): Promise<ImportResult> {
+  return api.api.import.batches[':id'].commit
+    .$post({ param: { id: batchId } })
+    .then((response) => unwrap<ImportResult>(response));
+}
+
+export function discardImportBatch(batchId: string): Promise<void> {
+  return api.api.import.batches[':id'].discard
+    .$post({ param: { id: batchId } })
+    .then((response) => unwrap<void>(response));
 }
