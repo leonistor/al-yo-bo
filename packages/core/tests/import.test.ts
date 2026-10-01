@@ -111,4 +111,28 @@ describe('ImportService', () => {
     expect(second.updated).toBe(2);
     expect(jobs.calls).toEqual([]); // re-commit: no scrape re-enqueue
   });
+
+  test('commit skips rows with invalid URLs and records them in the report', () => {
+    const db = makeDb();
+    const jobs = recordingJobs();
+    const service = createImportService({ db, jobs, extract: null });
+
+    const report = service.commit(
+      [
+        { url: 'ftp://example.com/file', title: 'bad', description: null, category: null, priority: null, tags: [] },
+        { url: 'not a url', title: 'worse', description: null, category: null, priority: null, tags: [] },
+        { url: 'https://example.com/ok', title: 'ok', description: null, category: null, priority: null, tags: [] },
+      ],
+      db.datasetId,
+    );
+
+    expect(report.added).toBe(1);
+    expect(report.skipped).toBe(2);
+    expect(report.bookmarks.map((bookmark) => bookmark.url)).toEqual(['https://example.com/ok']);
+    expect(report.warnings?.length).toBe(2);
+    expect(report.warnings?.[0]).toContain('ftp://example.com/file');
+    // Only the valid row is enriched.
+    const scrapeCalls = jobs.calls.filter((call) => call.type === 'scrape');
+    expect(scrapeCalls).toHaveLength(1);
+  });
 });

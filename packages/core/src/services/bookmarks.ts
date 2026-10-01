@@ -93,6 +93,11 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       }
       const patch: Partial<DbBookmarkInput> = {};
       if (input.url !== undefined) {
+        // Same gate as `create` — without it normalizeUrl below would throw a
+        // raw URL parse error for invalid input instead of a ValidationError.
+        if (!isHttpUrl(input.url)) {
+          throw new ValidationError('Only HTTP(S) URLs can be saved');
+        }
         patch.url = input.url;
       }
       if ('title' in input) {

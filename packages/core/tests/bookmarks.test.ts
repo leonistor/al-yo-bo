@@ -30,6 +30,23 @@ describe('BookmarkService — get/create', () => {
     expect(() => service.create({ url: 'ftp://example.com/file' })).toThrow(ValidationError);
   });
 
+  test('update rejects non-HTTP(S) URLs and leaves the row untouched', async () => {
+    const { service, db } = makeService();
+    const { id } = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/a',
+      title: 'Original',
+    });
+
+    await expect(service.update(id, { url: 'javascript:alert(1)' })).rejects.toThrow(
+      ValidationError,
+    );
+
+    const current = getBookmarkById(db, id)!;
+    expect(current.url).toBe('https://example.com/a');
+    expect(current.title).toBe('Original');
+  });
+
   test('creates a bookmark and enqueues a scrape', () => {
     const { service, jobs } = makeService();
     const created = service.create({ url: 'https://example.com/page', title: 'Page' });

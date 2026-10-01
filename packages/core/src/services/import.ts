@@ -7,8 +7,9 @@ import {
   resolveVocabulary,
   type ExtractionClient,
   type ExtractionResult,
+  type IngestReport,
 } from '@al-yo-bo/importer';
-import type { ImportedBookmark, ImportReport } from '@al-yo-bo/shared';
+import { isHttpUrl, type ImportedBookmark } from '@al-yo-bo/shared';
 
 import type { JobScheduler } from './enrichment.ts';
 
@@ -46,7 +47,7 @@ export interface ImportService {
     bookmarks: ImportedBookmark[],
     datasetId: string,
     options?: ImportOptions,
-  ): ImportReport;
+  ): IngestReport;
 }
 
 /**
@@ -98,12 +99,27 @@ export function createImportService(deps: ImportServiceDeps): ImportService {
     },
 
     commit(bookmarks, datasetId, options = {}) {
-      const resolution = resolveVocabulary(db, datasetId, bookmarks);
-      const report = ingestBookmarks(db, datasetId, bookmarks, resolution, {
+      // Validate before ingest/normalization: a non-HTTP(S) URL would crash the
+      // ingest transaction with a raw `new URL()` throw from normalizeUrl.
+      // Invalid rows are skipped into the report instead.
+      const valid: ImportedBookmark[] = [];
+      const invalidUrlWarnings: string[] = [];
+      for (const entry of bookmarks) {
+        if (isHttpUrl(entry.url)) {
+          valid.push(entry);
+        } else {
+          invalidUrlWarnings.push(`Skipped bookmark with invalid URL: ${entry.url}`);
+        }
+      }
+      const resolution = resolveVocabulary(db, datasetId, valid);
+      const report = ingestBookmarks(db, datasetId, valid, resolution, {
         file: options.file,
-        // The caller commits an already-reviewed list; nothing is skipped here.
-        skipped: 0,
+        // Reviewed list, except rows rejected above for an invalid URL.
+        skipped: invalidUrlWarnings.length,
       });
+      if (invalidUrlWarnings.length > 0 || report.warnings?.length) {
+        report.warnings = [...invalidUrlWarnings, ...(report.warnings ?? [])];
+      }
       enqueueScrapes(report);
       return report;
     },
