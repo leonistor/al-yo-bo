@@ -395,7 +395,7 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 | `OLLAYA_URL`            | Ollaya daemon base URL                        | `http://127.0.0.1:11435` |
 | `OLLAYA_API_KEY`        | Bearer key when the daemon is exposed         | unset (loopback)         |
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
-| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | unset — must be chosen   |
+| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | `0.5`                    |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |

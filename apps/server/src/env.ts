@@ -30,6 +30,11 @@ export interface ServerConfig {
     /** html-to-markdown CLI binary (PATH-resolved; absolute paths allowed). */
     binary: string;
   };
+  /** Chat (AI SDK + local Ollama); off without a model. */
+  chat: {
+    ollamaUrl: string;
+    model?: string;
+  };
 }
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
@@ -70,6 +75,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       timeoutMs: numberFromEnv(env.SCRAPE_TIMEOUT_MS, 15_000),
       maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
       binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
+    },
+    chat: {
+      ollamaUrl: env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
+      // Chat is off until a model is chosen (degrades to a 503, never an error).
+      model: env.OLLAMA_CHAT_MODEL || undefined,
     },
   };
 }

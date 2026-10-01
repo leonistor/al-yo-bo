@@ -1,4 +1,12 @@
-import { MonitorIcon, MoonIcon, PlusIcon, SearchIcon, SunIcon, UploadIcon } from 'lucide-react';
+import {
+  MessageSquareIcon,
+  MonitorIcon,
+  MoonIcon,
+  PlusIcon,
+  SearchIcon,
+  SunIcon,
+  UploadIcon,
+} from 'lucide-react';
 import type { RefObject } from 'react';
 
 import type { SearchMode } from '@al-yo-bo/shared';
@@ -25,11 +33,13 @@ interface TopbarProps {
   mode: SearchMode;
   theme: Theme;
   searchRef: RefObject<HTMLInputElement | null>;
+  chatOpen: boolean;
   onQueryChange: (value: string) => void;
   onModeChange: (mode: SearchMode) => void;
   onThemeChange: (theme: Theme) => void;
   onAdd: () => void;
   onImport: () => void;
+  onToggleChat: () => void;
 }
 
 export function Topbar({
@@ -37,11 +47,13 @@ export function Topbar({
   mode,
   theme,
   searchRef,
+  chatOpen,
   onQueryChange,
   onModeChange,
   onThemeChange,
   onAdd,
   onImport,
+  onToggleChat,
 }: TopbarProps) {
   return (
     <header className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -75,6 +87,16 @@ export function Topbar({
       <Button onClick={onAdd}>
         <PlusIcon data-icon="inline-start" />
         Add
+      </Button>
+
+      <Button
+        variant={chatOpen ? 'secondary' : 'outline'}
+        onClick={onToggleChat}
+        aria-label="Toggle chat (press c)"
+        title="Chat (c)"
+      >
+        <MessageSquareIcon data-icon="inline-start" />
+        Chat
       </Button>
 
       <DropdownMenu>

@@ -34,6 +34,12 @@ export OPENROUTER_API_KEY=...   # embeddings; without it search stays keyword-on
 # EMBEDDING_MODEL defaults to openai/text-embedding-3-small (1536 dims)
 ```
 
+Chat runs on a local [Ollama](https://ollama.com) daemon and is off until a model is chosen:
+
+```sh
+export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
+# OLLAMA_URL defaults to http://127.0.0.1:11434
+```
 
 ```sh
 bun install       # install dependencies

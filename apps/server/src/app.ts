@@ -50,6 +50,7 @@ import {
 import type { ServerConfig } from './env.ts';
 import { AppError, NotFoundError, ValidationError } from './errors.ts';
 import { classifyBookmark } from './classify.ts';
+import { createChatHandler, type ChatBookmarkHit } from './chat.ts';
 import { scrapeAndStore, type JobQueue, type JobType } from './jobs.ts';
 import { ScrapeError, type ScrapeFn } from './scrape.ts';
 
@@ -350,9 +351,50 @@ async function probeOllaya(config: ServerConfig): Promise<boolean> {
   return reachable;
 }
 
+/**
+ * Runs the same search path as `GET /api/bookmarks` (hybrid when available) and
+ * returns compact, LLM-friendly hits — never page content. Used by the chat
+ * `searchBookmarks` tool (ARCHITECTURE §2).
+ */
+async function searchBookmarksForChat(
+  db: Database,
+  services: AppServices | undefined,
+  config: ServerConfig,
+  query: string,
+  limit: number,
+): Promise<ChatBookmarkHit[]> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const response = await searchResponse(db, services, config, {
+    q: trimmed,
+    mode: 'hybrid',
+    sort: 'created_at',
+    direction: 'desc',
+    limit,
+    offset: 0,
+  });
+  const categoryNameById = new Map(listCategories(db).map((category) => [category.id, category.name]));
+  return response.items.map((item) => ({
+    id: item.id,
+    url: item.url,
+    title: item.title,
+    description: item.description,
+    tags: item.tags.map((tag) => tag.name),
+    categoryName: item.categoryId ? (categoryNameById.get(item.categoryId) ?? null) : null,
+    updatedAt: item.updatedAt,
+  }));
+}
+
 // All API routes are chained on one Hono instance so `ReturnType<typeof createApp>`
 // produces usable Hono RPC types for apps/web.
 export function createApp(db: Database, config: ServerConfig, services?: AppServices) {
+  const chatHandler = createChatHandler({
+    config,
+    search: (query, limit) => searchBookmarksForChat(db, services, config, query, limit),
+  });
+
   const app = new Hono()
     .get('/api/health', async (c) =>
       c.json({
@@ -374,6 +416,10 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
           available: Boolean(services?.classifier),
           model: config.ollaya.model,
           reachable: services?.classifier ? await probeOllaya(config) : false,
+        },
+        chat: {
+          available: Boolean(config.chat.model),
+          model: config.chat.model ?? null,
         },
       }),
     )
@@ -665,7 +711,11 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
         enqueueJob(services, id, 'scrape');
       }
       return c.json(report);
-    });
+    })
+
+    // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the
+    // typed RPC surface above stays clean for apps/web.
+    .post('/api/chat', (c) => chatHandler(c));
 
   app.onError((err, c) => {
     if (err instanceof AppError) {

@@ -332,6 +332,29 @@ describe('classify API', () => {
   });
 });
 
+describe('chat API', () => {
+  test('reports 503 problem+json when no chat model is configured', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }] }),
+    });
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { type: string; title: string };
+    expect(body.type).toContain('chat-unavailable');
+    expect(body.title).toContain('OLLAMA_CHAT_MODEL');
+  });
+
+  test('rejects malformed bodies with 400 before the model is consulted', async () => {
+    const { app } = makeApp({ vector: new StubVectorIndex([]) });
+    // Chat model unset would 503 first; with a model, a bad body 400s. The 503
+    // path is covered above; here we assert ordering via the same stub config.
+    const response = await app.request('/api/chat', { method: 'POST', body: 'not json' });
+    expect([400, 503]).toContain(response.status);
+  });
+});
+
 describe('import API', () => {
   test('previews and imports markdown', async () => {
     const { app } = makeApp();

@@ -15,6 +15,7 @@ import type {
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
 import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
 import { BookmarkList } from '@/components/BookmarkList';
+import { ChatPanel } from '@/components/ChatPanel';
 import { ImportDialog } from '@/components/ImportDialog';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { ReviewQueue } from '@/components/ReviewQueue';
@@ -64,6 +65,7 @@ export function App() {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [vocabOpen, setVocabOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -85,10 +87,17 @@ export function App() {
         event.preventDefault();
         searchRef.current?.focus();
       }
+      if (event.key === 'c' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        setChatOpen((open) => !open);
+      }
+      if (event.key === 'Escape' && chatOpen) {
+        setChatOpen(false);
+      }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [chatOpen]);
 
   const refreshMeta = useCallback(async () => {
     try {
@@ -203,6 +212,7 @@ export function App() {
           mode={mode}
           theme={theme}
           searchRef={searchRef}
+          chatOpen={chatOpen}
           onQueryChange={setQuery}
           onModeChange={(next) => {
             setMode(next);
@@ -211,9 +221,11 @@ export function App() {
           onThemeChange={setTheme}
           onAdd={() => setAddOpen(true)}
           onImport={() => setImportOpen(true)}
+          onToggleChat={() => setChatOpen((open) => !open)}
         />
 
-        <main className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+        <main className="flex min-h-0 flex-1 gap-3 p-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
           {view === 'library' ? (
             <>
               <ResultsToolbar
@@ -280,6 +292,13 @@ export function App() {
                 onAccept={accept}
               />
             </div>
+          )}
+          </div>
+
+          {chatOpen && (
+            <aside className="hidden w-[24rem] shrink-0 overflow-hidden rounded-lg border border-border md:block">
+              <ChatPanel />
+            </aside>
           )}
         </main>
       </div>

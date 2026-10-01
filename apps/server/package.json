@@ -24,6 +24,9 @@
     "@al-yo-bo/search": "workspace:*",
     "@al-yo-bo/shared": "workspace:*",
     "@al-yo-bo/vectordb": "workspace:*",
-    "hono": "^4.9.0"
+    "ai": "^7.0.123",
+    "hono": "^4.9.0",
+    "ollama-ai-provider-v2": "^4.0.1",
+    "zod": "^4.6.5"
   }
 }

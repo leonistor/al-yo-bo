@@ -39,6 +39,7 @@
     "node_modules/**",
     ".agents/**",
     "**/routeTree.gen.ts",
-    "**/components/ui/**"
+    "**/components/ui/**",
+    "**/components/assistant-ui/**"
   ]
 }
