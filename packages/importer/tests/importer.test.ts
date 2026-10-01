@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createTag, getTagByName, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import {
+  createDataset,
+  createTag,
+  getCategoryByName,
+  getSectionByName,
+  getTagByName,
+  openDatabase,
+  setupDatabase,
+} from '@al-yo-bo/db';
+import { bytesToUuid, uuidToBytes } from '@al-yo-bo/shared';
 
-import { importMarkdown, ingestBookmarks, parseCollection } from '../src/index.ts';
+import { ingestBookmarks, parseCollection, resolveVocabulary } from '../src/index.ts';
 
 const SAMPLE = `# stray title
 
@@ -19,6 +28,13 @@ const SAMPLE = `# stray title
 - *** Yazi: https://yazi-rs.github.io/docs/quick-start
 - ** Fresh editor: https://getfresh.dev/docs/getting-started/
 `;
+
+function freshDb() {
+  const db = openDatabase(':memory:');
+  setupDatabase(db);
+  const datasetId = createDataset(db, 'test').id;
+  return { db, datasetId };
+}
 
 describe('parseCollection', () => {
   test('maps headings, notes, priorities and multiple URLs', () => {
@@ -42,7 +58,7 @@ describe('parseCollection', () => {
     expect(prioritized?.title).toBe('Yazi');
   });
 
-  test('H3 context does not become a category', () => {
+  test('H3 context is a category candidate, not a section', () => {
     const { bookmarks } = parseCollection(SAMPLE);
     expect(bookmarks.every((bookmark) => bookmark.category !== 'essentials')).toBe(true);
   });
@@ -117,48 +133,138 @@ tags: [beta]
   });
 });
 
-describe('ingest', () => {
-  test('imports into the database and is idempotent', () => {
-    const db = openDatabase(':memory:');
-    setupDatabase(db);
+describe('resolveVocabulary', () => {
+  test('proposes sections, categories and tags for unmatched names', () => {
+    const { db, datasetId } = freshDb();
+    const { bookmarks } = parseCollection(SAMPLE);
 
-    const first = importMarkdown(db, SAMPLE, { file: 'sample.md' });
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+
+    expect(resolution.sectionIds.has('dev')).toBe(false); // proposed, not resolved
+    expect(resolution.proposals.map((p) => `${p.kind}:${p.name}`).toSorted()).toEqual([
+      'category:essentials',
+      'section:dev',
+      'section:terminal trove',
+    ]);
+    // Proposed entries exist in the vocabulary tables.
+    expect(getSectionByName(db, datasetId, 'dev')?.status).toBe('proposed');
+    expect(getCategoryByName(db, datasetId, 'essentials')?.status).toBe('proposed');
+  });
+
+  test('reuses active vocabulary and follows rejected merges', () => {
+    const { db, datasetId } = freshDb();
+    const { bookmarks } = parseCollection(SAMPLE);
+
+    // Pre-create an active section "dev" and a rejected "terminal trove" merged
+    // into a section "terminal".
+    const devId = new Uint8Array(16).fill(1);
+    db.query('INSERT INTO sections (id, dataset_id, name, status) VALUES (?, ?, ?, ?)').run(
+      devId,
+      uuidToBytes(datasetId),
+      'dev',
+      'active',
+    );
+    const terminalId = new Uint8Array(16).fill(2);
+    const troveId = new Uint8Array(16).fill(3);
+    db.query('INSERT INTO sections (id, dataset_id, name, status) VALUES (?, ?, ?, ?)').run(
+      terminalId,
+      uuidToBytes(datasetId),
+      'terminal',
+      'active',
+    );
+    db.query(
+      'INSERT INTO sections (id, dataset_id, name, status, merged_into_id) VALUES (?, ?, ?, ?, ?)',
+    ).run(troveId, uuidToBytes(datasetId), 'terminal trove', 'rejected', terminalId);
+
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+
+    // "dev" resolves to the active section; "terminal trove" follows its merge.
+    expect(resolution.sectionIds.get('dev')).toBe(bytesToUuid(devId));
+    expect(resolution.sectionIds.get('terminal trove')).toBe(bytesToUuid(terminalId));
+    // "essentials" is still a new category proposal.
+    expect(resolution.proposals.map((p) => `${p.kind}:${p.name}`)).toEqual(['category:essentials']);
+  });
+
+  test('frontmatter tags propose only when no active tag matches', () => {
+    const { db, datasetId } = freshDb();
+    createTag(db, { datasetId, name: 'imported', status: 'active' });
+
+    const { bookmarks } = parseCollection(`---
+tags: [imported, unknown]
+---
+
+- x: https://example.com/tag-test
+`);
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+
+    expect(resolution.tagIds.get('imported')).toBeDefined();
+    expect(resolution.tagIds.has('unknown')).toBe(false);
+    expect(resolution.proposals.map((p) => `${p.kind}:${p.name}`)).toEqual(['tag:unknown']);
+  });
+});
+
+describe('ingest', () => {
+  test('commits bookmarks with a fully resolved vocabulary and is idempotent', () => {
+    const { db, datasetId } = freshDb();
+    const { bookmarks, skipped } = parseCollection(SAMPLE);
+
+    // Propose, accept the proposals, then commit.
+    resolveVocabulary(db, datasetId, bookmarks);
+    db.query('UPDATE sections SET status = ? WHERE dataset_id = ?').run(
+      'active',
+      uuidToBytes(datasetId),
+    );
+    db.query('UPDATE categories SET status = ? WHERE dataset_id = ?').run(
+      'active',
+      uuidToBytes(datasetId),
+    );
+    const resolved = resolveVocabulary(db, datasetId, bookmarks);
+    expect(resolved.proposals).toEqual([]);
+
+    const first = ingestBookmarks(db, datasetId, bookmarks, resolved, {
+      file: 'sample.md',
+      skipped,
+    });
     expect(first.added).toBe(5);
-    expect(first.categoriesCreated).toBe(2);
     expect(first.skipped).toBe(1);
 
-    const second = importMarkdown(db, SAMPLE, { file: 'sample.md' });
+    const second = ingestBookmarks(db, datasetId, bookmarks, resolved, {
+      file: 'sample.md',
+      skipped,
+    });
     expect(second.added).toBe(0);
     expect(second.updated).toBe(5);
-    expect(second.categoriesCreated).toBe(0);
   });
 
   test('ingests an empty list without touching the database', () => {
-    const db = openDatabase(':memory:');
-    setupDatabase(db);
-    const report = ingestBookmarks(db, []);
+    const { db, datasetId } = freshDb();
+    const report = ingestBookmarks(db, datasetId, [], {
+      sectionIds: new Map(),
+      categoryIds: new Map(),
+      tagIds: new Map(),
+      proposals: [],
+    });
     expect(report.added).toBe(0);
     expect(report.parsed).toBe(0);
   });
 
   test('assigns only tags that already exist in the vocabulary', () => {
-    const db = openDatabase(':memory:');
-    setupDatabase(db);
-    createTag(db, { name: 'imported', status: 'active' });
+    const { db, datasetId } = freshDb();
+    createTag(db, { datasetId, name: 'imported', status: 'active' });
 
-    const report = importMarkdown(
-      db,
-      `---
+    const { bookmarks } = parseCollection(`---
 tags: [imported, unknown]
 ---
 
 - x: https://example.com/tag-test
-`,
-    );
+`);
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    // unknown is proposed; commit with the resolution as-is (it maps only imported).
+    const report = ingestBookmarks(db, datasetId, bookmarks, resolution);
 
     expect(report.tagsAssigned).toBe(1);
-    expect(getTagByName(db, 'imported', null)).not.toBeNull();
-    expect(getTagByName(db, 'unknown', null)).toBeNull();
+    expect(getTagByName(db, datasetId, 'imported', null)).not.toBeNull();
+    expect(getTagByName(db, datasetId, 'unknown', null)?.status).toBe('proposed');
   });
 
   test('parses a real collection file from docs/examples-mds', async () => {
