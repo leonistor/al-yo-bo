@@ -29,12 +29,13 @@ import {
   updateTag,
   type BookmarkInput,
 } from '@al-yo-bo/db';
+import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { importMarkdown, parseCollection } from '@al-yo-bo/importer';
 import { fuseSearch } from '@al-yo-bo/search';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import {
   clampPagination,
   isHttpUrl,
+  isUuid,
   type BookmarkSort,
   type BookmarkWithTags,
   type RankedCandidate,
@@ -50,6 +51,8 @@ import { AppError, NotFoundError, ValidationError } from './errors.ts';
 /** Subsystems optional to request handling; absent entries degrade gracefully. */
 export interface AppServices {
   vector: VectorIndex;
+  /** Which implementation serves `vector` (reporting only, e.g. /api/health). */
+  vectorBackend?: 'qdrant' | 'memory';
   embeddings?: EmbeddingClient;
 }
 
@@ -122,6 +125,18 @@ function bookmarkView(db: Database, id: string): BookmarkWithTags {
 }
 
 /**
+ * Validates an `:id` path parameter before it reaches SQL: non-UUID strings
+ * would otherwise throw deep inside `uuidToBytes` and surface as a 500.
+ */
+function pathId(c: Context, message: string): string {
+  const id = c.req.param('id') ?? '';
+  if (!isUuid(id)) {
+    throw new NotFoundError(message);
+  }
+  return id;
+}
+
+/**
  * Semantic candidate list for the search query. Requires the whole chain to be
  * available (vector index with vectors, embedding client, configured model);
  * any missing link or failure returns an empty list, which degrades the search
@@ -130,7 +145,14 @@ function bookmarkView(db: Database, id: string): BookmarkWithTags {
 async function semanticCandidates(
   services: AppServices | undefined,
   config: ServerConfig,
-  input: { q: string; mode: SearchMode; categoryId?: string; tagId?: string; limit: number; offset: number },
+  input: {
+    q: string;
+    mode: SearchMode;
+    categoryId?: string;
+    tagId?: string;
+    limit: number;
+    offset: number;
+  },
 ): Promise<RankedCandidate[]> {
   if (input.mode === 'keyword') {
     return [];
@@ -191,8 +213,7 @@ async function searchResponse(
     limit?: number;
     offset?: number;
   },
-): Promise<SearchResponse> {
-  const { limit, offset } = clampPagination(input.limit, input.offset);
+): Promise<SearchResponse> {  const { limit, offset } = clampPagination(input.limit, input.offset);
 
   if (!input.q) {
     const { items, total } = listBookmarks(db, {
@@ -211,37 +232,72 @@ async function searchResponse(
     };
   }
 
-  const keyword = keywordSearch(db, {
-    q: input.q,
-    categoryId: input.categoryId,
-    tagId: input.tagId,
-    limit,
-    offset,
-  });
-  const semantic = await semanticCandidates(services, config, {
-    q: input.q,
-    mode: input.mode,
-    categoryId: input.categoryId,
-    tagId: input.tagId,
-    limit,
-    offset,
-  });
-  const fused = fuseSearch(keyword, semantic, input.mode);
-  const items = getBookmarksWithTagsByIds(
-    db,
-    fused.map((candidate) => candidate.bookmarkId),
-  );
-  const total = countKeywordMatches(db, {
+  const keywordTotal = countKeywordMatches(db, {
     q: input.q,
     categoryId: input.categoryId,
     tagId: input.tagId,
   });
 
+  // Fused modes fetch candidates from rank 0 over the whole page window, plus one
+  // probe item past it so `hasMore` is observable; keyword-only pages in SQL.
+  const window = offset + limit;
+  const semantic =
+    input.mode === 'keyword'
+      ? []
+      : await semanticCandidates(services, config, {
+          q: input.q,
+          mode: input.mode,
+          categoryId: input.categoryId,
+          tagId: input.tagId,
+          limit: window + 1,
+          offset: 0,
+        });
+  const fusedMode = semantic.length > 0;
+
+  const keyword = keywordSearch(db, {
+    q: input.q,
+    categoryId: input.categoryId,
+    tagId: input.tagId,
+    // In fused modes both ranked lists must cover the same window, otherwise
+    // page slices of the fused ranking would repeat or skip items across pages.
+    limit: fusedMode ? window + 1 : limit,
+    offset: fusedMode ? 0 : offset,
+  });
+
+  const fused = fuseSearch(keyword, semantic, input.mode);
+  const mode: SearchMode = fusedMode ? input.mode : 'keyword';
+
+  if (!fusedMode) {
+    const items = getBookmarksWithTagsByIds(
+      db,
+      keyword.map((candidate) => candidate.bookmarkId),
+    );
+    return {
+      items,
+      total: keywordTotal,
+      mode,
+      pagination: { limit, offset, hasMore: offset + items.length < keywordTotal },
+    };
+  }
+
+  // Semantic contributed: pages are slices of the fused ranking over the fetched
+  // window. Semantic top-k has no total, so `total` is a monotonic lower bound
+  // ("at least this many results"): past pages stay counted, the probe item makes
+  // `hasMore` exact, and a finished window reports exactly what was seen.
+  const page = fused.slice(offset, window);
+  const hasMore = fused.length > window;
+  const items = getBookmarksWithTagsByIds(
+    db,
+    page.map((candidate) => candidate.bookmarkId),
+  );
+
   return {
     items,
-    total,
-    mode: semantic.length > 0 ? input.mode : 'keyword',
-    pagination: { limit, offset, hasMore: offset + items.length < total },
+    total: hasMore
+      ? Math.max(keywordTotal, window + 1)
+      : Math.max(keywordTotal, offset + items.length),
+    mode,
+    pagination: { limit, offset, hasMore },
   };
 }
 
@@ -262,7 +318,20 @@ async function readImportText(c: Context): Promise<string> {
 // produces usable Hono RPC types for apps/web.
 export function createApp(db: Database, config: ServerConfig, services?: AppServices) {
   const app = new Hono()
-    .get('/api/health', (c) => c.json({ status: 'ok', version: '0.0.0' } as const))
+    .get('/api/health', (c) =>
+      c.json({
+        status: 'ok' as const,
+        version: '0.0.0' as const,
+        vector: {
+          backend: services?.vectorBackend ?? ('memory' as const),
+          indexed: services?.vector.size ?? 0,
+        },
+        embeddings: {
+          enabled: Boolean(services?.embeddings),
+          model: config.embeddings.model ?? null,
+        },
+      }),
+    )
 
     .get('/api/bookmarks', async (c) =>
       c.json(
@@ -294,10 +363,11 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       return c.json(bookmarkView(db, bookmark.id), 201);
     })
 
-    .get('/api/bookmarks/:id', (c) => c.json(bookmarkView(db, c.req.param('id'))))
+    .get('/api/bookmarks/:id', (c) => c.json(bookmarkView(db, pathId(c, 'Bookmark not found'))))
 
     .patch('/api/bookmarks/:id', jsonBody, (c) => {
       const body = c.req.valid('json');
+      const id = pathId(c, 'Bookmark not found');
       const patch: Partial<BookmarkInput> = {};
       if ('url' in body) {
         patch.url = requiredString(body, 'url');
@@ -311,15 +381,15 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       if ('categoryId' in body) {
         patch.categoryId = optionalId(body, 'categoryId');
       }
-      const updated = updateBookmark(db, c.req.param('id'), patch);
+      const updated = updateBookmark(db, id, patch);
       if (!updated) {
         throw new NotFoundError('Bookmark not found');
       }
-      return c.json(bookmarkView(db, updated.id));
+      return c.json(bookmarkView(db, id));
     })
 
     .delete('/api/bookmarks/:id', async (c) => {
-      const id = c.req.param('id');
+      const id = pathId(c, 'Bookmark not found');
       if (!deleteBookmark(db, id)) {
         throw new NotFoundError('Bookmark not found');
       }
@@ -331,7 +401,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
     })
 
     .post('/api/bookmarks/:id/tags', jsonBody, async (c) => {
-      const bookmarkId = c.req.param('id');
+      const bookmarkId = pathId(c, 'Bookmark not found');
       const tagId = requiredString(c.req.valid('json'), 'tagId');
       if (!getBookmarkById(db, bookmarkId)) {
         throw new NotFoundError('Bookmark not found');
@@ -347,8 +417,9 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
     })
 
     .delete('/api/bookmarks/:id/tags/:tagId', async (c) => {
-      const bookmarkId = c.req.param('id');
-      if (!removeBookmarkTag(db, bookmarkId, c.req.param('tagId'))) {
+      const bookmarkId = pathId(c, 'Bookmark not found');
+      const tagId = c.req.param('tagId');
+      if (!isUuid(tagId) || !removeBookmarkTag(db, bookmarkId, tagId)) {
         throw new NotFoundError('Assignment not found');
       }
       if (services) {
@@ -372,7 +443,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
 
     .patch('/api/categories/:id', jsonBody, (c) => {
       const body = c.req.valid('json');
-      const updated = updateCategory(db, c.req.param('id'), {
+      const updated = updateCategory(db, pathId(c, 'Category not found'), {
         name: 'name' in body ? requiredString(body, 'name') : undefined,
         description: 'description' in body ? optionalString(body, 'description') : undefined,
       });
@@ -383,7 +454,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
     })
 
     .delete('/api/categories/:id', (c) => {
-      if (!deleteCategory(db, c.req.param('id'))) {
+      if (!deleteCategory(db, pathId(c, 'Category not found'))) {
         throw new NotFoundError('Category not found');
       }
       return c.body(null, 204);
@@ -405,7 +476,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
 
     .patch('/api/tags/:id', jsonBody, (c) => {
       const body = c.req.valid('json');
-      const updated = updateTag(db, c.req.param('id'), {
+      const updated = updateTag(db, pathId(c, 'Tag not found'), {
         name: 'name' in body ? requiredString(body, 'name') : undefined,
         description: 'description' in body ? optionalString(body, 'description') : undefined,
         categoryId: 'categoryId' in body ? optionalId(body, 'categoryId') : undefined,
@@ -418,7 +489,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
 
     .post('/api/tags/:id/status', jsonBody, (c) => {
       const status = requiredString(c.req.valid('json'), 'status') as TagStatus;
-      const updated = setTagStatus(db, c.req.param('id'), status);
+      const updated = setTagStatus(db, pathId(c, 'Tag not found'), status);
       if (!updated) {
         throw new NotFoundError('Tag not found');
       }
@@ -426,7 +497,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
     })
 
     .delete('/api/tags/:id', (c) => {
-      if (!deleteTag(db, c.req.param('id'))) {
+      if (!deleteTag(db, pathId(c, 'Tag not found'))) {
         throw new NotFoundError('Tag not found');
       }
       return c.body(null, 204);

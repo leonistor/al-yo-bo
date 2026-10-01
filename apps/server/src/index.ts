@@ -1,8 +1,7 @@
-import { Hono } from 'hono';
-import { serveStatic } from 'hono/bun';
-
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
+import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
 
 import { createApp } from './app.ts';
 import { loadConfig } from './env.ts';
@@ -21,9 +20,8 @@ const embeddings =
         baseUrl: config.embeddings.baseUrl,
       })
     : undefined;
-
 const app = new Hono();
-app.route('/', createApp(db, config, { vector: vector.index, embeddings }));
+app.route('/', createApp(db, config, { vector: vector.index, vectorBackend: vector.backend, embeddings }));
 
 // In production the single Bun process also serves the built web app.
 if (process.env.NODE_ENV === 'production') {
@@ -41,7 +39,9 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 console.log(`al-yo-bo server listening on http://${config.host}:${config.port}`);
-console.log(`[vector] backend: ${vector.backend}${embeddings ? `, query embeddings: ${config.embeddings.model}` : ', query embeddings: off'}`);
+console.log(
+  `[vector] backend: ${vector.backend}${embeddings ? `, query embeddings: ${config.embeddings.model}` : ', query embeddings: off'}`,
+);
 
 export type { AppType } from './app.ts';
 
