@@ -37,6 +37,9 @@ const jobs = startJobQueue({
   scrape,
   classifier,
   config,
+  // Same cap as dead-link invalidation: a job gives up on the same attempt that
+  // marks the bookmark invalid.
+  maxAttempts: config.scrape.maxAttempts,
   // Content changes flow scrape → embed → classify (§6 re-run triggers).
   onEmbedded: (bookmarkId) => jobs.enqueue(bookmarkId, 'classify'),
 });

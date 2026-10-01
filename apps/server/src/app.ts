@@ -14,6 +14,7 @@ import {
   deleteTag,
   getAggregates,
   getBookmarkById,
+  getBookmarkStatuses,
   getBookmarksWithTagsByIds,
   getTagById,
   keywordSearch,
@@ -39,7 +40,10 @@ import {
   clampPagination,
   isHttpUrl,
   isUuid,
+  normalizeUrl,
+  type BookmarkListStatus,
   type BookmarkSort,
+  type BookmarkStatus,
   type BookmarkWithTags,
   type RankedCandidate,
   type SearchMode,
@@ -100,6 +104,11 @@ function parseSort(value: string | undefined): BookmarkSort {
 
 function parseDirection(value: string | undefined): 'asc' | 'desc' {
   return value === 'asc' ? 'asc' : 'desc';
+}
+
+/** Invalid bookmarks stay out of default views; `invalid`/`all` must be explicit. */
+function parseStatus(value: string | undefined): BookmarkListStatus {
+  return value === 'invalid' || value === 'all' ? value : 'active';
 }
 
 function parseNumber(value: string | undefined): number | undefined {
@@ -197,6 +206,25 @@ async function semanticCandidates(
   }
 }
 
+/**
+ * Drops semantic candidates that do not match the requested status in one batched
+ * lookup, then re-ranks 1..n so the fused ordering stays coherent. Unknown ids
+ * (already deleted) are dropped.
+ */
+function filterCandidatesByStatus(
+  db: Database,
+  candidates: RankedCandidate[],
+  status: BookmarkStatus,
+): RankedCandidate[] {
+  const statuses = getBookmarkStatuses(
+    db,
+    candidates.map((candidate) => candidate.bookmarkId),
+  );
+  return candidates
+    .filter((candidate) => statuses.get(candidate.bookmarkId) === status)
+    .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+}
+
 /** Mirrors a tag/category change into the vector index payload (best-effort). */
 async function syncVectorPayload(
   services: AppServices,
@@ -226,17 +254,20 @@ async function searchResponse(
     mode: SearchMode;
     categoryId?: string;
     tagId?: string;
+    status: BookmarkListStatus;
     sort: BookmarkSort;
     direction: 'asc' | 'desc';
     limit?: number;
     offset?: number;
   },
-): Promise<SearchResponse> {  const { limit, offset } = clampPagination(input.limit, input.offset);
+): Promise<SearchResponse> {
+  const { limit, offset } = clampPagination(input.limit, input.offset);
 
   if (!input.q) {
     const { items, total } = listBookmarks(db, {
       categoryId: input.categoryId,
       tagId: input.tagId,
+      status: input.status,
       sort: input.sort,
       direction: input.direction,
       limit,
@@ -254,12 +285,13 @@ async function searchResponse(
     q: input.q,
     categoryId: input.categoryId,
     tagId: input.tagId,
+    status: input.status,
   });
 
   // Fused modes fetch candidates from rank 0 over the whole page window, plus one
   // probe item past it so `hasMore` is observable; keyword-only pages in SQL.
   const window = offset + limit;
-  const semantic =
+  const rawSemantic =
     input.mode === 'keyword'
       ? []
       : await semanticCandidates(services, config, {
@@ -270,12 +302,18 @@ async function searchResponse(
           limit: window + 1,
           offset: 0,
         });
+  // Semantic hits bypass the SQL status filter, so apply it here before fusion.
+  const semantic =
+    input.status === 'all' || rawSemantic.length === 0
+      ? rawSemantic
+      : filterCandidatesByStatus(db, rawSemantic, input.status);
   const fusedMode = semantic.length > 0;
 
   const keyword = keywordSearch(db, {
     q: input.q,
     categoryId: input.categoryId,
     tagId: input.tagId,
+    status: input.status,
     // In fused modes both ranked lists must cover the same window, otherwise
     // page slices of the fused ranking would repeat or skip items across pages.
     limit: fusedMode ? window + 1 : limit,
@@ -376,6 +414,8 @@ async function searchBookmarksForChat(
   const response = await searchResponse(db, services, config, {
     q: trimmed,
     mode: 'hybrid',
+    // Chat never surfaces invalid bookmarks.
+    status: 'active',
     sort: 'created_at',
     direction: 'desc',
     limit,
@@ -437,6 +477,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
           mode: parseMode(c.req.query('mode')),
           categoryId: c.req.query('categoryId') || undefined,
           tagId: c.req.query('tagId') || undefined,
+          status: parseStatus(c.req.query('status')),
           sort: parseSort(c.req.query('sort')),
           direction: parseDirection(c.req.query('direction')),
           limit: parseNumber(c.req.query('limit')),
@@ -482,6 +523,11 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       }
       if ('categoryId' in body) {
         patch.categoryId = optionalId(body, 'categoryId');
+      }
+      // A new URL gets a clean slate: old dead-link evidence no longer applies.
+      if (patch.url !== undefined && normalizeUrl(patch.url) !== current.url) {
+        patch.scrapeAttempts = 0;
+        patch.status = 'active';
       }
       const updated = updateBookmark(db, id, patch);
       if (!updated) {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { openDatabase, seedFromFile, setupDatabase } from '@al-yo-bo/db';
+import { createBookmark, getBookmarkById, openDatabase, seedFromFile, setupDatabase } from '@al-yo-bo/db';
 import type {
   RankedCandidate,
   VectorFilter,
@@ -95,6 +95,55 @@ describe('bookmark API', () => {
     const body = (await response.json()) as { total: number; mode: string };
     expect(body.total).toBeGreaterThan(0);
     expect(body.mode).toBe('keyword');
+  });
+
+  test('status filter hides invalid bookmarks from default views', async () => {
+    const { db, app } = makeApp();
+    const invalid = createBookmark(db, {
+      url: 'https://api-invalid.test',
+      title: 'Broken',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+
+    const def = (await (await app.request('/api/bookmarks?limit=100')).json()) as {
+      total: number;
+      items: { id: string }[];
+    };
+    expect(def.total).toBe(26);
+    expect(def.items.some((bookmark) => bookmark.id === invalid.id)).toBe(false);
+
+    const onlyInvalid = (await (
+      await app.request('/api/bookmarks?limit=100&status=invalid')
+    ).json()) as { total: number; items: { id: string }[] };
+    expect(onlyInvalid.total).toBe(1);
+    expect(onlyInvalid.items.map((bookmark) => bookmark.id)).toEqual([invalid.id]);
+
+    const all = (await (await app.request('/api/bookmarks?limit=100&status=all')).json()) as {
+      total: number;
+      items: { id: string }[];
+    };
+    expect(all.total).toBe(27);
+    expect(all.items.some((bookmark) => bookmark.id === invalid.id)).toBe(true);
+  });
+
+  test('changing a bookmark URL resets status and scrape attempts', async () => {
+    const { db, app } = makeApp();
+    const invalid = createBookmark(db, {
+      url: 'https://api-reset-old.test',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+
+    const response = await app.request(
+      `/api/bookmarks/${invalid.id}`,
+      jsonRequest({ url: 'https://api-reset-new.test' }, 'PATCH'),
+    );
+    expect(response.status).toBe(200);
+    const bookmark = getBookmarkById(db, invalid.id)!;
+    expect(bookmark.url).toBe('https://api-reset-new.test/');
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
   });
 
   test('keyword pagination is exact', async () => {
@@ -231,6 +280,32 @@ describe('fused search pagination', () => {
     expect(page3.items[0]!.id).toBe(ids[4]!);
     expect(page3.pagination.hasMore).toBe(false);
     expect(page3.total).toBe(5);
+  });
+
+  test('semantic mode excludes invalid bookmarks unless status=all', async () => {
+    const { db, app } = makeApp();
+    const ids = await firstSeededIds(app, 3);
+    const invalid = createBookmark(db, {
+      url: 'https://semantic-invalid.test',
+      title: 'Hidden',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+    const fusedApp = createApp(db, loadConfig({ EMBEDDING_MODEL: 'stub-model' }), {
+      vector: new StubVectorIndex([invalid.id, ...ids]),
+      vectorBackend: 'memory',
+      embeddings: stubEmbeddings,
+    });
+
+    const active = (await (
+      await fusedApp.request('/api/bookmarks?q=zzzqqq&mode=semantic&limit=10&status=active')
+    ).json()) as { items: { id: string }[] };
+    expect(active.items.some((item) => item.id === invalid.id)).toBe(false);
+
+    const all = (await (
+      await fusedApp.request('/api/bookmarks?q=zzzqqq&mode=semantic&limit=10&status=all')
+    ).json()) as { items: { id: string }[] };
+    expect(all.items.some((item) => item.id === invalid.id)).toBe(true);
   });
 
   test('semantic mode without embeddings degrades to keyword-only', async () => {

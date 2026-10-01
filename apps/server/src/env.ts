@@ -29,6 +29,8 @@ export interface ServerConfig {
     maxContentChars: number;
     /** html-to-markdown CLI binary (PATH-resolved; absolute paths allowed). */
     binary: string;
+    /** Dead-link invalidation cap; shared with the job retry loop. */
+    maxAttempts: number;
   };
   /** Chat (AI SDK + local Ollama); off without a model. */
   chat: {
@@ -75,6 +77,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       timeoutMs: numberFromEnv(env.SCRAPE_TIMEOUT_MS, 15_000),
       maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
       binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
+      maxAttempts: numberFromEnv(env.SCRAPE_MAX_ATTEMPTS, 3),
     },
     chat: {
       ollamaUrl: env.OLLAMA_URL ?? 'http://127.0.0.1:11434',

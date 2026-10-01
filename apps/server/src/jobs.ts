@@ -21,7 +21,7 @@ import {
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { packFloat32, type VectorIndex } from '@al-yo-bo/shared';
 
-import type { ScrapeFn, ScrapeResult } from './scrape.ts';
+import { ScrapeError, type ScrapeFn, type ScrapeResult } from './scrape.ts';
 import type { ServerConfig } from './env.ts';
 import { classifyBookmark, type ClassifyDeps } from './classify.ts';
 
@@ -97,9 +97,44 @@ export async function scrapeAndStore(deps: JobDeps, bookmarkId: string): Promise
   if (!bookmark) {
     return 'missing';
   }
-  const result: ScrapeResult = await deps.scrape(bookmark.url);
+
+  let result: ScrapeResult;
+  try {
+    result = await deps.scrape(bookmark.url);
+  } catch (error) {
+    // Only a definitive dead link (404/410) counts toward invalidation; every
+    // other failure is transient and is retried on the next reconciliation.
+    const statusCode = error instanceof ScrapeError ? error.statusCode : undefined;
+    const deadLink = statusCode === 404 || statusCode === 410;
+    const lastError = {
+      at: Date.now(),
+      status: statusCode ?? null,
+      message: error instanceof Error ? error.message : String(error),
+    };
+    const metadata = {
+      ...bookmark.metadata,
+      scrape: { ...(bookmark.metadata?.scrape as object | undefined), lastError },
+    };
+    if (deadLink) {
+      const attempts = bookmark.scrapeAttempts + 1;
+      updateBookmark(deps.db, bookmarkId, {
+        metadata,
+        scrapeAttempts: attempts,
+        status: attempts >= deps.config.scrape.maxAttempts ? 'invalid' : bookmark.status,
+      });
+    } else {
+      updateBookmark(deps.db, bookmarkId, { metadata });
+    }
+    throw error;
+  }
+
   if (result.contentHash === bookmark.contentHash) {
-    updateBookmark(deps.db, bookmarkId, { scrapedAt: Date.now() });
+    updateBookmark(deps.db, bookmarkId, {
+      metadata: { ...bookmark.metadata, scrape: { ...result.metadata.scrape } },
+      scrapedAt: Date.now(),
+      scrapeAttempts: 0,
+      status: 'active',
+    });
     return 'unchanged';
   }
   updateBookmark(deps.db, bookmarkId, {
@@ -107,6 +142,8 @@ export async function scrapeAndStore(deps: JobDeps, bookmarkId: string): Promise
     metadata: { ...bookmark.metadata, ...result.metadata },
     contentHash: result.contentHash,
     scrapedAt: Date.now(),
+    scrapeAttempts: 0,
+    status: 'active',
   });
   deps.queue?.enqueue(bookmarkId, 'embed');
   return 'scraped';

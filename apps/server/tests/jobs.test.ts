@@ -1,7 +1,13 @@
 import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { createBookmark, getBookmarkById, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import {
+  createBookmark,
+  getBookmarkById,
+  openDatabase,
+  setupDatabase,
+  updateBookmark,
+} from '@al-yo-bo/db';
 import { uuidToBytes } from '@al-yo-bo/shared';
 import type { RankedCandidate, VectorFilter, VectorIndex, VectorUpsert } from '@al-yo-bo/shared';
 
@@ -15,7 +21,7 @@ import {
   type JobQueue,
 } from '../src/jobs.ts';
 import { makeScraper, ScrapeError, sha256Hex, type ScrapeFn } from '../src/scrape.ts';
-import { loadConfig } from '../src/env.ts';
+import { loadConfig, type ServerConfig } from '../src/env.ts';
 
 /** VectorIndex stub that records upserts and answers searches in insertion order. */
 class RecordingVector implements VectorIndex {
@@ -82,7 +88,7 @@ function makeDb(): Database {
 
 function makeDeps(
   db: Database,
-  overrides: { scrape?: ScrapeFn; embeddings?: typeof stubEmbeddings } = {},
+  overrides: { scrape?: ScrapeFn; embeddings?: typeof stubEmbeddings; config?: ServerConfig } = {},
 ): JobDeps & { vector: RecordingVector; queue: ReturnType<typeof recordingQueue> } {
   const vector = new RecordingVector();
   const queue = recordingQueue();
@@ -90,7 +96,7 @@ function makeDeps(
     db,
     vector,
     queue,
-    config: loadConfig({}),
+    config: overrides.config ?? loadConfig({}),
     scrape:
       overrides.scrape ??
       (async () => {
@@ -123,7 +129,12 @@ describe('composeEmbedText', () => {
 });
 
 describe('makeScraper', () => {
-  const options = { timeoutMs: 1_000, maxContentChars: 200_000, binary: 'html-to-markdown' };
+  const options = {
+    timeoutMs: 1_000,
+    maxContentChars: 200_000,
+    binary: 'html-to-markdown',
+    maxAttempts: 3,
+  };
 
   test('converts fetched HTML and hashes the stored content', async () => {
     const scraper = makeScraper(options, {
@@ -226,6 +237,127 @@ describe('scrapeAndStore', () => {
     expect(bookmark.title).toBe('Keep');
     expect(bookmark.content).toBeNull();
     expect(deps.queue.calls).toEqual([]);
+  });
+
+  test('marks a bookmark invalid after repeated dead-link failures', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/dead' });
+    const deps = makeDeps(db, {
+      scrape: async () => {
+        throw new ScrapeError('Fetching dead failed: HTTP 404', 404);
+      },
+    });
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    expect(getBookmarkById(db, id)!.scrapeAttempts).toBe(1);
+    expect(getBookmarkById(db, id)!.status).toBe('active');
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+
+    const bookmark = getBookmarkById(db, id)!;
+    expect(bookmark.status).toBe('invalid');
+    expect(bookmark.scrapeAttempts).toBe(3);
+    const scrapeMetadata = bookmark.metadata?.scrape as
+      | { lastError?: { status: number | null; message: string } }
+      | undefined;
+    const lastError = scrapeMetadata?.lastError;
+    expect(lastError?.status).toBe(404);
+    expect(lastError?.message).toContain('HTTP 404');
+  });
+
+  test('honors the configured invalidation cap', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/dead-cap' });
+    const deps = makeDeps(db, {
+      config: loadConfig({ SCRAPE_MAX_ATTEMPTS: '2' }),
+      scrape: async () => {
+        throw new ScrapeError('HTTP 410', 410);
+      },
+    });
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    expect(getBookmarkById(db, id)!.status).toBe('active');
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    expect(getBookmarkById(db, id)!.status).toBe('invalid');
+  });
+
+  test('transient failures do not count toward invalidation', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/flaky' });
+    const deps = makeDeps(db, {
+      scrape: async () => {
+        throw new ScrapeError('socket timeout');
+      },
+    });
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+
+    const bookmark = getBookmarkById(db, id)!;
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
+    const scrapeMetadata = bookmark.metadata?.scrape as
+      | { lastError?: { status: number | null } }
+      | undefined;
+    const lastError = scrapeMetadata?.lastError;
+    expect(lastError?.status).toBeNull();
+  });
+
+  test('server errors are transient, not dead links', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/error' });
+    const deps = makeDeps(db, {
+      scrape: async () => {
+        throw new ScrapeError('HTTP 500', 500);
+      },
+    });
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    expect(getBookmarkById(db, id)!.scrapeAttempts).toBe(0);
+    expect(getBookmarkById(db, id)!.status).toBe('active');
+  });
+
+  test('a success after two dead links resets the counters and clears the error', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/revive' });
+    let dead = true;
+    const deps = makeDeps(db, {
+      scrape: async () => {
+        if (dead) {
+          throw new ScrapeError('HTTP 404', 404);
+        }
+        return {
+          content: '# Back',
+          contentHash: sha256Hex('# Back'),
+          metadata: { scrape: { at: 9, contentType: 'text/html', finalUrl: null, truncated: false } },
+        };
+      },
+    });
+
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    await expect(scrapeAndStore(deps, id)).rejects.toThrow(ScrapeError);
+    expect(getBookmarkById(db, id)!.scrapeAttempts).toBe(2);
+
+    dead = false;
+    expect(await scrapeAndStore(deps, id)).toBe('scraped');
+    const bookmark = getBookmarkById(db, id)!;
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
+    const scrapeMetadata = bookmark.metadata?.scrape as { lastError?: unknown } | undefined;
+    expect(scrapeMetadata?.lastError).toBeUndefined();
+  });
+
+  test('a success restores an invalid bookmark to active', async () => {
+    const { id } = createBookmark(db, { url: 'https://example.com/healed' });
+    updateBookmark(db, id, { status: 'invalid', scrapeAttempts: 3 });
+    const deps = makeDeps(db, {
+      scrape: async () => ({
+        content: '# Healed',
+        contentHash: sha256Hex('# Healed'),
+        metadata: { scrape: { at: 1, contentType: null, finalUrl: null, truncated: false } },
+      }),
+    });
+
+    expect(await scrapeAndStore(deps, id)).toBe('scraped');
+    const bookmark = getBookmarkById(db, id)!;
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
   });
 });
 

@@ -32,7 +32,11 @@ export interface ScrapeResult {
 export type ScrapeFn = (url: string) => Promise<ScrapeResult>;
 
 export class ScrapeError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** HTTP status when the failure came from a response; absent = transient. */
+    readonly statusCode?: number,
+  ) {
     super(message);
     this.name = 'ScrapeError';
   }
@@ -64,7 +68,7 @@ export async function fetchPageHtml(url: string, timeoutMs: number): Promise<Fet
     );
   }
   if (!response.ok) {
-    throw new ScrapeError(`Fetching ${url} failed: HTTP ${response.status}`);
+    throw new ScrapeError(`Fetching ${url} failed: HTTP ${response.status}`, response.status);
   }
   const contentType = response.headers.get('content-type');
   if (contentType && !/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) {
