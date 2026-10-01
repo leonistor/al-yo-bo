@@ -1,4 +1,5 @@
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import { OllayaClassifierClient } from '@al-yo-bo/classifier';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -23,7 +24,22 @@ const embeddings =
       })
     : undefined;
 const scrape = makeScraper(config.scrape);
-const jobs = startJobQueue({ db, vector: vector.index, embeddings, scrape });
+// The classifier client is cheap to construct and always available; decide()
+// calls fail gracefully when the daemon is down (jobs retry, §1.5).
+const classifier = new OllayaClassifierClient({
+  baseUrl: config.ollaya.baseUrl,
+  apiKey: config.ollaya.apiKey,
+});
+const jobs = startJobQueue({
+  db,
+  vector: vector.index,
+  embeddings,
+  scrape,
+  classifier,
+  config,
+  // Content changes flow scrape → embed → classify (§6 re-run triggers).
+  onEmbedded: (bookmarkId) => jobs.enqueue(bookmarkId, 'classify'),
+});
 
 const app = new Hono();
 app.route(
@@ -34,6 +50,7 @@ app.route(
     embeddings,
     jobs,
     scrape,
+    classifier,
   }),
 );
 

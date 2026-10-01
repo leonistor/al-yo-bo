@@ -227,6 +227,11 @@ raw speed at this size. The revisit conditions are in §11.
   re-embed pass. On startup the collection is checked against the SQLite rows: a dims/model
   mismatch drops and recreates it, and `sync` replays SQLite rows into missing points and deletes
   orphans. Qdrant data loss is therefore free to recover — never re-embed.
+- **`bookmark_embeddings.model` stores the configured `EMBEDDING_MODEL`**, not the provider's
+  response echo: OpenRouter normalizes model ids (e.g. `text-embedding-3-small` for
+  `openai/text-embedding-3-small`), and storing the echo would flag every row as stale on every
+  startup, re-embedding the whole library forever. The startup reconciliation compares rows against
+  the configured model, so a genuine model change re-embeds exactly once.
 - Write-through order: SQLite first (canonical), then the index (Qdrant point and in-memory matrix).
   Index writes are best-effort; a missed write is repaired by the next startup sync.
 - `packages/search` loads all SQLite embeddings into one contiguous normalized matrix at startup
@@ -393,7 +398,7 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | unset — must be chosen   |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
-| `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | unset — must be chosen   |
+| `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
 | `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
@@ -424,6 +429,24 @@ Retries are exponential with a bounded cap; jobs are idempotent (safe to re-run)
 one in-flight classification per bookmark and one scrape per URL. Failures never lose a bookmark —
 the row is always saved first, enrichment is best-effort.
 
+### Scrape implementation
+
+The scraper fetches the page itself (browser-like UA, `SCRAPE_TIMEOUT_MS` budget, redirect
+follow) and pipes the HTML into the locally installed **`html-to-markdown` CLI**
+(<https://github.com/xberg-io/html-to-markdown>) over stdin/stdout — no npm dependency, no native
+addon. The binary is treated like a sidecar: when it is missing (`HTML_TO_MARKDOWN_BIN` overrides
+the PATH lookup) or a fetch/convert fails, the scrape fails, the bookmark keeps its URL + note,
+and reconciliation retries it on the next start. Stored content is truncated to
+`SCRAPE_MAX_CONTENT_CHARS` **before** hashing, so `content_hash` always describes exactly what is
+stored; an unchanged hash skips the embed job. Scrape provenance (timestamp, content type, final
+URL after redirects, truncated flag) is merged under `metadata.scrape`.
+
+| Env var                    | Purpose                                    | Default            |
+| -------------------------- | ------------------------------------------ | ------------------ |
+| `SCRAPE_TIMEOUT_MS`        | Page fetch timeout                          | `15000`            |
+| `SCRAPE_MAX_CONTENT_CHARS` | Stored markdown cap (hash applies to this)  | `200000`           |
+| `HTML_TO_MARKDOWN_BIN`     | html-to-markdown CLI binary                 | `html-to-markdown` |
+
 ## 9. Deployment
 
 Single-user, shell-script driven. The documented shape is `nohup bun run apps/server …` on the host,
@@ -451,6 +474,8 @@ variables (§7).
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
 | Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync |
 | Scrape fails              | Bookmark persists as URL + note; keyword search still matches it           |
+| html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
+| Embedding model changed   | Startup reconciliation re-embeds stale-model rows; until then keyword-only for those bookmarks |
 | Classifier model upgraded | New runs recorded; old runs retained; effective tags re-policyable         |
 | Search matrix not loaded  | Automatic keyword-only fallback                                            |
 

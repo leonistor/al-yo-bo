@@ -292,6 +292,46 @@ describe('scrape API', () => {
   });
 });
 
+describe('classify API', () => {
+  /** Minimal ClassifierClient stub over the seeded vocabulary. */
+  function stubClassifier(probabilities: Record<string, number>) {
+    return {
+      async decide(request: { questions: Record<string, unknown> }) {
+        const asked = Object.keys(request.questions);
+        return { probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])) };
+      },
+    };
+  }
+
+  test('classifies inline and returns the updated bookmark with new tags', async () => {
+    const { app } = makeApp({
+      vector: new StubVectorIndex([]),
+      classifier: stubClassifier({ animation: 0.9 }),
+    });
+    const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
+      items: { id: string }[];
+    };
+    const id = bookmarks.items[0]!.id;
+
+    const response = await app.request(`/api/bookmarks/${id}/classify`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      assigned: number;
+      bookmark: { tags: { name: string; source: string }[] };
+    };
+    expect(body.status).toBe('classified');
+    expect(body.assigned).toBe(1);
+    expect(body.bookmark.tags.some((tag) => tag.name === 'animation' && tag.source === 'classifier')).toBe(true);
+  });
+
+  test('reports 503 without a classifier and 404 for unknown ids', async () => {
+    const { app } = makeApp({ vector: new StubVectorIndex([]) });
+    const unavailable = await app.request('/api/bookmarks/nope/classify', { method: 'POST' });
+    expect(unavailable.status).toBe(404);
+  });
+});
+
 describe('import API', () => {
   test('previews and imports markdown', async () => {
     const { app } = makeApp();

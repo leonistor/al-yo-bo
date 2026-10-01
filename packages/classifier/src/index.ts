@@ -16,11 +16,15 @@ export interface DecideRequest {
   questions: Record<string, NoulQuestion>;
 }
 
-/** Raw probability per requested question label. */
-export type DecideResponse = Record<string, number>;
+/** Raw probability per requested question label, plus the model that answered. */
+export interface DecideResult {
+  probabilities: Record<string, number>;
+  /** Resolved checkpoint returned by the daemon, when reported (persisted in `classification_runs.model`). */
+  model?: string;
+}
 
 export interface ClassifierClient {
-  decide(request: DecideRequest): Promise<DecideResponse>;
+  decide(request: DecideRequest): Promise<DecideResult>;
 }
 
 export interface OllayaConfig {
@@ -37,7 +41,7 @@ interface OllayaDecideBody {
 export class OllayaClassifierClient implements ClassifierClient {
   constructor(private readonly config: OllayaConfig) {}
 
-  async decide(request: DecideRequest): Promise<DecideResponse> {
+  async decide(request: DecideRequest): Promise<DecideResult> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (this.config.apiKey) {
       headers.authorization = `Bearer ${this.config.apiKey}`;
@@ -57,16 +61,16 @@ export class OllayaClassifierClient implements ClassifierClient {
   }
 }
 
-function normalizeDecideResponse(body: OllayaDecideBody): DecideResponse {
+function normalizeDecideResponse(body: OllayaDecideBody): DecideResult {
+  const result: DecideResult = { probabilities: {}, model: body.model };
   if (body.probabilities) {
-    return body.probabilities;
-  }
-  if (body.results) {
-    return Object.fromEntries(
+    result.probabilities = body.probabilities;
+  } else if (body.results) {
+    result.probabilities = Object.fromEntries(
       body.results
         .filter((entry): entry is { question: string; probability: number } => Boolean(entry.question))
         .map((entry) => [entry.question, entry.probability ?? 0]),
     );
   }
-  return {};
+  return result;
 }

@@ -18,6 +18,7 @@ import {
   getTagById,
   keywordSearch,
   listBelowThresholdCandidates,
+  listBookmarkIdsForCategoryScope,
   listBookmarks,
   listCategories,
   listProposedTags,
@@ -29,6 +30,7 @@ import {
   updateTag,
   type BookmarkInput,
 } from '@al-yo-bo/db';
+import type { ClassifierClient } from '@al-yo-bo/classifier';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { importMarkdown, parseCollection } from '@al-yo-bo/importer';
 import { fuseSearch } from '@al-yo-bo/search';
@@ -47,6 +49,7 @@ import {
 
 import type { ServerConfig } from './env.ts';
 import { AppError, NotFoundError, ValidationError } from './errors.ts';
+import { classifyBookmark } from './classify.ts';
 import { scrapeAndStore, type JobQueue, type JobType } from './jobs.ts';
 import { ScrapeError, type ScrapeFn } from './scrape.ts';
 
@@ -60,6 +63,8 @@ export interface AppServices {
   jobs?: JobQueue;
   /** Manual scrape capability; absent when the scraper is not configured. */
   scrape?: ScrapeFn;
+  /** Classification client; absent = classification endpoints report unavailable. */
+  classifier?: ClassifierClient;
 }
 
 // Declaring the JSON shape as a validator is what lets Hono RPC infer the request
@@ -325,11 +330,31 @@ function enqueueJob(services: AppServices | undefined, bookmarkId: string, type:
   services?.jobs?.enqueue(bookmarkId, type);
 }
 
+/** Cached Ollaya reachability probe (health only; 30 s TTL, sub-second timeout). */
+let ollayaProbe: { at: number; reachable: boolean } | null = null;
+
+async function probeOllaya(config: ServerConfig): Promise<boolean> {
+  if (ollayaProbe && Date.now() - ollayaProbe.at < 30_000) {
+    return ollayaProbe.reachable;
+  }
+  let reachable = false;
+  try {
+    const response = await fetch(config.ollaya.baseUrl.replace(/\/$/, '') + '/', {
+      signal: AbortSignal.timeout(750),
+    });
+    reachable = response.status < 500;
+  } catch {
+    reachable = false;
+  }
+  ollayaProbe = { at: Date.now(), reachable };
+  return reachable;
+}
+
 // All API routes are chained on one Hono instance so `ReturnType<typeof createApp>`
 // produces usable Hono RPC types for apps/web.
 export function createApp(db: Database, config: ServerConfig, services?: AppServices) {
   const app = new Hono()
-    .get('/api/health', (c) =>
+    .get('/api/health', async (c) =>
       c.json({
         status: 'ok' as const,
         version: '0.0.0' as const,
@@ -344,6 +369,11 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
         enrichment: {
           scrapeAvailable: Boolean(services?.scrape),
           jobsPending: services?.jobs?.pendingCount() ?? 0,
+        },
+        classifier: {
+          available: Boolean(services?.classifier),
+          model: config.ollaya.model,
+          reachable: services?.classifier ? await probeOllaya(config) : false,
         },
       }),
     )
@@ -448,6 +478,34 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       }
     })
 
+    .post('/api/bookmarks/:id/classify', async (c) => {
+      const id = pathId(c, 'Bookmark not found');
+      if (!getBookmarkById(db, id)) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      if (!services?.classifier) {
+        throw new AppError('Classification is not available', 503, 'classify-unavailable');
+      }
+      try {
+        const outcome = await classifyBookmark(
+          {
+            db,
+            vector: services.vector,
+            classifier: services.classifier,
+            config,
+          },
+          id,
+        );
+        return c.json({ ...outcome, bookmark: bookmarkView(db, id) });
+      } catch (error) {
+        throw new AppError(
+          `Classification failed: ${error instanceof Error ? error.message : error}`,
+          502,
+          'classify-failed',
+        );
+      }
+    })
+
     .delete('/api/bookmarks/:id', async (c) => {
       const id = pathId(c, 'Bookmark not found');
       if (!deleteBookmark(db, id)) {
@@ -549,9 +607,20 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
 
     .post('/api/tags/:id/status', jsonBody, (c) => {
       const status = requiredString(c.req.valid('json'), 'status') as TagStatus;
-      const updated = setTagStatus(db, pathId(c, 'Tag not found'), status);
+      const previous = getTagById(db, pathId(c, 'Tag not found'));
+      if (!previous) {
+        throw new NotFoundError('Tag not found');
+      }
+      const updated = setTagStatus(db, previous.id, status);
       if (!updated) {
         throw new NotFoundError('Tag not found');
+      }
+      // Vocabulary change (§7 re-run triggers): activating a tag makes it a
+      // candidate again -> re-classify the bookmarks in its scope.
+      if (previous.status !== 'active' && status === 'active' && services?.jobs) {
+        for (const id of listBookmarkIdsForCategoryScope(db, updated.categoryId)) {
+          enqueueJob(services, id, 'classify');
+        }
       }
       return c.json(updated);
     })

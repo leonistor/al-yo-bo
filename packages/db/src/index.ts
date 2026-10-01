@@ -7,6 +7,7 @@ export * from './queries/aggregates.ts';
 export * from './queries/bookmark-tags.ts';
 export * from './queries/bookmarks.ts';
 export * from './queries/categories.ts';
+export * from './queries/classification.ts';
 export * from './queries/embeddings.ts';
 export * from './queries/review.ts';
 export * from './queries/tags.ts';

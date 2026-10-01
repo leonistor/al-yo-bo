@@ -23,8 +23,9 @@ import { packFloat32, type VectorIndex } from '@al-yo-bo/shared';
 
 import type { ScrapeFn, ScrapeResult } from './scrape.ts';
 import type { ServerConfig } from './env.ts';
+import { classifyBookmark, type ClassifyDeps } from './classify.ts';
 
-export type JobType = 'scrape' | 'embed';
+export type JobType = 'scrape' | 'embed' | 'classify';
 
 /** Char budget for the composed embed text (~2k tokens, under common model limits). */
 export const EMBED_TEXT_CHAR_LIMIT = 8_000;
@@ -54,6 +55,10 @@ export interface JobQueueOptions extends Omit<JobDeps, 'queue'> {
   baseDelayMs?: number;
   /** Called after a successful embed write — the classification trigger (§6). */
   onEmbedded?: (bookmarkId: string) => void;
+  /** Classification subsystem; absent = classification stays off (§1.5). */
+  classifier?: ClassifyDeps['classifier'];
+  /** Server configuration (threshold, Ollaya model) for the classify job. */
+  config: ServerConfig;
 }
 
 /**
@@ -184,6 +189,17 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
       if (outcome === 'embedded') {
         options.onEmbedded?.(id);
       }
+    },
+    classify: async (id) => {
+      await classifyBookmark(
+        {
+          db: deps.db,
+          vector: deps.vector,
+          classifier: options.classifier,
+          config: options.config,
+        },
+        id,
+      );
     },
   };
 
