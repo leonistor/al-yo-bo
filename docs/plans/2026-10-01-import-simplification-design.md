@@ -1,6 +1,8 @@
 # Import simplification — design
 
-> Status: **proposal** (brainstorm output, not yet approved). Explored 2026-10-01.
+> Status: **implemented** — superseded by the
+> [implementation plan](./2026-10-01-import-simplification-implementation.md), which shipped in
+> full on 2026-10-01. Explored 2026-10-01.
 > Related docs: [ARCHITECTURE.md](../ARCHITECTURE.md), [MODEL.md](../MODEL.md), [README.md](../../README.md).
 
 ## Problem

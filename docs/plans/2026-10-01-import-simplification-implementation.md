@@ -1,5 +1,13 @@
 # Import simplification — implementation plan
 
+> **Status: IMPLEMENTED** (2026-10-01). All phases 0–7 are shipped and verified end-to-end in a
+> headful browser (paste → LLM extract → edit → commit → screenshot render). `ARCHITECTURE.md`,
+> `MODEL.md`, `README.md`, and `DESIGN.md` are reconciled. Landing commits: `71f25dc` (phase 3),
+> `660c84a` (phase 4), `1d1879c` (phase 4 commit contract), `7a937db` (phase 5), `61623f7`
+> (phase 7); plus e2e fixes in `34f50ad` (project `bookmark.image` on reads; Vite `/data` proxy).
+> The dead seed links that clogged the enrichment queue were pruned from both seed fixtures
+> (`leo` 217→212, `grimoire` 26→23) and the live dev DB.
+
 > Picks up the [design doc](./2026-10-01-import-simplification-design.md) and resolves the five
 > open questions. Ordered by dependency. Each section names files, gives a sketch, and lists
 > acceptance criteria. Reviewed against: [ARCHITECTURE.md](../ARCHITECTURE.md), [MODEL.md](../MODEL.md),
