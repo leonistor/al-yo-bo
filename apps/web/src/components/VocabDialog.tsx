@@ -1,5 +1,5 @@
 import type { Category, Section } from '@al-yo-bo/shared';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,7 @@ export function VocabDialog({
   const [tagName, setTagName] = useState('');
   const [tagCategoryId, setTagCategoryId] = useState('none');
 
-  async function addSection() {
+  const addSection = useCallback(async () => {
     try {
       await createSection({ name: sectionName.trim() });
       toast.success('Section created');
@@ -52,9 +52,9 @@ export function VocabDialog({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create section');
     }
-  }
+  }, [sectionName, onChanged]);
 
-  async function addCategory() {
+  const addCategory = useCallback(async () => {
     try {
       await createCategory({
         name: categoryName.trim(),
@@ -66,9 +66,9 @@ export function VocabDialog({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create category');
     }
-  }
+  }, [categoryName, categorySectionId, onChanged]);
 
-  async function addTag() {
+  const addTag = useCallback(async () => {
     try {
       await createTag({
         name: tagName.trim(),
@@ -80,7 +80,22 @@ export function VocabDialog({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create tag');
     }
-  }
+  }, [tagName, tagCategoryId, onChanged]);
+
+  const handleSectionNameChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setSectionName(event.target.value),
+    [],
+  );
+
+  const handleCategoryNameChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setCategoryName(event.target.value),
+    [],
+  );
+
+  const handleTagNameChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setTagName(event.target.value),
+    [],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -100,7 +115,7 @@ export function VocabDialog({
               <Input
                 id="new-section"
                 value={sectionName}
-                onChange={(event) => setSectionName(event.target.value)}
+                onChange={handleSectionNameChange}
                 placeholder="e.g. AI"
               />
               <Button onClick={addSection} disabled={sectionName.trim() === ''}>
@@ -117,7 +132,7 @@ export function VocabDialog({
               <Input
                 id="new-category"
                 value={categoryName}
-                onChange={(event) => setCategoryName(event.target.value)}
+                onChange={handleCategoryNameChange}
                 placeholder="e.g. dev"
               />
               <Select value={categorySectionId} onValueChange={setCategorySectionId}>
@@ -147,7 +162,7 @@ export function VocabDialog({
               <Input
                 id="new-tag"
                 value={tagName}
-                onChange={(event) => setTagName(event.target.value)}
+                onChange={handleTagNameChange}
                 placeholder="e.g. accessibility"
               />
               <Select value={tagCategoryId} onValueChange={setTagCategoryId}>

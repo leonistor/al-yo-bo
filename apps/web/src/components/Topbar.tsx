@@ -9,6 +9,7 @@ import {
   UploadIcon,
 } from 'lucide-react';
 import type { RefObject } from 'react';
+import { useCallback } from 'react';
 
 import type { SearchMode } from '@al-yo-bo/shared';
 
@@ -59,6 +60,20 @@ export function Topbar({
   onToggleChat,
   onOpenNav,
 }: TopbarProps) {
+  const handleQueryChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => onQueryChange(event.target.value),
+    [onQueryChange],
+  );
+
+  const handleModeChange = useCallback(
+    (value: string) => onModeChange(value as SearchMode),
+    [onModeChange],
+  );
+
+  const setLightTheme = useCallback(() => onThemeChange('light'), [onThemeChange]);
+  const setDarkTheme = useCallback(() => onThemeChange('dark'), [onThemeChange]);
+  const setSystemTheme = useCallback(() => onThemeChange('system'), [onThemeChange]);
+
   return (
     <header className="flex items-center gap-2 border-b border-border px-4 py-2">
       <Button
@@ -76,14 +91,14 @@ export function Topbar({
         <Input
           ref={searchRef}
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
+          onChange={handleQueryChange}
           placeholder="Search bookmarks…  (press /)"
           className="pl-8"
           aria-label="Search bookmarks"
         />
       </div>
 
-      <Select value={mode} onValueChange={(value) => onModeChange(value as SearchMode)}>
+      <Select value={mode} onValueChange={handleModeChange}>
         <SelectTrigger className="w-28 sm:w-32" aria-label="Search mode">
           <SelectValue />
         </SelectTrigger>
@@ -151,13 +166,13 @@ export function Topbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => onThemeChange('light')}>
+          <DropdownMenuItem onClick={setLightTheme}>
             <SunIcon /> Light
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onThemeChange('dark')}>
+          <DropdownMenuItem onClick={setDarkTheme}>
             <MoonIcon /> Dark
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onThemeChange('system')}>
+          <DropdownMenuItem onClick={setSystemTheme}>
             <MonitorIcon /> System
           </DropdownMenuItem>
         </DropdownMenuContent>

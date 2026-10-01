@@ -1,5 +1,6 @@
 import type { ImportedBookmark } from '@al-yo-bo/shared';
 import { BookmarkPlusIcon, FileUpIcon, SparklesIcon, WrenchIcon } from 'lucide-react';
+import type { ChangeEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -99,26 +100,29 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
     return duplicates;
   }, [included]);
 
-  // file.text() can reject (permission, encoding, removed file) — surface it
-  // instead of leaving the onChange promise unhandled.
-  async function readFile(file: File) {
-    try {
-      setText(await file.text());
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to read file');
-      return;
-    }
-    // Show what was loaded — opaque "file picked" state hides parser input.
-    setSourceTab('paste');
-    clearResults();
-  }
-
-  function clearResults() {
+  const clearResults = useCallback(() => {
     setPreview(null);
     setRows([]);
-  }
+  }, []);
 
-  async function handleExtract() {
+  // file.text() can reject (permission, encoding, removed file) — surface it
+  // instead of leaving the onChange promise unhandled.
+  const readFile = useCallback(
+    async (file: File) => {
+      try {
+        setText(await file.text());
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to read file');
+        return;
+      }
+      // Show what was loaded — opaque "file picked" state hides parser input.
+      setSourceTab('paste');
+      clearResults();
+    },
+    [clearResults],
+  );
+
+  const handleExtract = useCallback(async () => {
     setExtracting(true);
     try {
       const result = await extractImport(text);
@@ -139,9 +143,9 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
     } finally {
       setExtracting(false);
     }
-  }
+  }, [text]);
 
-  async function handleImport() {
+  const handleImport = useCallback(async () => {
     setImporting(true);
     try {
       const report = await commitImport(included.map(toImportedBookmark));
@@ -158,7 +162,39 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
     } finally {
       setImporting(false);
     }
-  }
+  }, [included, onCommitted]);
+
+  // Buttons void the pending promises so a rejection is always handled here.
+  const runExtract = useCallback(() => {
+    void handleExtract();
+  }, [handleExtract]);
+
+  const runImport = useCallback(() => {
+    void handleImport();
+  }, [handleImport]);
+
+  const selectSourceTab = useCallback(
+    (value: string) => setSourceTab(value as 'paste' | 'upload'),
+    [],
+  );
+
+  const handleTextChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      setText(event.target.value);
+      clearResults();
+    },
+    [clearResults],
+  );
+
+  const handleFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        void readFile(file);
+      }
+    },
+    [readFile],
+  );
 
   const extractDisabled = extracting || importing || text.trim() === '';
   const importDisabled = extracting || importing || included.length === 0;
@@ -172,7 +208,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
       >
         <Tabs
           value={sourceTab}
-          onValueChange={(value) => setSourceTab(value as 'paste' | 'upload')}
+          onValueChange={selectSourceTab}
           className="min-h-0 flex-1"
         >
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -182,7 +218,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
             </TabsList>
             <Button
               size="sm"
-              onClick={() => void handleExtract()}
+              onClick={runExtract}
               disabled={extractDisabled}
               aria-busy={extracting}
             >
@@ -198,10 +234,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
           <TabsContent value="paste" className="min-h-0">
             <Textarea
               value={text}
-              onChange={(event) => {
-                setText(event.target.value);
-                clearResults();
-              }}
+              onChange={handleTextChange}
               placeholder={'## dev\n\n- some tool: https://example.com'}
               aria-label="Import text"
               className="h-full min-h-64 flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-xs shadow-none focus-visible:ring-0"
@@ -220,12 +253,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
                 accept=".md,.markdown,.txt,text/markdown,text/plain"
                 className="max-w-xs"
                 disabled={extracting || importing}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    void readFile(file);
-                  }
-                }}
+                onChange={handleFileChange}
               />
               <p className="text-xs text-muted-foreground">
                 The file contents load into the paste tab, so you can review before extracting.
@@ -322,7 +350,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
           </Button>
           <Button
             size="sm"
-            onClick={() => void handleImport()}
+            onClick={runImport}
             disabled={importDisabled}
             aria-busy={importing}
           >

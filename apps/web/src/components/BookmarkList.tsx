@@ -8,7 +8,7 @@ import {
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,7 @@ function resolveImageSrc(
  */
 function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: Layout }) {
   const [failed, setFailed] = useState(false);
+  const markFailed = useCallback(() => setFailed(true), []);
   const resolved = failed ? null : resolveImageSrc(bookmark.image);
 
   return (
@@ -81,7 +82,7 @@ function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: L
           draggable={false}
           className="size-full object-cover object-top"
           {...(resolved.remote ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
-          onError={() => setFailed(true)}
+          onError={markFailed}
         />
       ) : (
         <GlobeIcon className="size-4" aria-hidden />
@@ -134,6 +135,10 @@ function BookmarkCard({
   onDelete: (bookmark: BookmarkWithTags) => void;
 }) {
   const title = bookmark.title ?? bookmark.url;
+  // Stable per-card handlers: the list re-renders on filter/page changes, and
+  // fresh closures here would invalidate memoized rows.
+  const handleOpen = useCallback(() => onOpen(bookmark), [onOpen, bookmark]);
+  const handleDelete = useCallback(() => onDelete(bookmark), [onDelete, bookmark]);
   return (
     <article
       className={cn(
@@ -146,7 +151,7 @@ function BookmarkCard({
         <div className="flex items-start gap-1">
           <button
             type="button"
-            onClick={() => onOpen(bookmark)}
+            onClick={handleOpen}
             className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <h3 className="truncate text-sm font-medium">{title}</h3>
@@ -164,7 +169,7 @@ function BookmarkCard({
             size="icon-sm"
             aria-label={`Delete ${title}`}
             className="text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(bookmark)}
+            onClick={handleDelete}
           >
             <Trash2Icon />
           </Button>

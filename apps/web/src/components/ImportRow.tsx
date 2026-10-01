@@ -1,5 +1,6 @@
 import { XIcon } from 'lucide-react';
-import { memo } from 'react';
+import type { ChangeEvent } from 'react';
+import { memo, useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -44,6 +45,40 @@ const fieldClass =
  * and rows only change identity when their own state changes.
  */
 export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: ImportRowProps) {
+  // Per-field stable handlers: this component is memoized so editing one field
+  // doesn't re-render sibling rows — new inline closures would defeat that.
+  const toggleIncluded = useCallback(
+    (checked: boolean | 'indeterminate') => onChange(row.key, { included: checked === true }),
+    [onChange, row.key],
+  );
+
+  const handleTitleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { title: event.target.value }),
+    [onChange, row.key],
+  );
+
+  const handlePriorityChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { priority: event.target.value }),
+    [onChange, row.key],
+  );
+
+  const handleDescriptionChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { description: event.target.value }),
+    [onChange, row.key],
+  );
+
+  const handleCategoryChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { category: event.target.value }),
+    [onChange, row.key],
+  );
+
+  const handleTagsChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { tagsText: event.target.value }),
+    [onChange, row.key],
+  );
+
+  const handleRemove = useCallback(() => onRemove(row.key), [onRemove, row.key]);
+
   return (
     <div
       className={cn(
@@ -55,12 +90,12 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
       <div className="flex items-center gap-2">
         <Checkbox
           checked={row.included}
-          onCheckedChange={(checked) => onChange(row.key, { included: checked === true })}
+          onCheckedChange={toggleIncluded}
           aria-label={row.included ? 'Exclude from import' : 'Include in import'}
         />
         <Input
           value={row.title}
-          onChange={(event) => onChange(row.key, { title: event.target.value })}
+          onChange={handleTitleChange}
           placeholder="Untitled"
           aria-label="Title"
           className={cn(fieldClass, 'min-w-0 flex-1 font-medium')}
@@ -68,7 +103,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
         />
         <Input
           value={row.priority}
-          onChange={(event) => onChange(row.key, { priority: event.target.value })}
+          onChange={handlePriorityChange}
           placeholder="—"
           aria-label="Priority"
           inputMode="numeric"
@@ -80,7 +115,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
           size="icon"
           className="size-8 text-muted-foreground hover:text-destructive"
           aria-label="Remove row"
-          onClick={() => onRemove(row.key)}
+          onClick={handleRemove}
         >
           <XIcon />
         </Button>
@@ -92,7 +127,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
 
       <Input
         value={row.description}
-        onChange={(event) => onChange(row.key, { description: event.target.value })}
+        onChange={handleDescriptionChange}
         placeholder="Description"
         aria-label="Description"
         className={cn(fieldClass, 'ml-7 text-muted-foreground')}
@@ -102,7 +137,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
       <div className="flex flex-col gap-1 pl-7 sm:flex-row">
         <Input
           value={row.category}
-          onChange={(event) => onChange(row.key, { category: event.target.value })}
+          onChange={handleCategoryChange}
           placeholder="Category"
           aria-label="Category"
           className={cn(fieldClass, 'sm:w-40')}
@@ -110,7 +145,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
         />
         <Input
           value={row.tagsText}
-          onChange={(event) => onChange(row.key, { tagsText: event.target.value })}
+          onChange={handleTagsChange}
           placeholder="tags, comma, separated"
           aria-label="Tags"
           className={cn(fieldClass, 'min-w-0 flex-1')}

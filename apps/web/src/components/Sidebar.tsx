@@ -1,4 +1,4 @@
-import type { Aggregates } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryAggregate, TagAggregate } from '@al-yo-bo/shared';
 import {
   FolderOpenIcon,
   HashIcon,
@@ -8,6 +8,7 @@ import {
   Settings2Icon,
   TagsIcon,
 } from 'lucide-react';
+import { useCallback } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,83 @@ interface SidebarNavProps extends Omit<SidebarProps, 'variant' | 'onOpenNav'> {
 const rowClass =
   'w-full justify-start gap-2 px-2 font-normal data-[active=true]:bg-accent data-[active=true]:text-accent-foreground';
 
+interface NavSelectionProps {
+  onSelectView: (view: 'library' | 'review') => void;
+  onSelectCategory: (id: string | null) => void;
+  onSelectTag: (id: string | null) => void;
+  onNavigate?: () => void;
+}
+
+interface CategoryRowProps extends NavSelectionProps {
+  category: CategoryAggregate;
+  /** Row highlights only while the library view is showing categories. */
+  active: boolean;
+  selectedCategoryId: string | null;
+}
+
+/** One category entry; owns its per-row select handler so the list body stays clean. */
+function CategoryRow({
+  category,
+  active,
+  selectedCategoryId,
+  onSelectView,
+  onSelectCategory,
+  onSelectTag,
+  onNavigate,
+}: CategoryRowProps) {
+  const handleSelect = useCallback(() => {
+    onSelectView('library');
+    onSelectTag(null);
+    onSelectCategory(selectedCategoryId === category.id ? null : category.id);
+    onNavigate?.();
+  }, [onSelectView, onSelectTag, onSelectCategory, selectedCategoryId, category.id, onNavigate]);
+
+  return (
+    <Button
+      variant="ghost"
+      className={cn(rowClass, 'pl-6')}
+      data-active={active}
+      onClick={handleSelect}
+    >
+      <FolderOpenIcon />
+      <span className="truncate">{category.name}</span>
+      <span className="ml-auto text-xs text-muted-foreground">{category.count}</span>
+    </Button>
+  );
+}
+
+interface TagRowProps extends NavSelectionProps {
+  tag: TagAggregate;
+  active: boolean;
+  selectedTagId: string | null;
+}
+
+/** One tag entry; same per-row handler pattern as CategoryRow. */
+function TagRow({
+  tag,
+  active,
+  selectedTagId,
+  onSelectView,
+  onSelectCategory,
+  onSelectTag,
+  onNavigate,
+}: TagRowProps) {
+  const handleSelect = useCallback(() => {
+    onSelectView('library');
+    onSelectCategory(null);
+    onSelectTag(selectedTagId === tag.id ? null : tag.id);
+    onNavigate?.();
+  }, [onSelectView, onSelectCategory, onSelectTag, selectedTagId, tag.id, onNavigate]);
+
+  return (
+    <Button variant="ghost" className={rowClass} data-active={active} onClick={handleSelect}>
+      <HashIcon />
+      <span className="truncate">{tag.name}</span>
+      <span className="ml-auto text-xs text-muted-foreground">{tag.count}</span>
+    </Button>
+  );
+}
+
 /** Shared nav body: identical content in the desktop rail and the mobile sheet. */
 function SidebarNav({
   aggregates,
@@ -57,24 +135,22 @@ function SidebarNav({
   const sections = aggregates?.sections.filter((section) => section.count > 0) ?? [];
   const uncategorized = categories.filter((category) => category.sectionId === null);
 
-  const renderCategory = (category: (typeof categories)[number]) => (
-    <Button
-      key={category.id}
-      variant="ghost"
-      className={cn(rowClass, 'pl-6')}
-      data-active={view === 'library' && selectedCategoryId === category.id}
-      onClick={() => {
-        onSelectView('library');
-        onSelectTag(null);
-        onSelectCategory(selectedCategoryId === category.id ? null : category.id);
-        onNavigate?.();
-      }}
-    >
-      <FolderOpenIcon />
-      <span className="truncate">{category.name}</span>
-      <span className="ml-auto text-xs text-muted-foreground">{category.count}</span>
-    </Button>
-  );
+  const showAll = useCallback(() => {
+    onSelectView('library');
+    onSelectCategory(null);
+    onSelectTag(null);
+    onNavigate?.();
+  }, [onSelectView, onSelectCategory, onSelectTag, onNavigate]);
+
+  const showReview = useCallback(() => {
+    onSelectView('review');
+    onNavigate?.();
+  }, [onSelectView, onNavigate]);
+
+  const openVocabulary = useCallback(() => {
+    onManageVocabulary();
+    onNavigate?.();
+  }, [onManageVocabulary, onNavigate]);
 
   return (
     <nav className="flex flex-col gap-1 px-2 pb-4">
@@ -82,12 +158,7 @@ function SidebarNav({
         variant="ghost"
         className={rowClass}
         data-active={view === 'library' && !selectedCategoryId && !selectedTagId}
-        onClick={() => {
-          onSelectView('library');
-          onSelectCategory(null);
-          onSelectTag(null);
-          onNavigate?.();
-        }}
+        onClick={showAll}
       >
         <InboxIcon />
         <span>All bookmarks</span>
@@ -100,10 +171,7 @@ function SidebarNav({
         variant="ghost"
         className={rowClass}
         data-active={view === 'review'}
-        onClick={() => {
-          onSelectView('review');
-          onNavigate?.();
-        }}
+        onClick={showReview}
       >
         <Settings2Icon />
         <span>Review queue</span>
@@ -126,7 +194,18 @@ function SidebarNav({
               <span className="truncate text-xs font-medium">{section.name}</span>
               <span className="ml-auto text-xs text-muted-foreground">{section.count}</span>
             </div>
-            {sectionCategories.map(renderCategory)}
+            {sectionCategories.map((category) => (
+              <CategoryRow
+                key={category.id}
+                category={category}
+                active={view === 'library' && selectedCategoryId === category.id}
+                selectedCategoryId={selectedCategoryId}
+                onSelectView={onSelectView}
+                onSelectCategory={onSelectCategory}
+                onSelectTag={onSelectTag}
+                onNavigate={onNavigate}
+              />
+            ))}
           </div>
         );
       })}
@@ -137,7 +216,18 @@ function SidebarNav({
             <LayersIcon className="size-3.5 text-muted-foreground" />
             <span className="truncate text-xs font-medium">Other</span>
           </div>
-          {uncategorized.map(renderCategory)}
+          {uncategorized.map((category) => (
+            <CategoryRow
+              key={category.id}
+              category={category}
+              active={view === 'library' && selectedCategoryId === category.id}
+              selectedCategoryId={selectedCategoryId}
+              onSelectView={onSelectView}
+              onSelectCategory={onSelectCategory}
+              onSelectTag={onSelectTag}
+              onNavigate={onNavigate}
+            />
+          ))}
         </div>
       )}
 
@@ -145,32 +235,19 @@ function SidebarNav({
         <span className="text-xs font-medium text-muted-foreground">Tags</span>
       </div>
       {tags.map((tag) => (
-        <Button
+        <TagRow
           key={tag.id}
-          variant="ghost"
-          className={rowClass}
-          data-active={view === 'library' && selectedTagId === tag.id}
-          onClick={() => {
-            onSelectView('library');
-            onSelectCategory(null);
-            onSelectTag(selectedTagId === tag.id ? null : tag.id);
-            onNavigate?.();
-          }}
-        >
-          <HashIcon />
-          <span className="truncate">{tag.name}</span>
-          <span className="ml-auto text-xs text-muted-foreground">{tag.count}</span>
-        </Button>
+          tag={tag}
+          active={view === 'library' && selectedTagId === tag.id}
+          selectedTagId={selectedTagId}
+          onSelectView={onSelectView}
+          onSelectCategory={onSelectCategory}
+          onSelectTag={onSelectTag}
+          onNavigate={onNavigate}
+        />
       ))}
 
-      <Button
-        variant="ghost"
-        className={cn(rowClass, 'mt-4')}
-        onClick={() => {
-          onManageVocabulary();
-          onNavigate?.();
-        }}
-      >
+      <Button variant="ghost" className={cn(rowClass, 'mt-4')} onClick={openVocabulary}>
         <TagsIcon />
         <span>Manage vocabulary</span>
       </Button>
@@ -229,19 +306,33 @@ export function Sidebar({
   onSelectTag,
   onManageVocabulary,
 }: SidebarProps) {
+  const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
+  const firstCategoryId = categories[0]?.id;
+
+  const showAll = useCallback(() => {
+    onSelectView('library');
+    onSelectCategory(null);
+    onSelectTag(null);
+  }, [onSelectView, onSelectCategory, onSelectTag]);
+
+  const showReview = useCallback(() => onSelectView('review'), [onSelectView]);
+
+  const showFirstCategory = useCallback(() => {
+    onSelectView('library');
+    onSelectTag(null);
+    // The button only renders when a category exists, so the fallback never fires.
+    onSelectCategory(selectedCategoryId ?? firstCategoryId ?? null);
+  }, [onSelectView, onSelectTag, onSelectCategory, selectedCategoryId, firstCategoryId]);
+
+  const openNav = useCallback(() => onOpenNav?.(), [onOpenNav]);
+
   if (variant === 'rail') {
-    const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
-    const firstCategory = categories[0];
     return (
       <aside className="flex h-full w-14 shrink-0 flex-col items-center gap-1 border-r border-sidebar-border bg-sidebar py-3 text-sidebar-foreground">
         <RailButton
           label="All bookmarks"
           active={view === 'library' && !selectedCategoryId && !selectedTagId}
-          onClick={() => {
-            onSelectView('library');
-            onSelectCategory(null);
-            onSelectTag(null);
-          }}
+          onClick={showAll}
         >
           <InboxIcon />
         </RailButton>
@@ -249,19 +340,15 @@ export function Sidebar({
           label={`Review queue${reviewCount > 0 ? ` (${reviewCount})` : ''}`}
           badge={reviewCount}
           active={view === 'review'}
-          onClick={() => onSelectView('review')}
+          onClick={showReview}
         >
           <Settings2Icon />
         </RailButton>
-        {firstCategory && (
+        {firstCategoryId && (
           <RailButton
             label={`Categories (${categories.length})`}
             active={view === 'library' && selectedCategoryId !== null}
-            onClick={() => {
-              onSelectView('library');
-              onSelectTag(null);
-              onSelectCategory(selectedCategoryId ?? firstCategory.id);
-            }}
+            onClick={showFirstCategory}
           >
             <FolderOpenIcon />
           </RailButton>
@@ -270,7 +357,7 @@ export function Sidebar({
           <RailButton label="Manage vocabulary" onClick={onManageVocabulary}>
             <TagsIcon />
           </RailButton>
-          <RailButton label="Full navigation" onClick={() => onOpenNav?.()}>
+          <RailButton label="Full navigation" onClick={openNav}>
             <PanelLeftIcon />
           </RailButton>
         </div>

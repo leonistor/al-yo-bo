@@ -1,4 +1,5 @@
 import { LayoutGridIcon, ListIcon, RefreshCwIcon } from 'lucide-react';
+import { useCallback } from 'react';
 
 import type { BookmarkListStatus, BookmarkSort } from '@al-yo-bo/shared';
 
@@ -43,6 +44,22 @@ export function ResultsToolbar({
   onLayoutChange,
   onRefresh,
 }: ResultsToolbarProps) {
+  const selectActive = useCallback(() => onStatusChange('active'), [onStatusChange]);
+  const selectInvalid = useCallback(() => onStatusChange('invalid'), [onStatusChange]);
+
+  const handleSortChange = useCallback(
+    (value: string) => onSortChange(value as BookmarkSort),
+    [onSortChange],
+  );
+
+  const handleDirectionChange = useCallback(
+    (value: string) => onDirectionChange(value as 'asc' | 'desc'),
+    [onDirectionChange],
+  );
+
+  const selectListLayout = useCallback(() => onLayoutChange('list'), [onLayoutChange]);
+  const selectGridLayout = useCallback(() => onLayoutChange('grid'), [onLayoutChange]);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm text-muted-foreground" aria-live="polite">
@@ -56,7 +73,7 @@ export function ResultsToolbar({
           variant={status === 'active' ? 'secondary' : 'ghost'}
           size="sm"
           aria-pressed={status === 'active'}
-          onClick={() => onStatusChange('active')}
+          onClick={selectActive}
         >
           Active
         </Button>
@@ -64,7 +81,7 @@ export function ResultsToolbar({
           variant={status === 'invalid' ? 'secondary' : 'ghost'}
           size="sm"
           aria-pressed={status === 'invalid'}
-          onClick={() => onStatusChange('invalid')}
+          onClick={selectInvalid}
         >
           Invalid
           <Badge variant="secondary" className="ml-1">
@@ -74,7 +91,7 @@ export function ResultsToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Select value={sort} onValueChange={(value) => onSortChange(value as BookmarkSort)}>
+        <Select value={sort} onValueChange={handleSortChange}>
           <SelectTrigger className="w-32 sm:w-36" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
@@ -87,7 +104,7 @@ export function ResultsToolbar({
 
         <Select
           value={direction}
-          onValueChange={(value) => onDirectionChange(value as 'asc' | 'desc')}
+          onValueChange={handleDirectionChange}
         >
           <SelectTrigger className="w-28" aria-label="Sort direction">
             <SelectValue />
@@ -104,7 +121,7 @@ export function ResultsToolbar({
             size="icon-sm"
             aria-label="List view"
             aria-pressed={layout === 'list'}
-            onClick={() => onLayoutChange('list')}
+            onClick={selectListLayout}
           >
             <ListIcon />
           </Button>
@@ -113,7 +130,7 @@ export function ResultsToolbar({
             size="icon-sm"
             aria-label="Grid view"
             aria-pressed={layout === 'grid'}
-            onClick={() => onLayoutChange('grid')}
+            onClick={selectGridLayout}
           >
             <LayoutGridIcon />
           </Button>

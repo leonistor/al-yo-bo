@@ -85,9 +85,13 @@ function ChatSkeleton() {
   );
 }
 
+// Module scope: a fresh <ChatSkeleton /> prop would break element identity
+// (and remount the fallback) on every App render.
+const CHAT_FALLBACK = <ChatSkeleton />;
+
 function ChatSurface() {
   return (
-    <Suspense fallback={<ChatSkeleton />}>
+    <Suspense fallback={CHAT_FALLBACK}>
       <ChatPanel />
     </Suspense>
   );

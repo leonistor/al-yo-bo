@@ -1,4 +1,4 @@
-import type { BookmarkImage, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
+import type { BookmarkImage, BookmarkTagView, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
 import {
   CircleAlertIcon,
   ExternalLinkIcon,
@@ -7,7 +7,7 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -112,6 +112,7 @@ function resolveImageSrc(
  */
 function HeaderImage({ bookmark }: { bookmark: BookmarkWithTags }) {
   const [failed, setFailed] = useState(false);
+  const markFailed = useCallback(() => setFailed(true), []);
   const resolved = failed ? null : resolveImageSrc(bookmark.image);
 
   return (
@@ -124,12 +125,37 @@ function HeaderImage({ bookmark }: { bookmark: BookmarkWithTags }) {
           draggable={false}
           className="size-full object-cover object-top"
           {...(resolved.remote ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
-          onError={() => setFailed(true)}
+          onError={markFailed}
         />
       ) : (
         <GlobeIcon className="size-6" aria-hidden />
       )}
     </div>
+  );
+}
+
+interface AssignedTagBadgeProps {
+  tag: BookmarkTagView;
+  onRemove: (tagId: string) => void;
+}
+
+/** Assigned-tag chip with its remove button; owns the per-tag handler. */
+function AssignedTagBadge({ tag, onRemove }: AssignedTagBadgeProps) {
+  const handleRemove = useCallback(() => onRemove(tag.tagId), [onRemove, tag]);
+
+  return (
+    <Badge variant="secondary" className="gap-1">
+      {tag.name}
+      {tag.source === 'user' && <span className="text-[0.65rem] opacity-70">user</span>}
+      <button
+        type="button"
+        aria-label={`Remove ${tag.name}`}
+        onClick={handleRemove}
+        className="ml-0.5 rounded-sm hover:text-destructive"
+      >
+        <XIcon className="size-3" />
+      </button>
+    </Badge>
   );
 }
 
@@ -164,17 +190,9 @@ export function BookmarkDetailDialog({
     setCategoryId(bookmark?.categoryId ?? 'none');
   }, [bookmark]);
 
-  if (!current) {
-    return null;
-  }
-
-  const availableTags = tags.filter(
-    (tag) => !current.tags.some((assigned) => assigned.tagId === tag.id),
-  );
-  const isInvalid = current.status === 'invalid';
-  const lastError = isInvalid ? scrapeLastError(current.metadata) : null;
-
-  async function save() {
+  // Handlers sit above the `!current` early return (rules of hooks). They can
+  // only fire while the dialog is open, when `current` is non-null.
+  const save = useCallback(async () => {
     setSaving(true);
     try {
       const updated = await updateBookmark(current!.id, {
@@ -190,29 +208,37 @@ export function BookmarkDetailDialog({
     } finally {
       setSaving(false);
     }
-  }
+  }, [current, title, description, categoryId, onChanged]);
 
-  async function addTag(tagId: string) {
-    try {
-      const updated = await assignTagToBookmark(current!.id, tagId);
-      setCurrent(updated);
-      onChanged();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to assign tag');
-    }
-  }
+  const addTag = useCallback(
+    async (tagId: string) => {
+      try {
+        const updated = await assignTagToBookmark(current!.id, tagId);
+        setCurrent(updated);
+        onChanged();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to assign tag');
+      }
+    },
+    [current, onChanged],
+  );
 
-  async function removeTag(tagId: string) {
-    try {
-      await removeTagFromBookmark(current!.id, tagId);
-      setCurrent({ ...current!, tags: current!.tags.filter((tag) => tag.tagId !== tagId) });
-      onChanged();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to remove tag');
-    }
-  }
+  const removeTag = useCallback(
+    async (tagId: string) => {
+      try {
+        await removeTagFromBookmark(current!.id, tagId);
+        setCurrent((previous) =>
+          previous ? { ...previous, tags: previous.tags.filter((tag) => tag.tagId !== tagId) } : previous,
+        );
+        onChanged();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to remove tag');
+      }
+    },
+    [current, onChanged],
+  );
 
-  async function remove() {
+  const remove = useCallback(async () => {
     try {
       await deleteBookmark(current!.id);
       toast.success('Bookmark deleted');
@@ -221,9 +247,9 @@ export function BookmarkDetailDialog({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to delete');
     }
-  }
+  }, [current, onDeleted, onOpenChange]);
 
-  async function scrape() {
+  const scrape = useCallback(async () => {
     setScraping(true);
     try {
       const response = await scrapeBookmark(current!.id);
@@ -239,7 +265,27 @@ export function BookmarkDetailDialog({
     } finally {
       setScraping(false);
     }
+  }, [current, onChanged]);
+
+  const handleTitleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setTitle(event.target.value);
+  }, []);
+
+  const handleDescriptionChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setDescription(event.target.value);
+  }, []);
+
+  const closeSelf = useCallback(() => onOpenChange(false), [onOpenChange]);
+
+  if (!current) {
+    return null;
   }
+
+  const availableTags = tags.filter(
+    (tag) => !current.tags.some((assigned) => assigned.tagId === tag.id),
+  );
+  const isInvalid = current.status === 'invalid';
+  const lastError = isInvalid ? scrapeLastError(current.metadata) : null;
 
   return (
     <Dialog open={bookmark !== null} onOpenChange={onOpenChange}>
@@ -299,7 +345,7 @@ export function BookmarkDetailDialog({
             <Input
               id="detail-title"
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={handleTitleChange}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -307,7 +353,7 @@ export function BookmarkDetailDialog({
             <Textarea
               id="detail-description"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={handleDescriptionChange}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -336,18 +382,7 @@ export function BookmarkDetailDialog({
                 <span className="text-xs text-muted-foreground">No tags yet.</span>
               )}
               {current.tags.map((tag) => (
-                <Badge key={tag.tagId} variant="secondary" className="gap-1">
-                  {tag.name}
-                  {tag.source === 'user' && <span className="text-[0.65rem] opacity-70">user</span>}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${tag.name}`}
-                    onClick={() => removeTag(tag.tagId)}
-                    className="ml-0.5 rounded-sm hover:text-destructive"
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </Badge>
+                <AssignedTagBadge key={tag.tagId} tag={tag} onRemove={removeTag} />
               ))}
             </div>
             {availableTags.length > 0 && (
@@ -390,7 +425,7 @@ export function BookmarkDetailDialog({
           </AlertDialog>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" onClick={closeSelf}>
               Close
             </Button>
             <Button onClick={save} disabled={saving}>

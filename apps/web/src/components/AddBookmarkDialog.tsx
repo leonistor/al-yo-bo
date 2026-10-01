@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 import type { Category } from '@al-yo-bo/shared';
@@ -43,7 +43,7 @@ export function AddBookmarkDialog({
   const [categoryId, setCategoryId] = useState('none');
   const [saving, setSaving] = useState(false);
 
-  async function submit() {
+  const submit = useCallback(async () => {
     setSaving(true);
     try {
       await createBookmark({
@@ -64,7 +64,24 @@ export function AddBookmarkDialog({
     } finally {
       setSaving(false);
     }
-  }
+  }, [url, title, description, categoryId, onCreated, onOpenChange]);
+
+  const handleUrlChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setUrl(event.target.value),
+    [],
+  );
+
+  const handleTitleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setTitle(event.target.value),
+    [],
+  );
+
+  const handleDescriptionChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(event.target.value),
+    [],
+  );
+
+  const closeSelf = useCallback(() => onOpenChange(false), [onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -80,20 +97,20 @@ export function AddBookmarkDialog({
             <Input
               id="add-url"
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={handleUrlChange}
               placeholder="https://"
             />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="add-title">Title</Label>
-            <Input id="add-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+            <Input id="add-title" value={title} onChange={handleTitleChange} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="add-description">Note</Label>
             <Textarea
               id="add-description"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={handleDescriptionChange}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -115,7 +132,7 @@ export function AddBookmarkDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={closeSelf}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={saving || url.trim() === ''}>
