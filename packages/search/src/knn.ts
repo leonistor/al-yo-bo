@@ -79,6 +79,10 @@ export class KnnIndex implements VectorIndex {
    * Write-through upsert so newly embedded bookmarks are searchable immediately.
    * The payload is ignored: the in-memory index stores only vectors, and SQLite
    * remains canonical for category/tag filters.
+   *
+   * Normalizes a copy of the vector: `point.vector` may alias the durable
+   * embedding bytes (e.g. the buffer staged for the SQLite write), so mutating
+   * it in place would corrupt the source of truth.
    */
   async upsert(point: VectorUpsert): Promise<void> {
     const vector = point.vector;
@@ -88,18 +92,19 @@ export class KnnIndex implements VectorIndex {
     if (vector.length !== this.dims) {
       throw new Error(`Embedding dimension mismatch: expected ${this.dims}, got ${vector.length}`);
     }
-    normalize(vector);
+    const normalized = Float32Array.from(vector);
+    normalize(normalized);
 
     const index = this.ids.indexOf(point.bookmarkId);
     if (index === -1) {
       const grown = new Float32Array(this.matrix.length + this.dims);
       grown.set(this.matrix);
-      grown.set(vector, this.matrix.length);
+      grown.set(normalized, this.matrix.length);
       this.matrix = grown;
       this.ids.push(point.bookmarkId);
       return;
     }
-    this.matrix.set(vector, index * this.dims);
+    this.matrix.set(normalized, index * this.dims);
   }
 
   /**

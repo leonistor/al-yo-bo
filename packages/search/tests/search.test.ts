@@ -75,6 +75,25 @@ describe('KnnIndex', () => {
     expect((await index.search(new Float32Array([0, 1]), 1))[0]?.bookmarkId).toBe('new');
   });
 
+  test('upsert does not mutate the caller vector and ranking still works', async () => {
+    const index = new KnnIndex();
+    index.load([{ bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) }]);
+    // Unnormalized on purpose: the durable embedding bytes staged for SQLite.
+    const vector = new Float32Array([3, 4]);
+    await index.upsert({
+      bookmarkId: 'new',
+      vector,
+      payload: { model: 'test', dims: 2, categoryId: null, tagIds: [] },
+    });
+
+    expect(Array.from(vector)).toEqual([3, 4]);
+    // Normalized [3, 4] → [0.6, 0.8], so it outranks the [1, 0] row for query [0, 1].
+    expect((await index.search(new Float32Array([0, 1]), 2)).map((hit) => hit.bookmarkId)).toEqual([
+      'new',
+      'x',
+    ]);
+  });
+
   test('rejects dimension mismatches', async () => {
     const index = new KnnIndex();
     index.load([{ bookmarkId: 'x', embedding: packFloat32(new Float32Array([1, 0])) }]);
