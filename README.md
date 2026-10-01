@@ -29,6 +29,9 @@ Requires [Bun](https://bun.com). For page scraping, also install the
 [html-to-markdown CLI](https://github.com/xberg-io/html-to-markdown) (e.g. `brew install html-to-markdown`)
 — without it bookmarks still save, but page content is never fetched.
 
+Bun auto-loads a root `.env` file — copy `.env.example` and uncomment what you need (see
+`.env.example` for the full list of optional variables).
+
 Enrichment and semantic search are optional and degrade gracefully:
 
 ```sh
@@ -46,7 +49,7 @@ export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
 ```sh
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
-bun run db:seed   # load the synthetic demo seed data
+bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: grimoire)
 bun run build     # build the web app into apps/web/dist
 bun run start     # production: one Bun process serves API + web
 bun run lint      # lint
@@ -58,6 +61,21 @@ bun test          # tests
 On startup the server reconciles enrichment: bookmarks without scraped content are scraped and
 embedded in a background job loop (`docs/ARCHITECTURE.md` §8), so seeded or imported bookmarks get
 their page content and vectors automatically when scraping and embeddings are available.
+
+### Seed datasets
+
+Seed fixtures live in `packages/db/seeds/datasets/` and `bun run db:seed` loads the dataset named
+by `SEED_DATASET` (default `grimoire`, the synthetic demo fixture; unset or empty falls back to
+the default). Datasets are registered explicitly in `packages/db/src/seed.ts` — dropping a file
+in the directory doesn't make it selectable:
+
+```sh
+SEED_DATASET=grimoire   # which dataset db:seed loads (set in .env or via export)
+# SEED_RESET=1          # uncomment to wipe existing bookmarks/tags/categories first
+```
+
+Seeding is otherwise idempotent (bookmarks are upserted by URL). The `leo` dataset (real
+collections imported from `docs/examples-mds/`) is reserved but not implemented yet.
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
 target layout (`apps/server`, `apps/web`, `packages/*`).
