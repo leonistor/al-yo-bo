@@ -13,6 +13,11 @@ interface MigrationRow {
 /**
  * Forward-only migration runner. Each pending file is applied inside its own
  * transaction and recorded in `schema_migrations`.
+ *
+ * Foreign-key enforcement is disabled around each file: a migration may rebuild
+ * a parent table (drop + rename), which would otherwise cascade-delete its
+ * children. `PRAGMA foreign_keys` is a no-op inside a transaction, so the toggle
+ * happens outside the transaction wrapper.
  */
 export function migrate(db: Database, migrationsDir = MIGRATIONS_DIR): string[] {
   db.exec(`
@@ -36,14 +41,19 @@ export function migrate(db: Database, migrationsDir = MIGRATIONS_DIR): string[] 
 
   for (const file of pending) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8');
-    const insideTransaction = db.transaction(() => {
-      db.exec(sql);
-      db.query('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
-        file,
-        Date.now(),
-      );
-    });
-    insideTransaction.immediate();
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      const insideTransaction = db.transaction(() => {
+        db.exec(sql);
+        db.query('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+          file,
+          Date.now(),
+        );
+      });
+      insideTransaction.immediate();
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
   }
 
   return pending;
