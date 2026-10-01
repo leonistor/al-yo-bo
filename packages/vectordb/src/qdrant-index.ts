@@ -36,7 +36,7 @@ export interface SyncReport {
   deleted: number;
   /** True when `ensureCollection` had to drop and recreate a mismatched collection. */
   recreated: boolean;
-  /** True when the target set already matched Qdrant, so no writes were issued. */
+  /** True when there were no records and the target set was already empty. */
   skipped: boolean;
 }
 
@@ -197,7 +197,11 @@ export class QdrantIndex implements VectorIndex {
     const info = await this.client.getCollection(this.collection);
     const params = readSingleVectorParams(info.config.params.vectors);
     const storedModel = info.config.metadata?.['model'];
-    const modelMatches = typeof storedModel !== 'string' || storedModel === model;
+    // A missing or non-string stored model is a mismatch when a model is
+    // configured: the existing points' model space is unknown, so the collection
+    // must be rebuilt rather than trusted. An empty `model` means "no model
+    // configured" and skips the check.
+    const modelMatches = model === '' || storedModel === model;
     const shapeMatches = params?.size === dims && params.distance === 'Cosine';
     if (shapeMatches && modelMatches) {
       return false;
@@ -286,10 +290,17 @@ export class QdrantIndex implements VectorIndex {
   }
 
   /**
-   * Reconciles the collection with the SQLite embedding rows: deletes points
-   * whose bookmark no longer exists, upserts missing ones, and reports whether
-   * anything moved. Passing no records tears the collection down (semantic search
-   * disabled); an already-empty target is reported as `skipped`.
+   * Rebuilds the collection from the SQLite embedding rows: deletes every
+   * existing point, then batch-upserts the complete record set. Passing no
+   * records tears the collection down (semantic search disabled); an
+   * already-empty target is reported as `skipped`.
+   *
+   * Full rebuild is a deliberate choice over reconciling by id: an id-only
+   * diff cannot detect embeddings or payloads that changed *in place* in
+   * SQLite, so those would silently go stale in Qdrant. At personal scale a
+   * delete-all + re-upsert on startup is cheap and obviously correct; if
+   * startup latency ever matters, the upgrade path is per-record content-hash
+   * comparison (stored in the point payload) to skip unchanged rows.
    */
   async sync(records: SyncRecord[], resolvePayload?: (bookmarkId: string) => SyncPayload): Promise<SyncReport> {
     if (records.length === 0) {
@@ -300,28 +311,20 @@ export class QdrantIndex implements VectorIndex {
     const model = records[0]?.model ?? '';
     const recreated = await this.ensureCollectionInternal(dims, model);
 
-    const target = new Set(records.map((record) => record.bookmarkId));
     const current = await this.readPointIds();
-
-    const orphans = [...current].filter((id) => !target.has(id));
-    const missing = records.filter((record) => !current.has(record.bookmarkId));
-
-    if (orphans.length === 0 && missing.length === 0) {
-      this.replaceKnownIds(target);
-      return { upserted: 0, deleted: 0, recreated, skipped: true };
-    }
+    const target = new Set(records.map((record) => record.bookmarkId));
 
     let deleted = 0;
     // Deliberately sequential: bounded load on the sidecar and a deterministic
     // failure surface matter more than sync throughput at personal scale.
-    for (const batch of chunk(orphans, BATCH_SIZE)) {
+    for (const batch of chunk([...current], BATCH_SIZE)) {
       // oxlint-disable-next-line no-await-in-loop
       await this.client.delete(this.collection, { wait: true, points: batch });
       deleted += batch.length;
     }
 
     let upserted = 0;
-    for (const batch of chunk(missing, BATCH_SIZE)) {
+    for (const batch of chunk(records, BATCH_SIZE)) {
       // oxlint-disable-next-line no-await-in-loop
       await this.client.upsert(this.collection, {
         wait: true,

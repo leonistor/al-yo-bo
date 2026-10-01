@@ -29,6 +29,8 @@ const syncRecord = (bookmarkId: string, model: string, values: number[]): SyncRe
 });
 
 const payload = (categoryId: string | null, tagIds: string[] = []) => ({ categoryId, tagIds });
+/** `resolvePayload` stub for syncs that carry no filterable payload. */
+const nullPayload = () => payload(null);
 
 // Qdrant point ids must be an unsigned int or a UUID string; production ids are
 // the bookmarks' UUIDv7s, so the tests use UUID-shaped ids too.
@@ -110,7 +112,7 @@ maybeDescribe('QdrantIndex', () => {
     expect(await idsOf(new Float32Array([1, 0]))).not.toContain(id(6));
   });
 
-  test('sync upserts, removes orphans, then skips when nothing changed', async () => {
+  test('sync rebuilds the full set from SQLite (delete-all + re-upsert)', async () => {
     const records = [
       syncRecord(id(7), 'sync-model', [1, 0]),
       syncRecord(id(8), 'sync-model', [0, 1]),
@@ -127,12 +129,45 @@ maybeDescribe('QdrantIndex', () => {
       payload: { model: 'sync-model', dims: 2, categoryId: null, tagIds: [] },
     });
 
+    // Every sync wipes and re-upserts the whole SQLite set, so the stray point
+    // is gone and both records are written again even though nothing changed.
     const second = await index.sync(records, resolve);
-    expect(second.skipped).toBe(false);
-    expect(second.deleted).toBeGreaterThan(0);
-
-    const third = await index.sync(records, resolve);
-    expect(third).toEqual({ upserted: 0, deleted: 0, recreated: false, skipped: true });
+    expect(second).toEqual({ upserted: 2, deleted: 3, recreated: false, skipped: false });
     expect(index.size).toBe(2);
+  });
+
+  test('sync re-upserts a record whose embedding changed in SQLite', async () => {
+    const stale = [syncRecord(id(10), 'sync-model', [1, 0])];
+
+    await index.sync(stale, nullPayload);
+    const staleHits = await idsOf(new Float32Array([1, 0]));
+    expect(staleHits[0]).toBe(id(10));
+
+    // The id is unchanged but the embedding bytes differ; the id-only diff of
+    // the old sync would have missed this.
+    const fresh = [syncRecord(id(10), 'sync-model', [0, 1])];
+    const report = await index.sync(fresh, nullPayload);
+    expect(report.upserted).toBe(1);
+    expect(report.skipped).toBe(false);
+
+    const freshHits = await idsOf(new Float32Array([0, 1]));
+    expect(freshHits[0]).toBe(id(10));
+  });
+
+  test('ensureCollection rebuilds a collection missing model metadata', async () => {
+    const bare = `${collection}-bare`;
+    try {
+      // Same shape, but no `model` metadata: the stored points' model space is
+      // unknown, so the collection must not be trusted.
+      await admin.createCollection(bare, { vectors: { size: 2, distance: 'Cosine' } });
+      const bareIndex = new QdrantIndex({ url: BASE_URL, collection: bare });
+
+      await bareIndex.ensureCollection(2, 'test-model');
+
+      const info = await admin.getCollection(bare);
+      expect(info.config.metadata).toMatchObject({ model: 'test-model' });
+    } finally {
+      await admin.deleteCollection(bare).catch(() => {});
+    }
   });
 });
