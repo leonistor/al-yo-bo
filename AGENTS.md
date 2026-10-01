@@ -83,7 +83,7 @@ package allowed to depend on concrete subsystem implementations; no cycles. See 
 - `.omo/omo.jsonc` disables skills irrelevant to this repo (astro, python, uv, zig) — repo-scoped.
 - `asm` manages global skills; it stores nothing in this repo. Project-shared skills belong under
   `.opencode/skills/<name>/SKILL.md`.
-- Semantic commit prefixes. Never commit, push, or open a PR unless asked.
+- Semantic commit prefixes. Commit autonomously when work is complete and verified; pushes require explicit approval; PRs only on request.
 - Run lint before committing.
 
 ## Content warning
