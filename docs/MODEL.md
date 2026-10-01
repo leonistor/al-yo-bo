@@ -1,17 +1,30 @@
 # al-yo-bo — Data Model
 
-1. **Categories are an organizing axis, not a hierarchy.** One `categories` table is shared by two
+1. **Datasets are the runtime scoping boundary.** A dataset owns its bookmarks **and** its complete
+   vocabulary (sections, categories, tags). Nothing in the classifier or the importer ever crosses a
+   dataset boundary: candidates come from the bookmark's dataset only, and imports resolve names
+   against the dataset's vocabulary. This is what makes cross-dataset vocabulary leaks (e.g. a demo
+   dataset's tags showing up in a personal dataset) structurally impossible.
+2. **Categories are an organizing axis, not a hierarchy.** One `categories` table is shared by two
    independent, optional relations: a bookmark may belong to a category, and a tag may belong to a
    category (its classification scope). A bookmark's category is **never** derived from its tags.
-2. **Separate evidence from effective state.** Classifier output is stored immutably in
+   Categories are flat *within* a section; the two-level structure is `sections → categories`, never
+   deeper.
+3. **Vocabulary is established before it is used.** Categories and tags have a lifecycle:
+   `proposed → (user approval) → active → deprecated` (tags) / `rejected` (either). The importer and
+   the classifier **never auto-create active vocabulary**: unmatched names become `proposed` rows
+   that require explicit user approval (review) before they can be assigned or auto-assigned. A
+   rejected or renamed entry records its resolution (`merged_into_id`) so it never resurfaces.
+4. **Separate evidence from effective state.** Classifier output is stored immutably in
    `classification_runs` / `classification_results`; the tags actually applied to a bookmark live in
    `bookmark_tags`. Re-running classification never destroys prior evidence, and changing assignment
    policy never rewrites history.
-3. **Classification never invents vocabulary.** A classifier can only select from existing `tags`.
-   Unmatched output is recorded as a `proposed` tag that requires explicit user approval before use.
-4. **Provenance is always recoverable.** Every effective tag assignment points back to the run that
+5. **Classification never invents vocabulary.** A classifier can only select from existing `tags` in
+   the bookmark's dataset. Unmatched output is recorded as a `proposed` tag that requires explicit
+   user approval before use.
+6. **Provenance is always recoverable.** Every effective tag assignment points back to the run that
    produced it, and each result keeps the classifier's original label.
-5. **One durable store.** Relational data, the full-text index (FTS5), and the durable copy of the
+7. **One durable store.** Relational data, the full-text index (FTS5), and the durable copy of the
    vector data all live in the same SQLite file. A Qdrant collection holds a *rebuildable serving
    copy* of the embeddings (ARCHITECTURE §6): it is never the only copy of anything and is repaired
    from `bookmark_embeddings` at startup.
@@ -19,8 +32,9 @@
 ## Entity overview
 
 ```
-categories ──< bookmarks            (optional: bookmark organization)
-categories ──< tags                 (optional: classification scope)
+datasets ──< sections ──< categories ──< bookmarks      (organization)
+datasets ──< categories ──< tags                        (classification scope)
+datasets ──< import_batches                              (staged imports)
 
 bookmarks ──< classification_runs ──< classification_results >── tags
 bookmarks ──< bookmark_tags        >── tags            (effective assignments)
@@ -45,19 +59,89 @@ connection. Instead:
 
 ## Tables
 
-### `categories`
+### `datasets`
 
-Organizing buckets, e.g. `dev`, `web`, `brands`. Flat by design.
+The runtime scoping boundary: a dataset owns its bookmarks and its complete vocabulary. Created on
+first use (seeding, import, or the first bookmark); there is no anonymous data.
 
 ```sql
-CREATE TABLE categories (
+CREATE TABLE datasets (
   id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   name        TEXT NOT NULL,
-  description TEXT,
   created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
 
-CREATE UNIQUE INDEX categories_name_unique ON categories(name);
+CREATE UNIQUE INDEX datasets_name_unique ON datasets(name);
+```
+
+### `sections`
+
+Top level of the two-level organization. Sections group flat categories; a category may also exist
+at dataset level without a section. Sections are dataset-scoped and share the vocabulary lifecycle
+(`proposed → active → rejected`).
+
+```sql
+CREATE TABLE sections (
+  id            BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  dataset_id    BLOB NOT NULL REFERENCES datasets(id) ON DELETE CASCADE
+                    CHECK (typeof(dataset_id) = 'blob' AND length(dataset_id) = 16),
+  name          TEXT NOT NULL,
+  description   TEXT,
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'proposed', 'rejected')),
+  merged_into_id BLOB REFERENCES sections(id) ON DELETE SET NULL
+                    CHECK (merged_into_id IS NULL OR (typeof(merged_into_id) = 'blob' AND length(merged_into_id) = 16)),
+  created_at    INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+) STRICT;
+
+CREATE UNIQUE INDEX sections_dataset_name_unique ON sections(dataset_id, name);
+CREATE INDEX sections_dataset ON sections(dataset_id);
+```
+
+### `categories`
+
+Organizing buckets, e.g. `dev`, `web`, `brands`. Flat by design within a section. A category may be
+`proposed` (awaiting review), `active`, or `rejected` (with an optional `merged_into_id` recording
+where its content went).
+
+```sql
+CREATE TABLE categories (
+  id            BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  dataset_id    BLOB NOT NULL REFERENCES datasets(id) ON DELETE CASCADE
+                    CHECK (typeof(dataset_id) = 'blob' AND length(dataset_id) = 16),
+  section_id    BLOB REFERENCES sections(id) ON DELETE SET NULL
+                    CHECK (section_id IS NULL OR (typeof(section_id) = 'blob' AND length(section_id) = 16)),
+  name          TEXT NOT NULL,
+  description   TEXT,
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'proposed', 'rejected')),
+  merged_into_id BLOB REFERENCES categories(id) ON DELETE SET NULL
+                    CHECK (merged_into_id IS NULL OR (typeof(merged_into_id) = 'blob' AND length(merged_into_id) = 16)),
+  created_at    INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+) STRICT;
+
+CREATE UNIQUE INDEX categories_dataset_name_unique ON categories(dataset_id, name);
+CREATE INDEX categories_dataset ON categories(dataset_id);
+CREATE INDEX categories_section ON categories(section_id);
+```
+
+### `import_batches`
+
+A staged import: parsed bookmarks held until the proposed vocabulary they reference is reviewed and
+the batch is committed (or discarded). The `bookmarks` column is the JSON array of `ImportedBookmark`
+rows produced by the parser; committing replays them through the now-resolved vocabulary.
+
+```sql
+CREATE TABLE import_batches (
+  id           BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  dataset_id   BLOB NOT NULL REFERENCES datasets(id) ON DELETE CASCADE
+                   CHECK (typeof(dataset_id) = 'blob' AND length(dataset_id) = 16),
+  file         TEXT,
+  bookmarks    TEXT NOT NULL,                    -- JSON: ImportedBookmark[]
+  status       TEXT NOT NULL DEFAULT 'staged' CHECK (status IN ('staged', 'committed', 'discarded')),
+  created_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+  committed_at INTEGER
+) STRICT;
+
+CREATE INDEX import_batches_dataset ON import_batches(dataset_id, status);
 ```
 
 ### `bookmarks`
@@ -67,23 +151,26 @@ The core record: URL plus scraped and user-provided content.
 ```sql
 CREATE TABLE bookmarks (
   id           BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  dataset_id   BLOB NOT NULL REFERENCES datasets(id) ON DELETE CASCADE
+                   CHECK (typeof(dataset_id) = 'blob' AND length(dataset_id) = 16),
   url          TEXT NOT NULL,
   title        TEXT,
   description  TEXT,
   content      TEXT,                              -- scraped page content as markdown
   metadata     TEXT,                              -- JSON: site name, author, favicon, og:*, ...
   category_id  BLOB REFERENCES categories(id) ON DELETE SET NULL
-                    CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
+                   CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
   content_hash TEXT,                              -- hash of scraped content, for change detection
   scraped_at   INTEGER,
   status       TEXT NOT NULL DEFAULT 'active'     -- effective scrape lifecycle (see below)
-                    CHECK (status IN ('active', 'invalid')),
+                   CHECK (status IN ('active', 'invalid')),
   scrape_attempts INTEGER NOT NULL DEFAULT 0,     -- consecutive dead-link failures (reset on success)
   created_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
 
 CREATE UNIQUE INDEX bookmarks_url_unique ON bookmarks(url);
+CREATE INDEX bookmarks_dataset ON bookmarks(dataset_id);
 CREATE INDEX bookmarks_category ON bookmarks(category_id);
 ```
 
@@ -99,27 +186,35 @@ effective state (principle 2), not evidence: the failure detail (`{ at, status, 
 
 ### `tags`
 
-Controlled vocabulary. A tag may belong to a category (its classification scope) or stand alone.
+Controlled vocabulary, dataset-scoped. A tag may belong to a category (its classification scope) or
+stand alone.
 
 ```sql
 CREATE TABLE tags (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
-  category_id BLOB REFERENCES categories(id) ON DELETE SET NULL
-                   CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
-  name        TEXT NOT NULL,
-  description TEXT,
-  status      TEXT NOT NULL CHECK (status IN ('active', 'proposed', 'deprecated')),
-  created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+  id            BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  dataset_id    BLOB NOT NULL REFERENCES datasets(id) ON DELETE CASCADE
+                    CHECK (typeof(dataset_id) = 'blob' AND length(dataset_id) = 16),
+  category_id   BLOB REFERENCES categories(id) ON DELETE SET NULL
+                    CHECK (category_id IS NULL OR (typeof(category_id) = 'blob' AND length(category_id) = 16)),
+  name          TEXT NOT NULL,
+  description   TEXT,
+  status        TEXT NOT NULL CHECK (status IN ('active', 'proposed', 'deprecated', 'rejected')),
+  merged_into_id BLOB REFERENCES tags(id) ON DELETE SET NULL
+                    CHECK (merged_into_id IS NULL OR (typeof(merged_into_id) = 'blob' AND length(merged_into_id) = 16)),
+  created_at    INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
 
--- Name is unique within a category, and unique globally when the tag has no category.
-CREATE UNIQUE INDEX tags_scoped_name_unique ON tags(category_id, name) WHERE category_id IS NOT NULL;
-CREATE UNIQUE INDEX tags_global_name_unique ON tags(name)                   WHERE category_id IS NULL;
+-- Name is unique within a (dataset, category) scope, and unique per dataset
+-- when the tag has no category.
+CREATE UNIQUE INDEX tags_scoped_name_unique ON tags(dataset_id, category_id, name) WHERE category_id IS NOT NULL;
+CREATE UNIQUE INDEX tags_global_name_unique ON tags(dataset_id, name) WHERE category_id IS NULL;
+CREATE INDEX tags_dataset ON tags(dataset_id);
 CREATE INDEX tags_category ON tags(category_id);
 ```
 
-**Lifecycle:** `proposed` → (user approval) → `active` → `deprecated`. Only `active` tags may be
-auto-assigned by the classifier.
+**Lifecycle:** `proposed` → (user approval) → `active` → `deprecated`; a `proposed` tag may instead be
+`rejected` (optionally with `merged_into_id` pointing at the tag its content was merged into). Only
+`active` tags may be auto-assigned by the classifier.
 
 ### `classification_runs`
 
@@ -227,14 +322,24 @@ CREATE TABLE bookmark_embeddings (
 
 ## Invariants & rules
 
-- **Uniqueness.** `bookmarks.url` is unique; tag names are unique per category (and globally for
-  uncategorized tags); `(bookmark_id, tag_id)` in `bookmark_tags` and `(run_id, tag_id)` in
-  `classification_results` are unique via `UNIQUE` constraints (not composite primary keys).
+- **Dataset scoping.** Every bookmark, category, tag, section, and import batch belongs to exactly
+  one dataset. The classifier candidate set, the importer's vocabulary resolution, and the review
+  queues are all dataset-scoped. Cross-dataset vocabulary is structurally impossible.
+- **Uniqueness.** `bookmarks.url` is unique; tag names are unique per (dataset, category) and per
+  dataset when unscoped; category names are unique per dataset; section names are unique per dataset;
+  `(bookmark_id, tag_id)` in `bookmark_tags` and `(run_id, tag_id)` in `classification_results` are
+  unique via `UNIQUE` constraints (not composite primary keys).
 - **Assignment policy.** A classifier result becomes an effective `bookmark_tags` row only when its
-  probability clears the configured `auto_assign` threshold _and_ the tag is `active`. Otherwise it is
-  retained as evidence, and the tag is surfaced for review (via `candidate`).
-- **No auto-creation.** A classifier label that maps to no existing tag creates a `proposed` tag, which
-  is never auto-assigned.
+  probability clears the configured `auto_assign` threshold _and_ the tag is `active` _and_ the tag
+  belongs to the bookmark's dataset. Otherwise it is retained as evidence, and the tag is surfaced
+  for review (via `candidate`).
+- **No auto-creation.** A classifier label that maps to no existing tag in the dataset creates a
+  `proposed` tag, which is never auto-assigned. An importer heading or frontmatter tag that matches
+  no active vocabulary entry creates a `proposed` category/tag (or section), staging the import until
+  review resolves it.
+- **Review before activation.** Only `active` vocabulary is ever assigned or auto-assigned. Proposed
+  vocabulary accumulates no classification evidence; rejected/renamed entries record
+  `merged_into_id` so they never resurface.
 - **Bookmark scrape lifecycle.** Only repeated **dead-link** failures (404/410) move a bookmark to
   `invalid`; the row is retained, excluded from default views and reconciliation, and restored to
   `active` by a successful scrape or a URL edit. Transient failures never invalidate.
@@ -251,7 +356,9 @@ CREATE TABLE bookmark_embeddings (
 
 | Deleted            | Effect                                                                                                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| dataset            | cascades to its bookmarks (→ classification evidence, tags, embeddings, FTS rows), sections, categories, tags, and import batches |
 | bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
 | tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                        |
 | category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                             |
+| section            | `categories.section_id` set to `NULL` (categories survive at dataset level)                                                                                                              |
 | classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains                                                                                                                       |

@@ -293,15 +293,31 @@ flowchart TD
 
 ### Stage 0 — Vocabulary
 
-The user curates categories and tags in the UI. Tag lifecycle: `proposed → active → deprecated`.
+The user curates categories and tags in the UI, dataset-scoped. Tag lifecycle:
+`proposed → active → deprecated` (or `proposed → rejected`); categories share the
+`proposed → active → rejected` lifecycle.
 
-**Candidate set (decided).** For a bookmark, candidates are the `active` tags in its category scope:
+**Vocabulary establishment (decided).** Vocabulary is established at **dataset init** and at every
+**batch import**, through a **propose → review → activate** lifecycle:
 
-- tags with `tags.category_id = bookmarks.category_id`, plus
-- unscoped tags (`tags.category_id IS NULL`).
+- The importer never creates active categories/tags on demand. Unmatched H2/H3 headings and
+  frontmatter tag names become `proposed` sections/categories/tags, and the import is **staged** in
+  `import_batches` until the user reviews the proposals.
+- Review resolves each proposal (accept → `active`, reject → `rejected`, rename, or merge with
+  `merged_into_id`). Committing the batch replays the staged bookmarks through the resolved
+  vocabulary.
+- Rejected/renamed entries are remembered (`status = 'rejected'` + `merged_into_id`), so a re-import
+  of the same file resolves them silently instead of re-proposing.
+- A dataset with no content yet (fresh init) runs the same flow over the whole incoming vocabulary.
 
-If the bookmark has no category, **all active tags** are candidates — there is no scope to restrict
-to, and restricting to unscoped tags only would systematically under-classify.
+**Candidate set (decided).** For a bookmark, candidates are the `active` tags **in its dataset**:
+
+- tags with `tags.dataset_id = bookmarks.dataset_id`, plus (when the bookmark has a category) tags in
+  its category scope and unscoped tags — all still within the dataset.
+- If the bookmark has no category, all active tags in its dataset are candidates.
+
+Cross-dataset vocabulary is never a candidate, which is what prevents a demo dataset's tags from
+leaking into a personal dataset.
 
 ### Stage 1 — Ingest (import)
 
@@ -312,21 +328,32 @@ entries containing a URL plus an optional note and optional priority stars.
 
 | Source element             | Maps to                                                          |
 | -------------------------- | ---------------------------------------------------------------- |
-| `## Heading` (H2)          | category, created on demand                                      |
-| `### Heading` (H3)         | section context, **not** a category or tag                       |
-| `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                           |
+| `## Heading` (H2)          | section, proposed on review                                       |
+| `### Heading` (H3)         | category within the current section, proposed on review           |
+| `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                            |
 | bullet note                | `title` / `description` until the page is scraped                |
 | URL                        | `bookmarks.url` (unique; upsert key)                             |
 | frontmatter `tags: [a, b]` | `source='import'` tag rows, for names already in the vocabulary   |
 | fenced code block          | opaque — never a heading, bullet, or URL source                  |
+
+**Two-phase import (decided).** Import parses first, then resolves vocabulary, then commits:
+
+1. Parse the file into `ImportedBookmark[]` (raw H2/H3 names preserved in `metadata.import`).
+2. Resolve each raw name against the dataset's vocabulary: reuse `active` entries; follow
+   `merged_into_id` for `rejected` ones; create `proposed` entries for anything unmatched.
+3. If any proposal was created, the import is **staged** (`import_batches`, status `staged`) and the
+   batch is surfaced for review. Nothing is written to `bookmarks` yet.
+4. After review resolves the proposals, the batch is **committed**: bookmarks are upserted with the
+   resolved categories/tags, and a scrape is enqueued for each new bookmark. A batch can also be
+   **discarded**, deleting its still-`proposed` vocabulary.
 
 Structure never creates tags, and frontmatter tag names are matched against existing tags only.
 `metadata.import` preserves what would otherwise be lost (`{ file, section, subsection, priority }`),
 so review and future tooling can use it.
 
 `source='import'` tag rows are written **only** for explicit YAML frontmatter `tags:` whose name
-matches an existing tag. The importer never invents tags and never creates `proposed` ones. (Inline-
-token tag syntax inside a note remains deferred; see §11.)
+matches an existing tag. The importer never invents tags and never creates `proposed` ones from
+structure. (Inline-token tag syntax inside a note remains deferred; see §11.)
 
 ### Stage 2 — Enrich (background jobs)
 
@@ -394,8 +421,12 @@ table in a later model revision (§11).
 
 The UI presents review queues:
 
-- **Proposed tags** — approve (`→ active`, enables future auto-assignment for that tag) or reject
-  (`→ deprecated`).
+- **Proposed vocabulary (per-batch)** — sections, categories, and tags proposed by an import (or the
+  classifier). Bulk accept (`→ active`), reject (`→ rejected`), rename, and merge near-duplicates
+  (auto-suggested + manual). Rejected/merged entries record `merged_into_id` so re-imports resolve
+  them silently.
+- **Proposed tags** — classifier-proposed tags; approve (`→ active`, enables future auto-assignment
+  for that tag) or reject (`→ rejected`).
 - **Below-threshold candidates** — accept, which writes `bookmark_tags` with `source='user'`.
 - **Stale / conflicting assignments** — resolve explicitly.
 
@@ -419,6 +450,7 @@ searchable, and manually taggable. The classifier is optional by design (§1.5).
 | `OLLAYA_API_KEY`        | Bearer key when the daemon is exposed         | unset (loopback)         |
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | `0.5`                    |
+| `DEFAULT_DATASET`       | Dataset new bookmarks/imports land in when none is specified | `default` |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
