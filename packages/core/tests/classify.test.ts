@@ -9,11 +9,12 @@ import {
   createTag,
   getBookmarkTags,
   getBookmarksWithTagsByIds,
+  listUnknownClassificationLabels,
   openDatabase,
   setTagStatus,
   setupDatabase,
 } from '@al-yo-bo/db';
-import type { RankedCandidate, VectorFilter, VectorIndex } from '@al-yo-bo/shared';
+import { bytesToUuid, uuidToBytes, type RankedCandidate, type VectorFilter, type VectorIndex } from '@al-yo-bo/shared';
 
 import {
   buildQuestions,
@@ -194,6 +195,22 @@ describe('classifyBookmark', () => {
     expect(outcome.assigned).toBe(1);
     const tagNames = getBookmarkTags(db, fixture.bookmarkId).map((tag) => tag.name);
     expect(tagNames).toEqual(['rust']);
+
+    // Durable evidence (MODEL.md): the unasked label is persisted in
+    // unknown_classification_labels, linked to the run, with its probability.
+    const runIds = db
+      .query<{ id: Uint8Array }, [Uint8Array]>(
+        'SELECT id FROM classification_runs WHERE bookmark_id = ?',
+      )
+      .all(uuidToBytes(fixture.bookmarkId))
+      .map((row) => bytesToUuid(row.id));
+    expect(runIds).toHaveLength(1);
+
+    const labels = listUnknownClassificationLabels(db, runIds[0]!);
+    expect(labels).toHaveLength(1);
+    expect(labels[0]!.rawLabel).toBe('mystery');
+    expect(labels[0]!.probability).toBe(0.99);
+    expect(labels[0]!.runId).toBe(runIds[0]!);
   });
 
   test('skips without a classifier or without candidates', async () => {
@@ -229,15 +246,29 @@ describe('classifyBookmark', () => {
       categoryId: category.id,
     });
 
+    // One unasked label per response: each run persists its own evidence row.
     const calls: DecideCall[] = [];
     const outcome = await classifyBookmark(
-      makeDeps(db, stubClassifier(Object.fromEntries(names.map((name) => [name, 0.9])), calls)),
+      makeDeps(
+        db,
+        stubClassifier({ ...Object.fromEntries(names.map((name) => [name, 0.9])), mystery: 0.7 }, calls),
+      ),
       id,
     );
 
     expect(outcome.runs).toBe(2);
     expect(outcome.assigned).toBe(names.length);
+    expect(outcome.unknown).toBe(2);
     expect(Object.keys(calls[0]!.questions).length).toBe(MAX_QUESTIONS_PER_CALL);
     expect(Object.keys(calls[1]!.questions).length).toBe(5);
+
+    const runIds = db
+      .query<{ id: Uint8Array }, [Uint8Array]>('SELECT id FROM classification_runs WHERE bookmark_id = ?')
+      .all(uuidToBytes(id))
+      .map((row) => bytesToUuid(row.id));
+    expect(runIds).toHaveLength(2);
+    for (const runId of runIds) {
+      expect(listUnknownClassificationLabels(db, runId)).toHaveLength(1);
+    }
   });
 });

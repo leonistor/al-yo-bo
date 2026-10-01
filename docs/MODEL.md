@@ -36,6 +36,7 @@ datasets ──< sections ──< categories ──< bookmarks      (organizatio
 datasets ──< categories ──< tags                        (classification scope)
 
 bookmarks ──< classification_runs ──< classification_results >── tags
+bookmarks ──< classification_runs ──< unknown_classification_labels
 bookmarks ──< bookmark_tags        >── tags            (effective assignments)
 
 bookmarks ──< bookmark_fts          (keyword index)
@@ -225,6 +226,28 @@ CREATE TABLE classification_results (
 CREATE INDEX classification_results_tag ON classification_results(tag_id);
 ```
 
+### `unknown_classification_labels`
+
+Durable evidence for classifier labels that match no candidate tag. Insert-only
+(immutable like all classification evidence); `classification_results` keeps its
+NOT NULL `tag_id` FK contract untouched. There is deliberately **no FK to
+`tags`** — the label matched nothing — and the raw label is preserved verbatim.
+No uniqueness constraint: each occurrence, even a repeated label, is its own
+evidence row.
+
+```sql
+CREATE TABLE unknown_classification_labels (
+  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
+                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
+  raw_label   TEXT NOT NULL,
+  probability REAL NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+) STRICT;
+
+CREATE INDEX unknown_classification_labels_run ON unknown_classification_labels(run_id);
+```
+
 ### `bookmark_tags`
 
 The **effective** assignment shown in the UI. Composite uniqueness prevents duplicates.
@@ -303,7 +326,8 @@ CREATE TABLE bookmark_embeddings (
   belongs to the bookmark's dataset. Otherwise it is retained as evidence, and the tag is surfaced
   for review (via `candidate`).
 - **No classifier-created vocabulary.** A classifier label that maps to no existing tag in the
-  dataset is recorded as evidence only; it never creates a tag and is never auto-assigned. An
+  dataset is recorded as evidence only (an `unknown_classification_labels` row linked to the run);
+  it never creates a tag and is never auto-assigned. An
   importer category or frontmatter tag that matches no vocabulary entry is auto-created `active`.
 - **Active by construction.** Only `active` vocabulary is ever assigned or auto-assigned. There is no
   pending or rejected state to review; retiring a tag is `deprecated`, and deleted vocabulary is
@@ -325,8 +349,8 @@ CREATE TABLE bookmark_embeddings (
 | Deleted            | Effect                                                                                                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | dataset            | cascades to its bookmarks (→ classification evidence, tags, embeddings, FTS rows), sections, categories, and tags |
-| bookmark           | cascades to `classification_runs` (→ results), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
-| tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                        |
-| category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                             |
-| section            | `categories.section_id` set to `NULL` (categories survive at dataset level)                                                                                                              |
-| classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains                                                                                                                       |
+| bookmark           | cascades to `classification_runs` (→ results and unknown labels), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
+| tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                                                                                                                                                        |
+| category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                                                                                                                                                             |
+| section            | `categories.section_id` set to `NULL` (categories survive at dataset level)                                                                                                                                                                                                                                              |
+| classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains; `classification_results` and `unknown_classification_labels` cascade-delete with the run                                                                                                                                                             |

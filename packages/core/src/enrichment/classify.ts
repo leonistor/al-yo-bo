@@ -8,9 +8,9 @@
  * no-op — bookmarks stay browsable, searchable and manually taggable.
  *
  * Phase 0 simplification: the classifier never creates vocabulary. Unknown
- * labels are persisted as `classification_results` rows with `selected = 0`
- * and the raw label preserved — they show up in the below-threshold queue,
- * which is the user-facing triage surface.
+ * labels are persisted as `unknown_classification_labels` evidence rows
+ * (MODEL.md) and never become assignments; the operator can choose to add a
+ * matching tag later.
  */
 
 import type { Database } from 'bun:sqlite';
@@ -20,6 +20,7 @@ import {
   assignTag,
   createClassificationResult,
   createClassificationRun,
+  createUnknownClassificationLabel,
   getBookmarksWithTagsByIds,
   listActiveTagsForScope,
   listUserTagIds,
@@ -147,11 +148,10 @@ export async function classifyBookmark(
     const tag = candidates.get(name);
     if (!tag) {
       // The daemon answered a label we did not ask for (or a name vanished):
-      // record it as evidence with no tag mapping. The raw_label preserves what
-      // the daemon said; the below-threshold review queue surfaces it.
-      // We can't write a classification_results row without a tag_id, so the
-      // raw label is logged for now and the operator can choose to add a tag.
+      // record it as durable evidence with no tag mapping (MODEL.md — unknown
+      // labels never create vocabulary and never become assignments).
       console.warn(`[classify] unknown label from daemon: ${name}`);
+      createUnknownClassificationLabel(db, { runId, rawLabel: name, probability });
       outcome.unknown += 1;
       return;
     }
@@ -207,9 +207,16 @@ export async function classifyBookmark(
     }
 
     // Labels the daemon returned that we didn't ask about — these can never
-    // be mapped to a tag (no row to point at) and never become an assignment.
+    // be mapped to a tag (no row to point at) and never become an assignment;
+    // they persist as evidence linked to the run (MODEL.md).
     for (const label of Object.keys(response.probabilities)) {
       if (!candidates.has(label)) {
+        console.warn(`[classify] unknown label from daemon: ${label}`);
+        createUnknownClassificationLabel(db, {
+          runId,
+          rawLabel: label,
+          probability: response.probabilities[label] ?? 0,
+        });
         outcome.unknown += 1;
       }
     }

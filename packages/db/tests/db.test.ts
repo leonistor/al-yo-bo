@@ -11,7 +11,9 @@ import {
   createDataset,
   createBookmark,
   createCategory,
+  createClassificationRun,
   createTag,
+  createUnknownClassificationLabel,
   deleteBookmark,
   deleteCategory,
   getAggregates,
@@ -25,6 +27,7 @@ import {
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
   listBookmarks,
+  listUnknownClassificationLabels,
   DEFAULT_SEED_PATH,
   listEmbeddingModelMismatches,
   migrate,
@@ -240,6 +243,42 @@ describe('tag assignments', () => {
 
     const [assignment] = getBookmarkTags(db, bookmark.id);
     expect(assignment?.confidence).toBe(0.8);
+  });
+});
+
+describe('unknown classification labels', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('persists immutable evidence rows with server timestamps', () => {
+    const versions = db
+      .query<{ version: string }, []>('SELECT version FROM schema_migrations')
+      .all()
+      .map((row) => row.version);
+    expect(versions).toContain('0006_unknown_classification_labels.sql');
+
+    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://ucl.test' });
+    const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+
+    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.99 });
+    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.4 });
+
+    const rows = listUnknownClassificationLabels(db, runId);
+    expect(rows).toHaveLength(2); // no uniqueness constraint — each occurrence kept
+    expect(rows[0]).toMatchObject({ rawLabel: 'mystery', probability: 0.99 });
+    expect(rows[1]?.probability).toBe(0.4);
+    expect(rows[0]?.createdAt).toBeGreaterThan(1_000_000_000_000); // trigger forced server time
+  });
+
+  test('cascades away with the classification run', () => {
+    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://ucl-cascade.test' });
+    const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.9 });
+
+    db.query('DELETE FROM classification_runs WHERE id = ?').run(uuidToBytes(runId));
+    expect(listUnknownClassificationLabels(db, runId)).toEqual([]);
   });
 });
 

@@ -112,3 +112,58 @@ export function createClassificationResult(db: Database, input: ClassificationRe
     input.rawLabel ?? null,
   );
 }
+
+export interface UnknownClassificationLabelInput {
+  runId: string;
+  /** The classifier label verbatim — it matched no candidate tag. */
+  rawLabel: string;
+  probability: number;
+}
+
+export interface UnknownClassificationLabel {
+  id: string;
+  runId: string;
+  rawLabel: string;
+  probability: number;
+  createdAt: number;
+}
+
+/**
+ * Inserts one immutable unknown-label evidence row (MODEL.md: unknown labels
+ * never create vocabulary and never become assignments). No uniqueness
+ * constraint — repeated occurrences are separate evidence rows.
+ */
+export function createUnknownClassificationLabel(
+  db: Database,
+  input: UnknownClassificationLabelInput,
+): void {
+  db.query(
+    `INSERT INTO unknown_classification_labels (id, run_id, raw_label, probability)
+     VALUES (?, ?, ?, ?)`,
+  ).run(newIdBytes(), uuidToBytes(input.runId), input.rawLabel, input.probability);
+}
+
+/** Unknown-label evidence rows for a run, highest probability first. */
+export function listUnknownClassificationLabels(
+  db: Database,
+  runId: string,
+): UnknownClassificationLabel[] {
+  return db
+    .query<
+      { id: Uint8Array; run_id: Uint8Array; raw_label: string; probability: number; created_at: number },
+      [Uint8Array]
+    >(
+      `SELECT id, run_id, raw_label, probability, created_at
+         FROM unknown_classification_labels
+        WHERE run_id = ?
+        ORDER BY probability DESC, raw_label`,
+    )
+    .all(uuidToBytes(runId))
+    .map((row) => ({
+      id: bytesToUuid(row.id),
+      runId: bytesToUuid(row.run_id),
+      rawLabel: row.raw_label,
+      probability: row.probability,
+      createdAt: row.created_at,
+    }));
+}
