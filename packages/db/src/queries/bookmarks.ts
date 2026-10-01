@@ -19,9 +19,10 @@ import { mapBookmark, type BookmarkRow } from '../row-mapping.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
 
 const COLUMNS =
-  'id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
+  'id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
 
 export interface BookmarkInput {
+  datasetId: string;
   url: string;
   title?: string | null;
   description?: string | null;
@@ -35,6 +36,7 @@ export interface BookmarkInput {
 }
 
 export interface ListBookmarksFilters {
+  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -48,6 +50,7 @@ export interface ListBookmarksFilters {
 
 export interface KeywordSearchParams {
   q: string;
+  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -84,6 +87,10 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
   const where: string[] = [];
   const params: SQLQueryBindings[] = [];
 
+  if (filters.datasetId) {
+    where.push('dataset_id = ?');
+    params.push(uuidToBytes(filters.datasetId));
+  }
   if (filters.categoryId) {
     where.push('category_id = ?');
     params.push(uuidToBytes(filters.categoryId));
@@ -125,10 +132,11 @@ export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
 export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
   const id = newIdBytes();
   db.query(
-    `INSERT INTO bookmarks (id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO bookmarks (id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
+    uuidToBytes(input.datasetId),
     normalizeUrl(input.url),
     input.title ?? null,
     input.description ?? null,
@@ -150,7 +158,7 @@ export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
 export function updateBookmark(
   db: Database,
   id: string,
-  patch: Partial<BookmarkInput>,
+  patch: Partial<Omit<BookmarkInput, 'datasetId'>>,
 ): Bookmark | null {
   const current = getBookmarkById(db, id);
   if (!current) {
@@ -218,8 +226,19 @@ export function deleteBookmark(db: Database, id: string): boolean {
   return result.changes > 0;
 }
 
-export function countBookmarks(db: Database): number {
-  return db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0;
+export function countBookmarks(db: Database, datasetId?: string): number {
+  if (!datasetId) {
+    return (
+      db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0
+    );
+  }
+  return (
+    db
+      .query<{ count: number }, [Uint8Array]>(
+        'SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ?',
+      )
+      .get(uuidToBytes(datasetId))?.count ?? 0
+  );
 }
 
 /**
@@ -306,7 +325,9 @@ export function getBookmarksWithTagsByIds(db: Database, ids: string[]): Bookmark
 
   const placeholders = unique.map(() => '?').join(', ');
   const rows = db
-    .query<BookmarkRow, Uint8Array[]>(`SELECT ${COLUMNS} FROM bookmarks WHERE id IN (${placeholders})`)
+    .query<BookmarkRow, Uint8Array[]>(
+      `SELECT ${COLUMNS} FROM bookmarks WHERE id IN (${placeholders})`,
+    )
     .all(...unique.map(uuidToBytes));
 
   const byId = new Map(hydrate(db, rows).map((bookmark) => [bookmark.id, bookmark]));
@@ -329,6 +350,10 @@ export function keywordSearch(db: Database, params: KeywordSearchParams): Ranked
   const where = ['bookmark_fts MATCH ?'];
   const bind: SQLQueryBindings[] = [match];
 
+  if (params.datasetId) {
+    where.push('b.dataset_id = ?');
+    bind.push(uuidToBytes(params.datasetId));
+  }
   if (params.categoryId) {
     where.push('b.category_id = ?');
     bind.push(uuidToBytes(params.categoryId));
@@ -379,6 +404,10 @@ export function countKeywordMatches(db: Database, params: KeywordSearchParams): 
   const where = ['bookmark_fts MATCH ?'];
   const bind: SQLQueryBindings[] = [match];
 
+  if (params.datasetId) {
+    where.push('b.dataset_id = ?');
+    bind.push(uuidToBytes(params.datasetId));
+  }
   if (params.categoryId) {
     where.push('b.category_id = ?');
     bind.push(uuidToBytes(params.categoryId));

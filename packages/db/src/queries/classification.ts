@@ -4,7 +4,8 @@ import { bytesToUuid, newIdBytes, uuidToBytes, type Tag } from '@al-yo-bo/shared
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
 
-const TAG_COLUMNS = 'id, category_id, name, description, status, created_at';
+const TAG_COLUMNS =
+  'id, dataset_id, category_id, name, description, status, merged_into_id, created_at';
 
 export interface ClassificationRunInput {
   bookmarkId: string;
@@ -29,18 +30,25 @@ export interface ClassificationResultInput {
 
 /**
  * Candidate set for classification (ARCHITECTURE §7 stage 0): active tags in the
- * bookmark's category scope plus unscoped tags. With no category there is no
- * scope to restrict to, so **all** active tags are candidates.
+ * bookmark's dataset. When the bookmark has a category, candidates are further
+ * narrowed to that category's scope plus unscoped tags — still within the
+ * dataset. Cross-dataset vocabulary is never a candidate.
  */
-export function listActiveTagsForScope(db: Database, categoryId: string | null): Tag[] {
-  const bytes = categoryId ? uuidToBytes(categoryId) : null;
+export function listActiveTagsForScope(
+  db: Database,
+  datasetId: string,
+  categoryId: string | null,
+): Tag[] {
+  const datasetBytes = uuidToBytes(datasetId);
+  const categoryBytes = categoryId ? uuidToBytes(categoryId) : null;
   return db
-    .query<TagRow, [Uint8Array | null, Uint8Array | null]>(
+    .query<TagRow, [Uint8Array, Uint8Array | null, Uint8Array | null]>(
       `SELECT ${TAG_COLUMNS} FROM tags
-        WHERE status = 'active' AND (? IS NULL OR category_id = ? OR category_id IS NULL)
+        WHERE dataset_id = ? AND status = 'active'
+          AND (? IS NULL OR category_id = ? OR category_id IS NULL)
         ORDER BY name`,
     )
-    .all(bytes, bytes)
+    .all(datasetBytes, categoryBytes, categoryBytes)
     .map(mapTag);
 }
 
@@ -54,16 +62,22 @@ export function listUserTagIds(db: Database, bookmarkId: string): string[] {
     .map((row) => bytesToUuid(row.tag_id));
 }
 
-/** Bookmarks in a tag's scope; an unscoped tag's scope is the whole library. */
-export function listBookmarkIdsForCategoryScope(db: Database, categoryId: string | null): string[] {
+/** Bookmarks in a tag's scope; an unscoped tag's scope is its whole dataset. */
+export function listBookmarkIdsForCategoryScope(
+  db: Database,
+  datasetId: string,
+  categoryId: string | null,
+): string[] {
   return (
     categoryId
       ? db
-          .query<{ id: Uint8Array }, [Uint8Array]>(
-            'SELECT id FROM bookmarks WHERE category_id = ?',
+          .query<{ id: Uint8Array }, [Uint8Array, Uint8Array]>(
+            'SELECT id FROM bookmarks WHERE dataset_id = ? AND category_id = ?',
           )
-          .all(uuidToBytes(categoryId))
-      : db.query<{ id: Uint8Array }, []>('SELECT id FROM bookmarks').all()
+          .all(uuidToBytes(datasetId), uuidToBytes(categoryId))
+      : db
+          .query<{ id: Uint8Array }, [Uint8Array]>('SELECT id FROM bookmarks WHERE dataset_id = ?')
+          .all(uuidToBytes(datasetId))
   ).map((row) => bytesToUuid(row.id));
 }
 

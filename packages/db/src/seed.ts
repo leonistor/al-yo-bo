@@ -9,6 +9,7 @@ import { setupDatabase } from './migrations.ts';
 import { assignTag } from './queries/bookmark-tags.ts';
 import { upsertBookmarkByUrl } from './queries/bookmarks.ts';
 import { createCategory, getCategoryByName } from './queries/categories.ts';
+import { createDataset, getDatasetByName } from './queries/datasets.ts';
 import { createTag, getTagByName } from './queries/tags.ts';
 
 /** Seed datasets live in `packages/db/seeds/datasets/<name>.seed.json`. */
@@ -42,7 +43,9 @@ const DATASETS: SeedDataset[] = [
 
 export class UnknownSeedDatasetError extends Error {
   constructor(name: string) {
-    const known = DATASETS.map((d) => (d.implemented ? d.name : `${d.name} (not yet implemented)`)).join(', ');
+    const known = DATASETS.map((d) =>
+      d.implemented ? d.name : `${d.name} (not yet implemented)`,
+    ).join(', ');
     super(`Unknown seed dataset "${name}". Available datasets: ${known}`);
     this.name = 'UnknownSeedDatasetError';
   }
@@ -81,12 +84,15 @@ interface SeedBookmark {
 }
 
 interface SeedFile {
+  /** Dataset name the fixture loads into (created on demand). */
+  dataset: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
 }
 
 export interface SeedReport {
+  datasetCreated: boolean;
   categoriesCreated: number;
   tagsCreated: number;
   bookmarksAdded: number;
@@ -99,7 +105,8 @@ export interface SeedReport {
  * Bookmarks, tags, and categories are the root tables; child rows (assignments,
  * scraped content, embeddings, classification evidence) cascade via foreign
  * keys (connection PRAGMAs keep FKs on), and the `bookmarks_fts_delete` trigger
- * removes FTS rows as bookmarks go, so no reindex pass is needed.
+ * removes FTS rows as bookmarks go, so no reindex pass is needed. Datasets are
+ * kept: the fixture's dataset is reused by name, and the wipe is scoped to it.
  */
 export function resetSeedData(db: Database): void {
   db.transaction(() => {
@@ -108,12 +115,14 @@ export function resetSeedData(db: Database): void {
 }
 
 /**
- * Loads a seed fixture (default: the `leo` dataset). Idempotent: categories and
- * tags are reused by name and bookmarks are upserted by URL.
+ * Loads a seed fixture (default: the `leo` dataset). Idempotent: the fixture's
+ * dataset, categories and tags are reused by name and bookmarks are upserted by
+ * URL. Everything is scoped to the fixture's dataset.
  */
 export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedReport {
   const seed = JSON.parse(readFileSync(filePath, 'utf8')) as SeedFile;
   const report: SeedReport = {
+    datasetCreated: false,
     categoriesCreated: 0,
     tagsCreated: 0,
     bookmarksAdded: 0,
@@ -122,28 +131,35 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
   };
 
   const insideTransaction = db.transaction(() => {
+    const existing = getDatasetByName(db, seed.dataset);
+    const dataset = existing ?? createDataset(db, seed.dataset);
+    report.datasetCreated = !existing;
+
     for (const name of seed.categories) {
-      if (!getCategoryByName(db, name)) {
+      if (!getCategoryByName(db, dataset.id, name)) {
         report.categoriesCreated += 1;
       }
-      createCategory(db, { name });
+      createCategory(db, { datasetId: dataset.id, name });
     }
 
     for (const name of seed.tags) {
-      if (!getTagByName(db, name, null)) {
+      if (!getTagByName(db, dataset.id, name, null)) {
         report.tagsCreated += 1;
       }
-      createTag(db, { name, status: 'active' });
+      createTag(db, { datasetId: dataset.id, name, status: 'active' });
     }
 
     for (const entry of seed.bookmarks) {
       let categoryId: string | null = null;
       if (entry.category) {
-        const category = getCategoryByName(db, entry.category) ?? createCategory(db, { name: entry.category });
+        const category =
+          getCategoryByName(db, dataset.id, entry.category) ??
+          createCategory(db, { datasetId: dataset.id, name: entry.category });
         categoryId = category.id;
       }
 
       const { bookmark, created } = upsertBookmarkByUrl(db, {
+        datasetId: dataset.id,
         url: entry.url,
         title: entry.title,
         description: entry.description,
@@ -163,7 +179,7 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
       }
 
       for (const tagName of entry.tags) {
-        const tag = getTagByName(db, tagName, null);
+        const tag = getTagByName(db, dataset.id, tagName, null);
         if (tag) {
           assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'import' });
           report.assignments += 1;

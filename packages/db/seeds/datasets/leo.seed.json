@@ -44,9 +44,7 @@
     "web",
     "wordnotexist syllabes"
   ],
-  "tags": [
-    "imported"
-  ],
+  "tags": ["imported"],
   "bookmarks": [
     {
       "url": "https://github.com/Dailogue/topic-breakdown",
@@ -1637,9 +1635,7 @@
       "title": "flexible and customizable searchable dropdown component",
       "description": "flexible and customizable searchable dropdown component",
       "category": "comps",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1655,9 +1651,7 @@
       "title": "React Hook Form - shadcn/ui",
       "description": "React Hook Form - shadcn/ui",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1673,9 +1667,7 @@
       "title": "Code Block - prompt-kit",
       "description": "Code Block - prompt-kit",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1691,9 +1683,7 @@
       "title": "Getting Started: Fetching Data | Next.js",
       "description": "Getting Started: Fetching Data | Next.js",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1709,9 +1699,7 @@
       "title": "React Server Components: Generate Text",
       "description": "React Server Components: Generate Text",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1727,9 +1715,7 @@
       "title": "GitHub - iloveitaly/shadcn-copy-button: A customizable ShadCN/UI copy button component that supports copying text, HTML, and content from referenced elements to the clipboard with automatic markdown conversion.",
       "description": "GitHub - iloveitaly/shadcn-copy-button: A customizable ShadCN/UI copy button component that supports copying text, HTML, and content from referenced elements to the clipboard with automatic markdown conversion.",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1745,9 +1731,7 @@
       "title": "Guide: Introduction (SolidJS) | Modular Forms",
       "description": "Guide: Introduction (SolidJS) | Modular Forms",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1763,9 +1747,7 @@
       "title": "Conform / Overview",
       "description": "Conform / Overview",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1781,9 +1763,7 @@
       "title": "letsform.dev",
       "description": "letsform.dev",
       "category": "forms",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1799,9 +1779,7 @@
       "title": null,
       "description": null,
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1817,9 +1795,7 @@
       "title": "GitHub - jotaijs/jotai-form: Form atoms for Jotai",
       "description": "GitHub - jotaijs/jotai-form: Form atoms for Jotai",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1835,9 +1811,7 @@
       "title": "GitHub - jotaijs/jotai-tanstack-query: Jotai integration library for TanStack Query",
       "description": "GitHub - jotaijs/jotai-tanstack-query: Jotai integration library for TanStack Query",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1853,9 +1827,7 @@
       "title": "Overview | TanStack Query React Docs",
       "description": "Overview | TanStack Query React Docs",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1871,9 +1843,7 @@
       "title": "GitHub - jotaijs/jotai-ai: A Jōtai utility package compatible with Vercel AI SDK",
       "description": "GitHub - jotaijs/jotai-ai: A Jōtai utility package compatible with Vercel AI SDK",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1889,9 +1859,7 @@
       "title": "GitHub - jotaijs/jotai-trpc",
       "description": "GitHub - jotaijs/jotai-trpc",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1907,9 +1875,7 @@
       "title": "tRPC - Move Fast and Break Nothing. End-to-end typesafe APIs made easy. | tRPC",
       "description": "tRPC - Move Fast and Break Nothing. End-to-end typesafe APIs made easy. | tRPC",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1925,9 +1891,7 @@
       "title": "GitHub - jotaijs/jotai-transaction: Utility package for executing atomic transactions in Jotai.",
       "description": "GitHub - jotaijs/jotai-transaction: Utility package for executing atomic transactions in Jotai.",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1943,9 +1907,7 @@
       "title": "GitHub - saasquatch/jotai-hook-form: Build complex forms with jotai, using JSON pointers.",
       "description": "GitHub - saasquatch/jotai-hook-form: Build complex forms with jotai, using JSON pointers.",
       "category": "jotai",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1961,9 +1923,7 @@
       "title": "payload AI Plugin",
       "description": "payload AI Plugin",
       "category": "payload",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1979,9 +1939,7 @@
       "title": "payload-blurhash-plugin: Payload CMS plugin for automatic Blurhash encoding of images",
       "description": "payload-blurhash-plugin: Payload CMS plugin for automatic Blurhash encoding of images",
       "category": "payload",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -1997,9 +1955,7 @@
       "title": "SWR",
       "description": "SWR",
       "category": "payload",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2015,9 +1971,7 @@
       "title": "integrate your favorite auth providers",
       "description": "integrate your favorite auth providers",
       "category": "payload",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2033,9 +1987,7 @@
       "title": "Online react video editor using remotion. Capcut and canva clone",
       "description": "Online react video editor using remotion. Capcut and canva clone",
       "category": "react video",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2051,9 +2003,7 @@
       "title": "A delightful way to animate objects in Remotion",
       "description": "A delightful way to animate objects in Remotion",
       "category": "react video",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2069,9 +2019,7 @@
       "title": "Creates short videos for TikTok, Instagram Reels, and YouTube Shorts using the Model Context Protocol (MCP) and a REST API.",
       "description": "Creates short videos for TikTok, Instagram Reels, and YouTube Shorts using the Model Context Protocol (MCP) and a REST API.",
       "category": "react video",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2087,9 +2035,7 @@
       "title": "remotion",
       "description": "remotion",
       "category": "react video",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2105,9 +2051,7 @@
       "title": "JollyUI - React Aria UI w/ shadcn",
       "description": "JollyUI - React Aria UI w/ shadcn",
       "category": "React UI",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2123,9 +2067,7 @@
       "title": "Retro Styled React UI Library",
       "description": "Retro Styled React UI Library",
       "category": "React UI",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2141,9 +2083,7 @@
       "title": "React Bits - Animated UI Components For React",
       "description": "React Bits - Animated UI Components For React",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2159,9 +2099,7 @@
       "title": "Fancy Components",
       "description": "Fancy Components",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2177,9 +2115,7 @@
       "title": "Kokonut UI - Open Source Components",
       "description": "Kokonut UI - Open Source Components",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2195,9 +2131,7 @@
       "title": "Origin UI",
       "description": "Origin UI",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2213,9 +2147,7 @@
       "title": "Prism UI",
       "description": "Prism UI",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2231,9 +2163,7 @@
       "title": "Kibo UI",
       "description": "Kibo UI",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2249,9 +2179,7 @@
       "title": "Reablocks",
       "description": "Reablocks",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2267,9 +2195,7 @@
       "title": "Charts",
       "description": "Charts",
       "category": "React +  Tailwind + Framer Motion",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2285,9 +2211,7 @@
       "title": "Next.js Multi Zones - iO tech_hub",
       "description": "Next.js Multi Zones - iO tech_hub",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2303,9 +2227,7 @@
       "title": "Minimal state management tools - iO tech_hub",
       "description": "Minimal state management tools - iO tech_hub",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2321,9 +2243,7 @@
       "title": "JStack - Full-Stack Next.js & TypeScript Toolkit",
       "description": "JStack - Full-Stack Next.js & TypeScript Toolkit",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2339,9 +2259,7 @@
       "title": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
       "description": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2357,9 +2275,7 @@
       "title": "My Biggest Tutorial Ever (Build A FULL Google Drive Clone with React, Next, TypeScript and more) - YouTube",
       "description": "My Biggest Tutorial Ever (Build A FULL Google Drive Clone with React, Next, TypeScript and more) - YouTube",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2375,9 +2291,7 @@
       "title": "Building APIs with Next.js | Next.js",
       "description": "Building APIs with Next.js | Next.js",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2393,9 +2307,7 @@
       "title": "Internationalization (i18n) for Next.js",
       "description": "Internationalization (i18n) for Next.js",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2411,9 +2323,7 @@
       "title": "nextjs + prisma app",
       "description": "nextjs + prisma app",
       "category": "next.js",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2429,9 +2339,7 @@
       "title": "jsrepo - Introduction",
       "description": "jsrepo - Introduction",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2447,9 +2355,7 @@
       "title": "TypeScript utilities brokered by jsrepo.",
       "description": "TypeScript utilities brokered by jsrepo.",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2465,9 +2371,7 @@
       "title": "Tauri v2 with Next.js: A Monorepo Guide",
       "description": "Tauri v2 with Next.js: A Monorepo Guide",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2483,9 +2387,7 @@
       "title": "Tauri v2 with Next.js: A Monorepo Guide",
       "description": "Tauri v2 with Next.js: A Monorepo Guide",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2501,9 +2403,7 @@
       "title": "What is WebLLM",
       "description": "What is WebLLM",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2519,9 +2419,7 @@
       "title": "Node.js PostgreSQL client with runtime and build time type safety, and composable SQL.",
       "description": "Node.js PostgreSQL client with runtime and build time type safety, and composable SQL.",
       "category": "dev",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2537,9 +2435,7 @@
       "title": "AI Photo Reviewer",
       "description": "AI Photo Reviewer",
       "category": "nextjs ollama",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2555,9 +2451,7 @@
       "title": "The AI Toolkit for TypeScript",
       "description": "The AI Toolkit for TypeScript",
       "category": "nextjs ollama",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2573,9 +2467,7 @@
       "title": "usehooks-ts",
       "description": "usehooks-ts",
       "category": "react utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2591,9 +2483,7 @@
       "title": "GitHub - liam-hq/liam: Automatically generates beautiful and easy-to-read ER diagrams from your database.",
       "description": "GitHub - liam-hq/liam: Automatically generates beautiful and easy-to-read ER diagrams from your database.",
       "category": "react utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2609,9 +2499,7 @@
       "title": "Basic Usage | HouseForm",
       "description": "Basic Usage | HouseForm",
       "category": "react utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2627,9 +2515,7 @@
       "title": "Usage and Customization | react-jsonschema-form",
       "description": "Usage and Customization | react-jsonschema-form",
       "category": "react utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2645,9 +2531,7 @@
       "title": "codehike: Build rich content websites with Markdown and React",
       "description": "codehike: Build rich content websites with Markdown and React",
       "category": "MDX",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2663,9 +2547,7 @@
       "title": "GitHub - mdx-editor/editor: A rich text editor React component for markdown",
       "description": "GitHub - mdx-editor/editor: A rich text editor React component for markdown",
       "category": "MDX",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2681,9 +2563,7 @@
       "title": "MDX",
       "description": "MDX",
       "category": "MDX",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2699,9 +2579,7 @@
       "title": "GitHub - kottster/kottster: A simple Node.js admin panel for your app. Build admin panel in minutes.",
       "description": "GitHub - kottster/kottster: A simple Node.js admin panel for your app. Build admin panel in minutes.",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2717,9 +2595,7 @@
       "title": "next-admin.js.org",
       "description": "next-admin.js.org",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2735,9 +2611,7 @@
       "title": "SQLite database connector | Prisma Documentation",
       "description": "SQLite database connector | Prisma Documentation",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2753,9 +2627,7 @@
       "title": "Wasp",
       "description": "Wasp",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2771,9 +2643,7 @@
       "title": "Production-grade Turborepo template for Next.js apps",
       "description": "Production-grade Turborepo template for Next.js apps",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2789,9 +2659,7 @@
       "title": "ZenStack - Simplified Full-Stack Development with Prisma ORM | ZenStack",
       "description": "ZenStack - Simplified Full-Stack Development with Prisma ORM | ZenStack",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2807,9 +2675,7 @@
       "title": "GitHub - saasfly/saasfly: Your Next SaaS Template or Boilerplate ! A magic trip start with `bun create saasfly` . The more stars the more surprises",
       "description": "GitHub - saasfly/saasfly: Your Next SaaS Template or Boilerplate ! A magic trip start with `bun create saasfly` . The more stars the more surprises",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2825,9 +2691,7 @@
       "title": "How To Create a Progressive Web App (PWA) Using Next.js",
       "description": "How To Create a Progressive Web App (PWA) Using Next.js",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2843,9 +2707,7 @@
       "title": "command-line tool (CLI) for building full-stack Next.js apps faster",
       "description": "command-line tool (CLI) for building full-stack Next.js apps faster",
       "category": "next",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2861,9 +2723,7 @@
       "title": "Rallly: Group Scheduling Tool",
       "description": "Rallly: Group Scheduling Tool",
       "category": "open source tools",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2879,9 +2739,7 @@
       "title": "GitHub - Codehagen/Badget: Badget aims to simplify financial management with a user-friendly interface and robustbackend",
       "description": "GitHub - Codehagen/Badget: Badget aims to simplify financial management with a user-friendly interface and robustbackend",
       "category": "open source tools",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2897,9 +2755,7 @@
       "title": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
       "description": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
       "category": "utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2915,9 +2771,7 @@
       "title": "cargo-make - crates.io: Rust Package Registry",
       "description": "cargo-make - crates.io: Rust Package Registry",
       "category": "utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2933,9 +2787,7 @@
       "title": "itertools::structs - Rust",
       "description": "itertools::structs - Rust",
       "category": "utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2951,9 +2803,7 @@
       "title": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
       "description": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
       "category": "utils",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2969,9 +2819,7 @@
       "title": "RAG Tutorials",
       "description": "RAG Tutorials",
       "category": "ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -2987,9 +2835,7 @@
       "title": "GitHub - huggingface/candle: Minimalist ML framework for Rust",
       "description": "GitHub - huggingface/candle: Minimalist ML framework for Rust",
       "category": "ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3005,9 +2851,7 @@
       "title": "Overview - The Burn Book 🔥",
       "description": "Overview - The Burn Book 🔥",
       "category": "ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3023,9 +2867,7 @@
       "title": "GitHub - tracel-ai/burn: Burn is a next generation tensor library and Deep Learning Framework that doesn't compromise on flexibility, efficiency and portability.",
       "description": "GitHub - tracel-ai/burn: Burn is a next generation tensor library and Deep Learning Framework that doesn't compromise on flexibility, efficiency and portability.",
       "category": "ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3041,9 +2883,7 @@
       "title": "GitHub - LaurentMazare/tch-rs: Rust bindings for the C++ api of PyTorch.",
       "description": "GitHub - LaurentMazare/tch-rs: Rust bindings for the C++ api of PyTorch.",
       "category": "ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3059,9 +2899,7 @@
       "title": "GitHub - milvus-io/milvus: Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search",
       "description": "GitHub - milvus-io/milvus: Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3077,9 +2915,7 @@
       "title": "GitHub - chroma-core/chroma: Open-source search and retrieval database for AI applications.",
       "description": "GitHub - chroma-core/chroma: Open-source search and retrieval database for AI applications.",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3095,9 +2931,7 @@
       "title": "GitHub - weaviate/weaviate: Weaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.",
       "description": "GitHub - weaviate/weaviate: Weaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3113,9 +2947,7 @@
       "title": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
       "description": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3131,9 +2963,7 @@
       "title": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
       "description": "GitHub - qdrant/qdrant: Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3149,9 +2979,7 @@
       "title": "GitHub - vdaas/vald: Vald. A Highly Scalable Distributed Vector Search Engine",
       "description": "GitHub - vdaas/vald: Vald. A Highly Scalable Distributed Vector Search Engine",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3167,9 +2995,7 @@
       "title": "GitHub - facebookresearch/faiss: A library for efficient similarity search and clustering of dense vectors.",
       "description": "GitHub - facebookresearch/faiss: A library for efficient similarity search and clustering of dense vectors.",
       "category": "collect 16 Nov 2025",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3185,9 +3011,7 @@
       "title": "Nice! Quick guides",
       "description": "Nice! Quick guides",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3203,9 +3027,7 @@
       "title": "Nice! Quick guides",
       "description": "Nice! Quick guides",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3221,9 +3043,7 @@
       "title": "RAGatouille State-of-the-art document retrieval methods",
       "description": "RAGatouille State-of-the-art document retrieval methods",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3239,9 +3059,7 @@
       "title": "knowledgator/gliner-x-large · Hugging Face",
       "description": "knowledgator/gliner-x-large · Hugging Face",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3257,9 +3075,7 @@
       "title": "GitHub - fbilhaut/gline-rs: Inference engine for GLiNER models, in Rust",
       "description": "GitHub - fbilhaut/gline-rs: Inference engine for GLiNER models, in Rust",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3275,9 +3091,7 @@
       "title": "GitHub - huggingface/tokenizers: 💥 Fast State-of-the-Art Tokenizers optimized for Research and Production",
       "description": "GitHub - huggingface/tokenizers: 💥 Fast State-of-the-Art Tokenizers optimized for Research and Production",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3293,9 +3107,7 @@
       "title": "GitHub - benbrandt/text-splitter: Split text into semantic chunks, up to a desired chunk size. Supports calculating length by characters and tokens, and is callable from Rust and Python.",
       "description": "GitHub - benbrandt/text-splitter: Split text into semantic chunks, up to a desired chunk size. Supports calculating length by characters and tokens, and is callable from Rust and Python.",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3311,9 +3123,7 @@
       "title": "Introduction - Candle Documentation",
       "description": "Introduction - Candle Documentation",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3329,9 +3139,7 @@
       "title": "GitHub - nerdai/llms-from-scratch-rs: A comprehensive Rust translation of the code from Sebastian Raschka's Build an LLM from Scratch book.",
       "description": "GitHub - nerdai/llms-from-scratch-rs: A comprehensive Rust translation of the code from Sebastian Raschka's Build an LLM from Scratch book.",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3347,9 +3155,7 @@
       "title": "Overview - The Burn Book 🔥",
       "description": "Overview - The Burn Book 🔥",
       "category": "Rust ML",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3365,9 +3171,7 @@
       "title": "Sycamore",
       "description": "Sycamore",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3383,9 +3187,7 @@
       "title": "Rust Language Cheat Sheet",
       "description": "Rust Language Cheat Sheet",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3401,9 +3203,7 @@
       "title": "Unofficial Rust Books - The Little Book of Rust Books",
       "description": "Unofficial Rust Books - The Little Book of Rust Books",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3419,9 +3219,7 @@
       "title": "Welcome to Comprehensive Rust 🦀 - Comprehensive Rust 🦀",
       "description": "Welcome to Comprehensive Rust 🦀 - Comprehensive Rust 🦀",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3437,9 +3235,7 @@
       "title": "A half-hour to learn Rust",
       "description": "A half-hour to learn Rust",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3455,9 +3251,7 @@
       "title": null,
       "description": null,
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3473,9 +3267,7 @@
       "title": null,
       "description": null,
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3491,9 +3283,7 @@
       "title": null,
       "description": null,
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3509,9 +3299,7 @@
       "title": "Rust Ecosystem for AI & LLMs",
       "description": "Rust Ecosystem for AI & LLMs",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3527,9 +3315,7 @@
       "title": "The Leptos Community and leptos-* Crates",
       "description": "The Leptos Community and leptos-* Crates",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3545,9 +3331,7 @@
       "title": "GitHub - leptos-rs/awesome-leptos: A collection of awesome libraries in the Leptos ecosystem.",
       "description": "GitHub - leptos-rs/awesome-leptos: A collection of awesome libraries in the Leptos ecosystem.",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3563,9 +3347,7 @@
       "title": "GitHub - flosse/rust-web-framework-comparison: A comparison of some web frameworks and libs written in Rust",
       "description": "GitHub - flosse/rust-web-framework-comparison: A comparison of some web frameworks and libs written in Rust",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3581,9 +3363,7 @@
       "title": "Large Language Models via Rust",
       "description": "Large Language Models via Rust",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3599,9 +3379,7 @@
       "title": "Learning Rust with Large Language Models (Part III)",
       "description": "Learning Rust with Large Language Models (Part III)",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3617,9 +3395,7 @@
       "title": "PromptHive - Lightning-fast open source prompt manager",
       "description": "PromptHive - Lightning-fast open source prompt manager",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3635,9 +3411,7 @@
       "title": "Vector-DB-Benchmark-for-Music-Semantic-Search/ui/backend/server.py at main · andrisgauracs/Vector-DB-Benchmark-for-Music-Semantic-Search · GitHub",
       "description": "Vector-DB-Benchmark-for-Music-Semantic-Search/ui/backend/server.py at main · andrisgauracs/Vector-DB-Benchmark-for-Music-Semantic-Search · GitHub",
       "category": "Rust web",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3653,9 +3427,7 @@
       "title": "awesome",
       "description": "awesome",
       "category": null,
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3671,9 +3443,7 @@
       "title": null,
       "description": null,
       "category": "shadcn UI libs",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3689,9 +3459,7 @@
       "title": null,
       "description": null,
       "category": "shadcn UI libs",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3707,9 +3475,7 @@
       "title": null,
       "description": null,
       "category": "shadcn UI libs",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3725,9 +3491,7 @@
       "title": null,
       "description": null,
       "category": "shadcn UI libs",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3743,9 +3507,7 @@
       "title": "All of the shadcn/ui magic, none of the React",
       "description": "All of the shadcn/ui magic, none of the React",
       "category": "libs",
-      "tags": [
-        "imported"
-      ],
+      "tags": ["imported"],
       "createdAt": 1790826683000,
       "metadata": {
         "import": {
@@ -3756,5 +3518,6 @@
         }
       }
     }
-  ]
+  ],
+  "dataset": "leo"
 }

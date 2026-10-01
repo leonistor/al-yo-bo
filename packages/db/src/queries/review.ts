@@ -1,8 +1,11 @@
 import type { Database } from 'bun:sqlite';
 
-import { bytesToUuid, type ReviewCandidate, type Tag } from '@al-yo-bo/shared';
+import { bytesToUuid, uuidToBytes, type ReviewCandidate, type Tag } from '@al-yo-bo/shared';
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
+
+const TAG_COLUMNS =
+  'id, dataset_id, category_id, name, description, status, merged_into_id, created_at';
 
 interface CandidateRow {
   bookmark_id: Uint8Array;
@@ -14,14 +17,14 @@ interface CandidateRow {
   run_id: Uint8Array;
 }
 
-/** Proposed tags awaiting approval (MODEL.md: proposed -> active/deprecated). */
-export function listProposedTags(db: Database): Tag[] {
+/** Proposed tags awaiting approval (MODEL.md: proposed -> active/deprecated/rejected). */
+export function listProposedTags(db: Database, datasetId: string): Tag[] {
   return db
-    .query<TagRow, []>(
-      `SELECT id, category_id, name, description, status, created_at
-         FROM tags WHERE status = 'proposed' ORDER BY name`,
+    .query<TagRow, [Uint8Array]>(
+      `SELECT ${TAG_COLUMNS} FROM tags
+        WHERE status = 'proposed' AND dataset_id = ? ORDER BY name`,
     )
-    .all()
+    .all(uuidToBytes(datasetId))
     .map(mapTag);
 }
 
@@ -31,11 +34,12 @@ export function listProposedTags(db: Database): Tag[] {
  */
 export function listBelowThresholdCandidates(
   db: Database,
+  datasetId: string,
   threshold: number,
   limit = 50,
 ): ReviewCandidate[] {
   return db
-    .query<CandidateRow, [number, number]>(
+    .query<CandidateRow, [number, Uint8Array, number]>(
       `SELECT r.bookmark_id AS bookmark_id, b.url AS url, b.title AS title,
               cr.tag_id AS tag_id, t.name AS name, cr.probability AS probability, cr.run_id AS run_id
          FROM classification_results cr
@@ -43,10 +47,11 @@ export function listBelowThresholdCandidates(
          JOIN bookmarks b ON b.id = r.bookmark_id
          JOIN tags t ON t.id = cr.tag_id
         WHERE cr.selected = 0 AND cr.probability < ? AND t.status = 'active'
+          AND b.dataset_id = ?
         ORDER BY cr.probability DESC
         LIMIT ?`,
     )
-    .all(threshold, limit)
+    .all(threshold, uuidToBytes(datasetId), limit)
     .map((row) => ({
       bookmarkId: bytesToUuid(row.bookmark_id),
       bookmarkUrl: row.url,

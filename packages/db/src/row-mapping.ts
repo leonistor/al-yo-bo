@@ -5,28 +5,54 @@ import {
   type BookmarkStatus,
   type BookmarkTagView,
   type Category,
+  type CategoryStatus,
+  type Dataset,
+  type Section,
   type Tag,
   type TagStatus,
 } from '@al-yo-bo/shared';
 
-export interface CategoryRow {
+export interface DatasetRow {
   id: Uint8Array;
   name: string;
+  created_at: number;
+}
+
+export interface SectionRow {
+  id: Uint8Array;
+  dataset_id: Uint8Array;
+  name: string;
   description: string | null;
+  status: string;
+  merged_into_id: Uint8Array | null;
+  created_at: number;
+}
+
+export interface CategoryRow {
+  id: Uint8Array;
+  dataset_id: Uint8Array;
+  section_id: Uint8Array | null;
+  name: string;
+  description: string | null;
+  status: string;
+  merged_into_id: Uint8Array | null;
   created_at: number;
 }
 
 export interface TagRow {
   id: Uint8Array;
+  dataset_id: Uint8Array;
   category_id: Uint8Array | null;
   name: string;
   description: string | null;
   status: string;
+  merged_into_id: Uint8Array | null;
   created_at: number;
 }
 
 export interface BookmarkRow {
   id: Uint8Array;
+  dataset_id: Uint8Array;
   url: string;
   title: string | null;
   description: string | null;
@@ -48,11 +74,35 @@ export interface BookmarkTagRow {
   confidence: number | null;
 }
 
-export function mapCategory(row: CategoryRow): Category {
+export function mapDataset(row: DatasetRow): Dataset {
   return {
     id: bytesToUuid(row.id),
     name: row.name,
+    createdAt: row.created_at,
+  };
+}
+
+export function mapSection(row: SectionRow): Section {
+  return {
+    id: bytesToUuid(row.id),
+    datasetId: bytesToUuid(row.dataset_id),
+    name: row.name,
     description: row.description,
+    status: row.status as Section['status'],
+    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
+    createdAt: row.created_at,
+  };
+}
+
+export function mapCategory(row: CategoryRow): Category {
+  return {
+    id: bytesToUuid(row.id),
+    datasetId: bytesToUuid(row.dataset_id),
+    sectionId: row.section_id ? bytesToUuid(row.section_id) : null,
+    name: row.name,
+    description: row.description,
+    status: row.status as CategoryStatus,
+    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
     createdAt: row.created_at,
   };
 }
@@ -60,10 +110,12 @@ export function mapCategory(row: CategoryRow): Category {
 export function mapTag(row: TagRow): Tag {
   return {
     id: bytesToUuid(row.id),
+    datasetId: bytesToUuid(row.dataset_id),
     categoryId: row.category_id ? bytesToUuid(row.category_id) : null,
     name: row.name,
     description: row.description,
     status: row.status as TagStatus,
+    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
     createdAt: row.created_at,
   };
 }
@@ -83,6 +135,7 @@ export function parseMetadata(raw: string | null): Record<string, unknown> | nul
 export function mapBookmark(row: BookmarkRow): Bookmark {
   return {
     id: bytesToUuid(row.id),
+    datasetId: bytesToUuid(row.dataset_id),
     url: row.url,
     title: row.title,
     description: row.description,
