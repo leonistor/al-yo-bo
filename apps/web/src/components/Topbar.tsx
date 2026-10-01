@@ -1,4 +1,5 @@
 import {
+  MenuIcon,
   MessageSquareIcon,
   MonitorIcon,
   MoonIcon,
@@ -40,6 +41,8 @@ interface TopbarProps {
   onAdd: () => void;
   onImport: () => void;
   onToggleChat: () => void;
+  /** Below md the sidebar is hidden; this opens it as an off-canvas sheet. */
+  onOpenNav: () => void;
 }
 
 export function Topbar({
@@ -54,10 +57,21 @@ export function Topbar({
   onAdd,
   onImport,
   onToggleChat,
+  onOpenNav,
 }: TopbarProps) {
   return (
     <header className="flex items-center gap-2 border-b border-border px-4 py-2">
-      <div className="relative flex-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Open navigation"
+        className="md:hidden"
+        onClick={onOpenNav}
+      >
+        <MenuIcon />
+      </Button>
+
+      <div className="relative min-w-0 flex-1">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={searchRef}
@@ -70,7 +84,7 @@ export function Topbar({
       </div>
 
       <Select value={mode} onValueChange={(value) => onModeChange(value as SearchMode)}>
-        <SelectTrigger className="w-32" aria-label="Search mode">
+        <SelectTrigger className="w-28 sm:w-32" aria-label="Search mode">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -80,20 +94,51 @@ export function Topbar({
         </SelectContent>
       </Select>
 
-      <Button variant="outline" onClick={onImport}>
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Import bookmarks"
+        className="sm:hidden"
+        onClick={onImport}
+      >
+        <UploadIcon />
+      </Button>
+      <Button variant="outline" className="hidden sm:inline-flex" onClick={onImport}>
         <UploadIcon data-icon="inline-start" />
         Import
       </Button>
-      <Button onClick={onAdd}>
+
+      <Button
+        size="icon"
+        aria-label="Add bookmark"
+        className="sm:hidden"
+        onClick={onAdd}
+      >
+        <PlusIcon />
+      </Button>
+      <Button className="hidden sm:inline-flex" onClick={onAdd}>
         <PlusIcon data-icon="inline-start" />
         Add
       </Button>
 
       <Button
         variant={chatOpen ? 'secondary' : 'outline'}
+        size="icon"
         onClick={onToggleChat}
         aria-label="Toggle chat (press c)"
+        aria-pressed={chatOpen}
         title="Chat (c)"
+        className="sm:hidden"
+      >
+        <MessageSquareIcon />
+      </Button>
+      <Button
+        variant={chatOpen ? 'secondary' : 'outline'}
+        onClick={onToggleChat}
+        aria-label="Toggle chat (press c)"
+        aria-pressed={chatOpen}
+        title="Chat (c)"
+        className="hidden sm:inline-flex"
       >
         <MessageSquareIcon data-icon="inline-start" />
         Chat

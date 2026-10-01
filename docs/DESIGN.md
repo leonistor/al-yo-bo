@@ -49,8 +49,10 @@ active = `primary`, deprecated = `muted-foreground`).
   panel that can take over the main area.
 - Default view is a **list**; a **grid** toggle persists locally in the browser (`localStorage`). It is
   a per-browser preference, not server state.
-- Breakpoints follow Tailwind defaults (`sm`/`md`/`lg`). Collapse the nav rail to an icon rail below
-  `lg`; chat becomes full-screen below `md`.
+- Breakpoints follow Tailwind defaults (`sm`/`md`/`lg`). The nav rail has three tiers: full labelled
+  rail at `≥lg`, icon rail (with tooltips and the review-count badge) at `md–lg`, and below `md` the
+  rail is hidden — the topbar menu button opens it as an off-canvas sheet. Chat becomes full-screen
+  (right sheet) below `md`; above that it is an inline `24rem` panel.
 - Empty, loading, and error states are designed, not afterthoughts — every list needs a skeleton and
   an empty state with the primary action.
 

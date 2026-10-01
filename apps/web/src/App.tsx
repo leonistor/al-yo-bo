@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import type {
@@ -15,16 +15,35 @@ import type {
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
 import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
 import { BookmarkList } from '@/components/BookmarkList';
-import { ChatPanel } from '@/components/ChatPanel';
 import { ImportDialog } from '@/components/ImportDialog';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { ReviewQueue } from '@/components/ReviewQueue';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { VocabDialog } from '@/components/VocabDialog';
 import {
   acceptCandidate,
+  deleteBookmark,
   fetchAggregates,
   fetchBookmarks,
   fetchCategories,
@@ -35,9 +54,35 @@ import {
 } from '@/lib/client';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 const PAGE_SIZE = 20;
 type View = 'library' | 'review';
+
+/** Chat ships assistant-ui + the AI SDK; keep both out of the initial bundle. */
+const ChatPanel = lazy(() =>
+  import('@/components/ChatPanel').then((module) => ({ default: module.ChatPanel })),
+);
+
+/** Panel-shaped placeholder while the chat chunk streams in. */
+function ChatSkeleton() {
+  return (
+    <div className="flex h-full flex-col gap-3 p-4" aria-hidden>
+      <Skeleton className="h-10 w-3/4 rounded-lg" />
+      <Skeleton className="ml-auto h-8 w-2/3 rounded-lg" />
+      <Skeleton className="h-14 w-5/6 rounded-lg" />
+      <Skeleton className="mt-auto h-9 w-full rounded-lg" />
+    </div>
+  );
+}
+
+function ChatSurface() {
+  return (
+    <Suspense fallback={<ChatSkeleton />}>
+      <ChatPanel />
+    </Suspense>
+  );
+}
 
 export function App() {
   const [view, setView] = useState<View>('library');
@@ -61,13 +106,19 @@ export function App() {
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BookmarkWithTags | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [vocabOpen, setVocabOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const isTablet = useMediaQuery('(min-width: 768px)');
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -98,6 +149,11 @@ export function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [chatOpen]);
+
+  // A page change renders a fresh batch; don't leave the user scrolled mid-list.
+  useEffect(() => {
+    listScrollRef.current?.scrollTo({ top: 0 });
+  }, [page]);
 
   const refreshMeta = useCallback(async () => {
     try {
@@ -183,28 +239,61 @@ export function App() {
     }
   }
 
+  async function confirmDelete() {
+    if (!pendingDelete) {
+      return;
+    }
+    const target = pendingDelete;
+    setPendingDelete(null);
+    try {
+      await deleteBookmark(target.id);
+      toast.success('Bookmark deleted');
+      if (selected?.id === target.id) {
+        setSelected(null);
+      }
+      reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete bookmark');
+    }
+  }
+
+  function clearFilters() {
+    setQuery('');
+    setSearchQuery('');
+    setCategoryId(null);
+    setTagId(null);
+    setPage(0);
+  }
+
   const reviewCount = proposed.length + candidates.length;
   const total = bookmarks?.total ?? 0;
+  const filtered = searchQuery !== '' || categoryId !== null || tagId !== null;
+
+  const sidebarProps = {
+    aggregates,
+    view,
+    selectedCategoryId: categoryId,
+    selectedTagId: tagId,
+    reviewCount,
+    onSelectView: setView,
+    onSelectCategory: (id: string | null) => {
+      setCategoryId(id);
+      setPage(0);
+    },
+    onSelectTag: (id: string | null) => {
+      setTagId(id);
+      setPage(0);
+    },
+    onManageVocabulary: () => setVocabOpen(true),
+  };
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <Sidebar
-        aggregates={aggregates}
-        view={view}
-        selectedCategoryId={categoryId}
-        selectedTagId={tagId}
-        reviewCount={reviewCount}
-        onSelectView={setView}
-        onSelectCategory={(id) => {
-          setCategoryId(id);
-          setPage(0);
-        }}
-        onSelectTag={(id) => {
-          setTagId(id);
-          setPage(0);
-        }}
-        onManageVocabulary={() => setVocabOpen(true)}
-      />
+    <div className="flex h-dvh bg-background text-foreground">
+      {isDesktop ? (
+        <Sidebar {...sidebarProps} />
+      ) : isTablet ? (
+        <Sidebar {...sidebarProps} variant="rail" onOpenNav={() => setNavOpen(true)} />
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
@@ -222,6 +311,7 @@ export function App() {
           onAdd={() => setAddOpen(true)}
           onImport={() => setImportOpen(true)}
           onToggleChat={() => setChatOpen((open) => !open)}
+          onOpenNav={() => setNavOpen(true)}
         />
 
         <main className="flex min-h-0 flex-1 gap-3 p-4">
@@ -246,12 +336,17 @@ export function App() {
                 onRefresh={reload}
               />
 
-              <div className="min-h-0 flex-1 overflow-auto">
+              <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
                 <BookmarkList
                   items={bookmarks?.items ?? []}
                   loading={loading}
                   layout={layout}
+                  filtered={filtered}
                   onOpen={setSelected}
+                  onDelete={setPendingDelete}
+                  onAdd={() => setAddOpen(true)}
+                  onImport={() => setImportOpen(true)}
+                  onClearFilters={clearFilters}
                 />
               </div>
 
@@ -295,13 +390,62 @@ export function App() {
           )}
           </div>
 
-          {chatOpen && (
+          {chatOpen && isTablet && (
             <aside className="hidden w-[24rem] shrink-0 overflow-hidden rounded-lg border border-border md:block">
-              <ChatPanel />
+              <ChatSurface />
             </aside>
           )}
         </main>
       </div>
+
+      {/* Full navigation, off-canvas below md (topbar menu / rail button). */}
+      <Sheet open={navOpen} onOpenChange={setNavOpen}>
+        <SheetContent side="left" className="gap-0 p-0">
+          <SheetHeader className="border-b">
+            <SheetTitle>al-yo-bo</SheetTitle>
+            <SheetDescription>Categories and tags</SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="min-h-0 flex-1">
+            <SidebarNav {...sidebarProps} onNavigate={() => setNavOpen(false)} />
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
+      {/* Chat takes over full-screen below md instead of doing nothing. */}
+      <Sheet open={chatOpen && !isTablet} onOpenChange={setChatOpen}>
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b">
+            <SheetTitle>Chat</SheetTitle>
+            <SheetDescription>Ask about your bookmarks</SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1">
+            <ChatSurface />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete bookmark?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{pendingDelete?.title ?? pendingDelete?.url}” and its tag assignments will be
+              permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmDelete()}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AddBookmarkDialog
         open={addOpen}

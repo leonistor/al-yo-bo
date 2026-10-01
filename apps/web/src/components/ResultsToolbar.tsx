@@ -36,15 +36,15 @@ export function ResultsToolbar({
   onRefresh,
 }: ResultsToolbarProps) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-muted-foreground" aria-live="polite">
         {total} {total === 1 ? 'result' : 'results'}
         {loading && ' · updating…'}
       </span>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex flex-wrap items-center gap-2">
         <Select value={sort} onValueChange={(value) => onSortChange(value as BookmarkSort)}>
-          <SelectTrigger className="w-36" aria-label="Sort by">
+          <SelectTrigger className="w-32 sm:w-36" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -97,9 +97,9 @@ export function AddBookmarkDialog({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Category</Label>
+            <Label htmlFor="add-category">Category</Label>
             <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
+              <SelectTrigger id="add-category">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
