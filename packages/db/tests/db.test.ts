@@ -17,8 +17,11 @@ import {
   keywordSearch,
   listBookmarks,
   openDatabase,
+  resetSeedData,
+  resolveSeedDataset,
   seedFromFile,
   setupDatabase,
+  UnknownSeedDatasetError,
   updateBookmark,
 } from '../src/index.ts';
 
@@ -131,6 +134,43 @@ describe('seed fixture', () => {
 
     const aggregates = getAggregates(db);
     expect(aggregates.total).toBe(26);
+    expect(keywordSearch(db, { q: 'sqlite' }).length).toBeGreaterThan(0);
+  });
+
+  test('resolves the grimoire dataset path by default and by name', () => {
+    expect(resolveSeedDataset('grimoire')).toContain('seeds/datasets/grimoire.seed.json');
+  });
+
+  test('rejects unknown dataset names with the available list', () => {
+    expect(() => resolveSeedDataset('nope')).toThrow(UnknownSeedDatasetError);
+    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: grimoire, leo \(not yet implemented\)/);
+  });
+
+  test('refuses reserved but unimplemented datasets', () => {
+    expect(() => resolveSeedDataset('leo')).toThrow(/not implemented yet/);
+  });
+
+  test('reset wipes content so a re-seed starts clean', () => {
+    const db = freshDb();
+
+    seedFromFile(db);
+    expect(getAggregates(db).total).toBe(26);
+
+    // A stale bookmark outside the dataset proves the reset, not the upsert,
+    // produced the post-reset state.
+    const stray = createBookmark(db, { url: 'https://stray.example/only', title: 'Stray' });
+    expect(getAggregates(db).total).toBe(27);
+
+    resetSeedData(db);
+    expect(getAggregates(db).total).toBe(0);
+    expect(getBookmarkById(db, stray.id)).toBeNull();
+    // The FTS delete trigger must have fired for the wiped rows too.
+    expect(keywordSearch(db, { q: 'Stray' })).toHaveLength(0);
+
+    const report = seedFromFile(db);
+    expect(report.bookmarksAdded).toBe(26);
+    expect(report.bookmarksUpdated).toBe(0);
+    expect(getAggregates(db).total).toBe(26);
     expect(keywordSearch(db, { q: 'sqlite' }).length).toBeGreaterThan(0);
   });
 });

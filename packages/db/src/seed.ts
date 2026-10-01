@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { uuidToBytes } from '@al-yo-bo/shared';
@@ -11,7 +11,60 @@ import { upsertBookmarkByUrl } from './queries/bookmarks.ts';
 import { createCategory, getCategoryByName } from './queries/categories.ts';
 import { createTag, getTagByName } from './queries/tags.ts';
 
-export const DEFAULT_SEED_PATH = join(import.meta.dir, '../seeds/grimoire-demo.seed.json');
+/** Seed datasets live in `packages/db/seeds/datasets/<name>.seed.json`. */
+export const SEED_DATASETS_DIR = join(import.meta.dir, '../seeds/datasets');
+
+export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'grimoire.seed.json');
+
+export interface SeedDataset {
+  /** Dataset name used in `SEED_DATASET`. */
+  name: string;
+  /** File name inside `SEED_DATASETS_DIR`. */
+  file: string;
+  /** Reserved datasets are listed for selection but refuse to load until wired up. */
+  implemented: boolean;
+}
+
+/**
+ * Known seed datasets. `grimoire` is the synthetic Grimoire demo fixture. `leo`
+ * is reserved for Leo's real collections imported from `docs/examples-mds/` —
+ * implementing it means generating its JSON via the importer; until then it
+ * must stay `implemented: false` so selection fails with a clear message.
+ */
+const DATASETS: SeedDataset[] = [
+  { name: 'grimoire', file: 'grimoire.seed.json', implemented: true },
+  { name: 'leo', file: 'leo.seed.json', implemented: false },
+];
+
+export class UnknownSeedDatasetError extends Error {
+  constructor(name: string) {
+    const known = DATASETS.map((d) => (d.implemented ? d.name : `${d.name} (not yet implemented)`)).join(', ');
+    super(`Unknown seed dataset "${name}". Available datasets: ${known}`);
+    this.name = 'UnknownSeedDatasetError';
+  }
+}
+
+/**
+ * Resolves a dataset name to its seed file path. Unknown names throw
+ * `UnknownSeedDatasetError`; reserved-but-unimplemented datasets throw a plain
+ * error telling the user the dataset is planned but not wired up yet.
+ */
+export function resolveSeedDataset(name: string): string {
+  const dataset = DATASETS.find((d) => d.name === name);
+  if (!dataset) {
+    throw new UnknownSeedDatasetError(name);
+  }
+  if (!dataset.implemented) {
+    throw new Error(
+      `Seed dataset "${name}" is not implemented yet — generate its seed file from docs/examples-mds/ via the importer first.`,
+    );
+  }
+  const filePath = join(SEED_DATASETS_DIR, dataset.file);
+  if (!existsSync(filePath)) {
+    throw new Error(`Seed dataset "${name}" has no fixture at ${filePath}.`);
+  }
+  return filePath;
+}
 
 interface SeedBookmark {
   url: string;
@@ -35,6 +88,19 @@ export interface SeedReport {
   bookmarksAdded: number;
   bookmarksUpdated: number;
   assignments: number;
+}
+
+/**
+ * Empties all seed-able content so a dataset load starts from a clean slate.
+ * Bookmarks, tags, and categories are the root tables; child rows (assignments,
+ * scraped content, embeddings, classification evidence) cascade via foreign
+ * keys (connection PRAGMAs keep FKs on), and the `bookmarks_fts_delete` trigger
+ * removes FTS rows as bookmarks go, so no reindex pass is needed.
+ */
+export function resetSeedData(db: Database): void {
+  db.transaction(() => {
+    db.exec('DELETE FROM bookmarks; DELETE FROM tags; DELETE FROM categories;');
+  }).immediate();
 }
 
 /**
@@ -109,8 +175,19 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
 if (import.meta.main) {
   const db = openDatabase();
   setupDatabase(db);
-  const report = seedFromFile(db);
+
+  // Bun auto-loads the repo-root .env, so SEED_DATASET/SEED_RESET work via
+  // `bun run db:seed` with no extra wiring (.env.example documents both; the
+  // README covers them in the same change set).
+  const datasetName = process.env.SEED_DATASET || 'grimoire';
+  const filePath = resolveSeedDataset(datasetName);
+  if (process.env.SEED_RESET === '1') {
+    resetSeedData(db);
+    console.log(`Reset existing content (SEED_RESET=1)`);
+  }
+
+  const report = seedFromFile(db, filePath);
   checkpoint(db);
-  console.log(`Seeded database from ${DEFAULT_SEED_PATH}`);
+  console.log(`Seeded database from dataset "${datasetName}" (${filePath})`);
   console.log(JSON.stringify(report, null, 2));
 }

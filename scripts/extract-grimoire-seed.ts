@@ -5,7 +5,8 @@
  * The demo ships its data inside a hashed ES module
  * (`https://goniszewski.com/grimoire/demo/assets/state-*.js`). Download that file
  * and pass its path here; the script imports it, calls `createDemoState()` and
- * writes `packages/db/seeds/grimoire-demo.seed.json`.
+ * writes `packages/db/seeds/datasets/grimoire.seed.json` (the `grimoire` dataset
+ * selected via `SEED_DATASET`, see `packages/db/src/seed.ts`).
  *
  * Usage:
  *   bun run scripts/extract-grimoire-seed.ts /path/to/downloaded-state.js
@@ -101,7 +102,7 @@ const seed: SeedFile = {
   bookmarks,
 };
 
-const outPath = resolve(import.meta.dir, '../packages/db/seeds/grimoire-demo.seed.json');
+const outPath = resolve(import.meta.dir, '../packages/db/seeds/datasets/grimoire.seed.json');
 await writeFile(outPath, `${JSON.stringify(seed, null, 2)}\n`, 'utf8');
 
 console.log(

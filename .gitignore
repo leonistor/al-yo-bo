@@ -29,3 +29,6 @@ data/
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Deepwork session state (git-local)
+.slim/deepwork/
