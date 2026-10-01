@@ -36,7 +36,7 @@ depends on it.
 | Reactive client | **React 19 + Hono RPC**              | UI; bundled with **Vite**                                                                | [react.dev](https://react.dev), [hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc)         |
 | UI components   | **shadcn/ui**                        |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
 | Chat UI         | **assistant-ui**                     | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
-| Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon                                      | [ollaya.dev](https://ollaya.dev)                                                                     |
+| Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon (young, pre-1.0)                     | [ollaya.dev](https://ollaya.dev) · [github](https://github.com/ollaya-dev/ollaya)                     |
 | LLM access      | **AI SDK**                           | Ollama locally, OpenRouter in production                                                 | [ai-sdk.com](https://ai-sdk.com)                                                                     |
 | Embeddings      | **OpenRouter** + **SQLite BLOBs**    | durable vector copy in the DB file; query text embedded at request time                  | [openrouter.com](https://openrouter.com)                                                             |
 | Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
@@ -441,6 +441,7 @@ If Ollaya is unreachable, the job retries with backoff (see §8); the bookmark r
 searchable, and manually taggable. The classifier is optional by design (§1.5). Ollaya is currently
 **Beta and pre-1.0**, so it sits behind a thin `ClassifierClient` boundary — one adapter module in
 `packages/classifier` — so it can be pinned, upgraded, or swapped without touching the workflow.
+Track upstream: <https://github.com/ollaya-dev/ollaya>.
 
 ### Configuration
 
