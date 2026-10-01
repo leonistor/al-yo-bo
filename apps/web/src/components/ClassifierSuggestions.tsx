@@ -14,7 +14,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 
-interface ReviewQueueProps {
+interface ClassifierSuggestionsProps {
   candidates: ReviewCandidate[];
   loading: boolean;
   onAccept: (candidate: ReviewCandidate) => void;
@@ -24,9 +24,13 @@ interface ReviewQueueProps {
  * Classifier suggestions below the auto-assign threshold (ARCHITECTURE §7).
  * Vocabulary no longer enters a `proposed` state — the importer creates it
  * active on commit, and the classifier votes only on existing tags — so the
- * review queue is reduced to the below-threshold list.
+ * review queue is reduced to this below-threshold list.
  */
-export function ReviewQueue({ candidates, loading, onAccept }: ReviewQueueProps) {
+export function ClassifierSuggestions({
+  candidates,
+  loading,
+  onAccept,
+}: ClassifierSuggestionsProps) {
   // One in-flight action at a time: disables the row's buttons so a slow
   // mutation can't be double-submitted (toasts report the outcome).
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -58,8 +62,8 @@ export function ReviewQueue({ candidates, loading, onAccept }: ReviewQueueProps)
           </EmptyMedia>
           <EmptyTitle>Nothing to review</EmptyTitle>
           <EmptyDescription>
-            Classifier suggestions below the auto-assign threshold appear here. Accepting one
-            writes a user-sourced assignment that the classifier can never overwrite.
+            Classifier suggestions below the auto-assign threshold appear here. Accepting one writes
+            a user-sourced assignment that the classifier can never overwrite.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

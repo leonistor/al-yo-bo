@@ -5,6 +5,7 @@ import type {
   BookmarkWithTags,
   Category,
   ImportedBookmark,
+  ImportReport,
   ReviewCandidate,
   SearchMode,
   SearchResponse,
@@ -88,23 +89,6 @@ export function fetchReviewCandidates(): Promise<ReviewCandidate[]> {
 }
 
 export interface ImportPreview {
-  /** Ids of bookmarks created by this import — the enrichment trigger. */
-  addedIds?: string[];
-  parsed: number;
-  skipped: number;
-  bookmarks: ImportedBookmark[];
-  provider: 'llm' | 'fallback';
-  warnings?: string[];
-}
-
-export interface ImportCommit {
-  bookmarks: ImportedBookmark[];
-  provider: 'llm' | 'fallback';
-  warnings?: string[];
-}
-
-export interface ImportResult {
-  addedIds: string[];
   parsed: number;
   skipped: number;
   bookmarks: ImportedBookmark[];
@@ -118,10 +102,15 @@ export function extractImport(text: string): Promise<ImportPreview> {
     .then((response) => unwrap<ImportPreview>(response));
 }
 
-export function commitImport(text: string): Promise<ImportResult> {
+/**
+ * Commits the user-confirmed, possibly edited bookmark list. The server
+ * re-resolves vocabulary (auto-create) and dedups by URL; the client only
+ * ships what the Import page shows as included.
+ */
+export function commitImport(bookmarks: ImportedBookmark[]): Promise<ImportReport> {
   return api.api.import
-    .$post({ json: { markdown: text } })
-    .then((response) => unwrap<ImportResult>(response));
+    .$post({ json: { bookmarks } })
+    .then((response) => unwrap<ImportReport>(response));
 }
 
 export interface CreateBookmarkInput {

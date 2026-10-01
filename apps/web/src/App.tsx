@@ -16,9 +16,9 @@ import { toast } from 'sonner';
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
 import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
 import { BookmarkList } from '@/components/BookmarkList';
-import { ImportDialog } from '@/components/ImportDialog';
+import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
+import { ImportPage } from '@/components/ImportPage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
-import { ReviewQueue } from '@/components/ReviewQueue';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import {
@@ -53,6 +53,7 @@ import {
   fetchSections,
   fetchTags,
 } from '@/lib/client';
+import { navigate, useRoute } from '@/lib/router';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
 
@@ -85,6 +86,7 @@ function ChatSurface() {
 }
 
 export function App() {
+  const route = useRoute();
   const [view, setView] = useState<View>('library');
   const [query, setQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,7 +112,6 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const [vocabOpen, setVocabOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
@@ -259,7 +260,12 @@ export function App() {
     selectedCategoryId: categoryId,
     selectedTagId: tagId,
     reviewCount,
-    onSelectView: setView,
+    // Both library and review live under the library route; picking either
+    // from the nav must leave the import page.
+    onSelectView: (next: View) => {
+      setView(next);
+      navigate('library');
+    },
     onSelectCategory: (id: string | null) => {
       setCategoryId(id);
       setPage(0);
@@ -293,90 +299,106 @@ export function App() {
           }}
           onThemeChange={setTheme}
           onAdd={() => setAddOpen(true)}
-          onImport={() => setImportOpen(true)}
+          onImport={() => navigate('import')}
           onToggleChat={() => setChatOpen((open) => !open)}
           onOpenNav={() => setNavOpen(true)}
         />
 
         <main className="flex min-h-0 flex-1 gap-3 p-4">
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {view === 'library' ? (
-              <>
-                <ResultsToolbar
-                  total={total}
-                  loading={loading}
-                  status={status}
-                  invalidCount={aggregates?.invalidCount ?? 0}
-                  sort={sort}
-                  direction={direction}
-                  layout={layout}
-                  onStatusChange={(next) => {
-                    setStatus(next);
-                    setPage(0);
-                  }}
-                  onSortChange={(next) => {
-                    setSort(next);
-                    setPage(0);
-                  }}
-                  onDirectionChange={(next) => {
-                    setDirection(next);
-                    setPage(0);
-                  }}
-                  onLayoutChange={setLayout}
-                  onRefresh={reload}
-                />
+          {route === 'import' ? (
+            <ImportPage
+              onCommitted={() => {
+                setView('library');
+                reload();
+              }}
+            />
+          ) : (
+            <>
+              <div className="flex min-w-0 flex-1 flex-col gap-3">
+                {view === 'library' ? (
+                  <>
+                    <ResultsToolbar
+                      total={total}
+                      loading={loading}
+                      status={status}
+                      invalidCount={aggregates?.invalidCount ?? 0}
+                      sort={sort}
+                      direction={direction}
+                      layout={layout}
+                      onStatusChange={(next) => {
+                        setStatus(next);
+                        setPage(0);
+                      }}
+                      onSortChange={(next) => {
+                        setSort(next);
+                        setPage(0);
+                      }}
+                      onDirectionChange={(next) => {
+                        setDirection(next);
+                        setPage(0);
+                      }}
+                      onLayoutChange={setLayout}
+                      onRefresh={reload}
+                    />
 
-                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
-                  <BookmarkList
-                    items={bookmarks?.items ?? []}
-                    loading={loading}
-                    layout={layout}
-                    filtered={filtered}
-                    onOpen={setSelected}
-                    onDelete={setPendingDelete}
-                    onAdd={() => setAddOpen(true)}
-                    onImport={() => setImportOpen(true)}
-                    onClearFilters={clearFilters}
-                  />
-                </div>
-
-                {total > PAGE_SIZE && (
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>
-                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={page === 0}
-                        onClick={() => setPage((current) => Math.max(0, current - 1))}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!bookmarks?.pagination.hasMore}
-                        onClick={() => setPage((current) => current + 1)}
-                      >
-                        Next
-                      </Button>
+                    <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
+                      <BookmarkList
+                        items={bookmarks?.items ?? []}
+                        loading={loading}
+                        layout={layout}
+                        filtered={filtered}
+                        onOpen={setSelected}
+                        onDelete={setPendingDelete}
+                        onAdd={() => setAddOpen(true)}
+                        onImport={() => navigate('import')}
+                        onClearFilters={clearFilters}
+                      />
                     </div>
+
+                    {total > PAGE_SIZE && (
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>
+                          {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of{' '}
+                          {total}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={page === 0}
+                            onClick={() => setPage((current) => Math.max(0, current - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!bookmarks?.pagination.hasMore}
+                            onClick={() => setPage((current) => current + 1)}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-auto">
+                    <ClassifierSuggestions
+                      candidates={candidates}
+                      loading={loading}
+                      onAccept={accept}
+                    />
                   </div>
                 )}
-              </>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-auto">
-                <ReviewQueue candidates={candidates} loading={loading} onAccept={accept} />
               </div>
-            )}
-          </div>
 
-          {chatOpen && isTablet && (
-            <aside className="hidden w-[24rem] shrink-0 overflow-hidden rounded-lg border border-border md:block">
-              <ChatSurface />
-            </aside>
+              {chatOpen && isTablet && (
+                <aside className="hidden w-[24rem] shrink-0 overflow-hidden rounded-lg border border-border md:block">
+                  <ChatSurface />
+                </aside>
+              )}
+            </>
           )}
         </main>
       </div>
@@ -435,11 +457,6 @@ export function App() {
         categories={categories}
         onOpenChange={setAddOpen}
         onCreated={reload}
-      />
-      <ImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={reload}
       />
       <VocabDialog
         open={vocabOpen}
