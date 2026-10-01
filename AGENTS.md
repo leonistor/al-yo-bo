@@ -62,6 +62,9 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 - **Browser QA:** use **Playwriter**, never Playwright. The project-scoped Chrome launcher
   (`bun run browser:start`, headed, `./.playwriter-profile`, gitignored) is planned but **not
   implemented yet** — don't assume the script exists until the scaffold lands.
+- **Behavioral code questions:** start with **jevgrep** (`jg`) — how/why/where something works,
+  even when a function or setting is named. Use plain grep/glob only for exact symbol definitions,
+  string matches, or filenames; don't jump to broad text searches first.
 - **Docs lookup:** context7 via the opencode plugin. **Ollaya has no Context7 coverage** — use
   <https://ollaya.dev/docs> instead.
 
