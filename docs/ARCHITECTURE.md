@@ -37,7 +37,9 @@ depends on it.
 | UI components   | **shadcn/ui**                        |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
 | Chat UI         | **assistant-ui**                     | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
 | Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon (young, pre-1.0)                     | [ollaya.dev](https://ollaya.dev) · [github](https://github.com/ollaya-dev/ollaya)                     |
-| LLM access      | **AI SDK**                           | Ollama locally, OpenRouter in production                                                 | [ai-sdk.com](https://ai-sdk.com)                                                                     |
+| LLM access      | **AI SDK v7**                        | `generateText` + `Output.object`; Ollama locally, OpenRouter in production               | [ai-sdk.com](https://ai-sdk.com)                                                                     |
+| Extraction      | **`@ai-sdk/openai-compatible`** + **`ollama-ai-provider-v2`** | LLM import extraction (OpenRouter primary, Ollama local); deterministic parser fallback | [ai-sdk.dev/providers](https://ai-sdk.dev/providers/openai-compatible)                               |
+| Screenshots     | **`Bun.WebView`** (experimental)     | zero-install WebKit capture (Chrome over CDP on Linux/Windows); `og:image` fallback       | [bun.com/docs/api/webview](https://bun.com/docs/api/webview)                                         |
 | Embeddings      | **OpenRouter** + **SQLite BLOBs**    | durable vector copy in the DB file; query text embedded at request time                  | [openrouter.com](https://openrouter.com)                                                             |
 | Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
 | Search          | **SQLite FTS5** + **RRF fusion**     | keyword (FTS5) + semantic (Qdrant/KNN), fused app-side                                   | [sqlite.org](https://sqlite.org)                                                                     |
@@ -68,7 +70,7 @@ flowchart LR
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
     Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\nreview · import · enrichment · health"]
-    Worker["Job worker (in-process loop)\nscrape · embed · classify · reindex"]
+    Worker["Job worker (in-process loop)\nscrape · embed · classify · screenshot · reindex"]
     Search["Search module\nFTS5 + vector top-k + RRF"]
   end
 
@@ -132,7 +134,7 @@ packages/
   vectordb/        Qdrant client (VectorIndex adapter, collection sync)
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
-  importer/        markdown collection-file parser and ingest
+  importer/        markdown collection-file parser, LLM extraction port, and ingest
   core/            domain/application services (search, bookmarks, enrichment, ...); no HTTP
   shared/          domain types + utilities (no framework imports)
 ```
@@ -280,12 +282,12 @@ produced it.
 
 ```mermaid
 flowchart TD
-  V["0. Vocabulary\ncategories + tags (active/proposed/deprecated)"] --> I
-  I["1. Ingest\nmarkdown import -> bookmarks"] --> E
-  E["2. Enrich\nscrape page -> content\nembed -> vector"] --> C
+  V["0. Vocabulary\ncategories + tags (active/deprecated)"] --> I
+  I["1. Ingest\nextract -> user edits -> commit"] --> E
+  E["2. Enrich\nscrape page -> content\nembed -> vector\nscreenshot -> image"] --> C
   C["3. Classify\nOllaya /api/decide\n-> classification_runs + results"] --> A
   A["4. Assignment policy\nprob >= threshold AND tag active"] --> T["bookmark_tags (effective)"]
-  A --> R["5. Review queue\nproposed tags, low confidence"]
+  A --> R["5. Review\nbelow-threshold suggestions"]
   R --> V
   T --> S["6. Re-run triggers\ncontent / vocabulary / model change"]
   S --> C
@@ -293,22 +295,20 @@ flowchart TD
 
 ### Stage 0 — Vocabulary
 
-The user curates categories and tags in the UI, dataset-scoped. Tag lifecycle:
-`proposed → active → deprecated` (or `proposed → rejected`); categories share the
-`proposed → active → rejected` lifecycle.
+The user curates categories and tags in the UI, dataset-scoped. Sections and categories are plain
+organizing records with no lifecycle. Tags carry a two-state lifecycle: `active ⇄ deprecated`. Only
+`active` tags are classifier candidates and can be auto-assigned; `deprecated` retires a tag without
+deleting its history. The tag lifecycle is toggled through `POST /api/tags/:id/status`.
 
-**Vocabulary establishment (decided).** Vocabulary is established at **dataset init** and at every
-**batch import**, through a **propose → review → activate** lifecycle:
+**Vocabulary establishment (decided).** Vocabulary is created in its **usable** state:
 
-- The importer never creates active categories/tags on demand. Unmatched H2/H3 headings and
-  frontmatter tag names become `proposed` sections/categories/tags, and the import is **staged** in
-  `import_batches` until the user reviews the proposals.
-- Review resolves each proposal (accept → `active`, reject → `rejected`, rename, or merge with
-  `merged_into_id`). Committing the batch replays the staged bookmarks through the resolved
-  vocabulary.
-- Rejected/renamed entries are remembered (`status = 'rejected'` + `merged_into_id`), so a re-import
-  of the same file resolves them silently instead of re-proposing.
-- A dataset with no content yet (fresh init) runs the same flow over the whole incoming vocabulary.
+- The **importer auto-creates** any missing category or tag referenced by a collection as `active` at
+  commit time (`resolveVocabulary` → `createCategory`/`createTag`). There is no staging, no proposal,
+  and no review gate before bookmarks land.
+- The **classifier never creates vocabulary** — it only votes on `active` tags already in scope; a
+  returned label that matches no candidate tag is recorded as evidence only (see Stage 3).
+- The user tidies up afterwards through the vocabulary UI (rename, re-scope, `deprecate`, delete).
+- A dataset with no content yet simply gets its vocabulary created as the first import lands.
 
 **Candidate set (decided).** For a bookmark, candidates are the `active` tags **in its dataset**:
 
@@ -321,39 +321,43 @@ leaking into a personal dataset.
 
 ### Stage 1 — Ingest (import)
 
-Markdown collection files (see [examples-mds](./examples-mds)) use `## Category` headings and bullet
-entries containing a URL plus an optional note and optional priority stars.
+Markdown collection files (see [examples-mds](./examples-mds)) are free-form; the canonical shape is
+`##` / `###` headings and bullet entries containing a URL plus an optional note and optional priority
+stars.
+
+**Extraction (decided).** Import is a single **direct-commit** flow — extraction, then user review
+and edits in the UI, then commit:
+
+1. **Extract.** `POST /api/import/preview` runs the configured `ExtractionClient`: AI SDK v7
+   `generateText` + `Output.object({ schema })` against OpenRouter (`@ai-sdk/openai-compatible`) or a
+   local Ollama model (`ollama-ai-provider-v2`). With no provider configured, or when the LLM call
+   fails, it falls back to the deterministic `parseCollection` markdown parser. The preview never
+   writes; it returns `ImportedBookmark[]` plus `provider` (`llm`/`fallback`) and any `warnings`.
+2. **Edit.** The Import page presents the extracted rows (title, description, category, tags,
+   priority) for the user to adjust or drop before committing.
+3. **Commit.** `POST /api/import` resolves the vocabulary and ingests in one transaction:
+   `resolveVocabulary` **auto-creates any missing category or tag as `active`**, then
+   `ingestBookmarks` upserts each bookmark by URL and attaches its tags. New bookmarks enqueue
+   `scrape` and `screenshot`. There is no staging table and no proposal/review gate. Re-importing the
+   same file merges by URL and never duplicates bookmarks.
 
 **Mapping rules (decided):**
 
-| Source element             | Maps to                                                          |
-| -------------------------- | ---------------------------------------------------------------- |
-| `## Heading` (H2)          | section, proposed on review                                       |
-| `### Heading` (H3)         | category within the current section, proposed on review           |
-| `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                            |
-| bullet note                | `title` / `description` until the page is scraped                |
-| URL                        | `bookmarks.url` (unique; upsert key)                             |
-| frontmatter `tags: [a, b]` | `source='import'` tag rows, for names already in the vocabulary   |
-| fenced code block          | opaque — never a heading, bullet, or URL source                  |
+| Source element             | Maps to                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `## Heading` (H2)          | category name when no H3 is present                                     |
+| `### Heading` (H3)         | category within the current H2 (the most specific name wins)            |
+| `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                                  |
+| bullet note                | `title` / `description` until the page is scraped                       |
+| URL                        | `bookmarks.url` (unique; upsert key)                                    |
+| frontmatter `tags: [a, b]` | `source='import'` tag rows, auto-created `active` when missing          |
+| fenced code block          | opaque — never a heading, bullet, or URL source                         |
 
-**Two-phase import (decided).** Import parses first, then resolves vocabulary, then commits:
-
-1. Parse the file into `ImportedBookmark[]` (raw H2/H3 names preserved in `metadata.import`).
-2. Resolve each raw name against the dataset's vocabulary: reuse `active` entries; follow
-   `merged_into_id` for `rejected` ones; create `proposed` entries for anything unmatched.
-3. If any proposal was created, the import is **staged** (`import_batches`, status `staged`) and the
-   batch is surfaced for review. Nothing is written to `bookmarks` yet.
-4. After review resolves the proposals, the batch is **committed**: bookmarks are upserted with the
-   resolved categories/tags, and a scrape is enqueued for each new bookmark. A batch can also be
-   **discarded**, deleting its still-`proposed` vocabulary.
-
-Structure never creates tags, and frontmatter tag names are matched against existing tags only.
-`metadata.import` preserves what would otherwise be lost (`{ file, section, subsection, priority }`),
-so review and future tooling can use it.
-
-`source='import'` tag rows are written **only** for explicit YAML frontmatter `tags:` whose name
-matches an existing tag. The importer never invents tags and never creates `proposed` ones from
-structure. (Inline-token tag syntax inside a note remains deferred; see §11.)
+The markdown parser flattens H2/H3 into one `category` field; **sections are never created by
+import** — they are managed through the vocabulary UI only. On the LLM path the model may return
+categories/tags that were not literally in the input when it can derive them plainly, so extraction
+is the vocabulary source, not the markdown structure alone. `metadata.import` preserves provenance
+(`{ file, category, priority }`). Inline-token tag syntax inside a note remains deferred; see §11.
 
 ### Stage 2 — Enrich (background jobs)
 
@@ -362,6 +366,8 @@ structure. (Inline-token tag syntax inside a note remains deferred; see §11.)
 - **Embed.** Compose the embed text (title + description + content, truncated to the embedding
   model's limits) and call OpenRouter. Store the vector with its `model` and `dims`. Refresh on
   content-hash change. Enqueue re-classification when content changes.
+- **Screenshot.** Capture a page image and store it under `data/screenshots/`, recording
+  `metadata.image`. Independent of scrape and non-fatal; see §8.
 
 ### Stage 3 — Classify (Ollaya)
 
@@ -397,8 +403,8 @@ Persist results:
 - one `classification_results` row per candidate (`probability`, `rank`, `selected = 0`, and the
   `raw_label` exactly as sent).
 
-If a returned label maps to no existing tag, create a `proposed` tag and attach the result to it. It
-is **never** auto-assigned.
+A returned label that matches no candidate tag is never turned into vocabulary: it is logged as
+unknown evidence only (there is no `tag_id` to attach a result row to) and is **never** auto-assigned.
 
 ### Stage 4 — Assignment policy (deterministic)
 
@@ -419,15 +425,13 @@ table in a later model revision (§11).
 
 ### Stage 5 — Review (human-in-the-loop)
 
-The UI presents review queues:
+The review surface is **classifier suggestions only**. The vocabulary-proposal queue
+(accept/reject/rename/merge) was removed with the proposal lifecycle: vocabulary is created `active`
+by the importer and curated directly in the vocabulary UI.
 
-- **Proposed vocabulary (per-batch)** — sections, categories, and tags proposed by an import (or the
-  classifier). Bulk accept (`→ active`), reject (`→ rejected`), rename, and merge near-duplicates
-  (auto-suggested + manual). Rejected/merged entries record `merged_into_id` so re-imports resolve
-  them silently.
-- **Proposed tags** — classifier-proposed tags; approve (`→ active`, enables future auto-assignment
-  for that tag) or reject (`→ rejected`).
-- **Below-threshold candidates** — accept, which writes `bookmark_tags` with `source='user'`.
+- **Below-threshold candidates** — classifier results that did not clear `AUTO_ASSIGN_THRESHOLD`.
+  Accepting one writes `bookmark_tags` with `source='user'`, which classifier re-runs never
+  overwrite.
 - **Stale / conflicting assignments** — resolve explicitly.
 
 ### Stage 6 — Re-run triggers
@@ -455,6 +459,7 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
+| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); otherwise a local Ollama chat model is used when configured | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
 | `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
@@ -470,18 +475,21 @@ of each type is in flight per bookmark, and retries failures with bounded expone
 Jobs are idempotent, and SQLite holds the durable state that defines what still needs doing
 (`content_hash`/`scraped_at` for scraping, `bookmark_embeddings` rows for embedding), so the queue
 itself is deliberately in-memory: on startup a **reconciliation pass** re-enqueues scrape for
-bookmarks without scraped content and embed for bookmarks without embeddings, which recovers
-anything a restart dropped. Failures after the retry cap are logged and dropped; the manual
-re-scrape endpoint re-enqueues. The trigger to re-evaluate the job architecture is in §11.
+bookmarks without scraped content, embed for bookmarks without embeddings (and a full re-embed for
+stale-model rows), and screenshot for bookmarks with neither an image artifact nor an `og:image`
+reference, which recovers anything a restart dropped. Failures after the retry cap are logged and
+dropped; the manual re-scrape endpoint re-enqueues. The trigger to re-evaluate the job architecture
+is in §11.
 
 Job types:
 
-| Job        | Input            | Effect                                                          |
-| ---------- | ---------------- | --------------------------------------------------------------- |
-| `scrape`   | bookmark id      | fetch page → content/metadata/hash; enqueue `embed`, `classify` |
-| `embed`    | bookmark id      | vector via OpenRouter → `bookmark_embeddings` (durable), then write-through to the vector index |
-| `classify` | bookmark id      | Ollaya → runs/results → assignment policy                       |
-| `reindex`  | bookmark/tag/all | rebuild FTS rows, or sync the Qdrant collection from SQLite rows |
+| Job          | Input            | Effect                                                          |
+| ------------ | ---------------- | --------------------------------------------------------------- |
+| `scrape`     | bookmark id      | fetch page → content/metadata/hash; enqueue `embed`, `screenshot` |
+| `embed`      | bookmark id      | vector via OpenRouter → `bookmark_embeddings` (durable), then write-through to the vector index; enqueues `classify` |
+| `classify`   | bookmark id      | Ollaya → runs/results → assignment policy                       |
+| `screenshot` | bookmark id      | capture page image (`Bun.WebView`, then `og:image`) → `data/screenshots/<uuid>.jpg` + `metadata.image` |
+| `reindex`    | bookmark/tag/all | rebuild FTS rows, or sync the Qdrant collection from SQLite rows |
 
 Retries are exponential with a bounded cap; jobs are idempotent (safe to re-run). Concurrency guards:
 one in-flight classification per bookmark and one scrape per URL. Failures never lose a bookmark —
@@ -512,6 +520,33 @@ and restores `active`; `POST /api/bookmarks/:id/scrape` is the manual recovery p
 | `SCRAPE_MAX_CONTENT_CHARS` | Stored markdown cap (hash applies to this)  | `200000`           |
 | `SCRAPE_MAX_ATTEMPTS`      | Dead-link failures before a bookmark is marked `invalid` (shared with the job retry cap) | `3` |
 | `HTML_TO_MARKDOWN_BIN`     | html-to-markdown CLI binary                 | `html-to-markdown` |
+
+### Screenshot implementation
+
+The `screenshot` job captures a page image for a bookmark; it is independent of `scrape` (it fetches
+the page itself) and never invalidates the bookmark. The adapter is a degradation ladder:
+
+1. **`Bun.WebView`** (primary) — an experimental Bun API: zero-install WKWebView on macOS, and an
+   installed Chrome/Chromium/Edge/Brave over CDP on Linux/Windows. Navigates, waits
+   `SCREENSHOT_SETTLE_MS`, then captures a JPEG at `SCREENSHOT_WIDTH` × `SCREENSHOT_HEIGHT` under a
+   `SCREENSHOT_TIMEOUT_MS` budget. The `og:image` URL is read from the live DOM while available.
+2. **`og:image`** (fallback) — when the WebView path is unavailable or throws, fetch the page HTML,
+   parse `<meta property="og:image">`, and download those bytes.
+3. **Placeholder** (UI) — when both fail, or the page has no `og:image`, no artifact is stored and the
+   UI renders a placeholder; never a broken image.
+
+On success the job writes the bytes to `data/screenshots/<bookmark-uuid>.jpg` (gitignored, local,
+never backed up — like the Qdrant data) and records `metadata.image = { screenshotPath, ogImageUrl }`.
+The image is served by the guarded `GET /data/screenshots/:filename` route (UUID + `.jpg` regex), not
+by a static directory listing. Failures are non-fatal: reconciliation retries on the next start, and
+`POST /api/bookmarks/:id/screenshot` is the manual path.
+
+| Env var                 | Purpose                               | Default |
+| ----------------------- | ------------------------------------- | ------- |
+| `SCREENSHOT_WIDTH`      | Capture viewport width (px)           | `1280`  |
+| `SCREENSHOT_HEIGHT`     | Capture viewport height (px)          | `800`   |
+| `SCREENSHOT_SETTLE_MS`  | Wait after navigation before capture  | `1500`  |
+| `SCREENSHOT_TIMEOUT_MS` | Per-capture timeout                   | `15000` |
 
 ## 9. Deployment
 
@@ -544,6 +579,9 @@ variables (§7).
 | Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
 | Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
 | html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
+| Screenshot capture fails (both `Bun.WebView` and `og:image`) | Bookmark keeps its URL/note; `metadata.image` is left unchanged and the UI shows a placeholder; reconciliation retries on the next start |
+| `Bun.WebView` unavailable / experimental API churned | Capture falls back to `og:image`; with no `og:image` either, the placeholder is shown (no broken image) |
+| Page has no `og:image`    | No image artifact is stored; the placeholder is used; the bookmark is otherwise unaffected |
 | Embedding model changed   | Startup reconciliation re-embeds stale-model rows; until then keyword-only for those bookmarks |
 | Classifier model upgraded | New runs recorded; old runs retained; effective tags re-policyable         |
 | Search matrix not loaded  | Automatic keyword-only fallback                                            |
@@ -560,5 +598,6 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
+| `Bun.WebView` screenshots (§8)   | The experimental `Bun.WebView` API changes or is removed; then pin/replace the capture client — the `ScreenshotClient` boundary keeps the `og:image` fallback path intact.            |
 | In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then re-evaluate the job architecture.                                                                                                              |
 | Web bundler (§2)                 | Bun's bundler applies plugins (Tailwind/shadcn) in its production CLI build and the fullstack API stabilizes; then re-evaluate dropping Vite for a fully Bun-native build.            |

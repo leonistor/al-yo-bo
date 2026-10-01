@@ -46,6 +46,14 @@ export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
 # OLLAMA_URL defaults to http://127.0.0.1:11434
 ```
 
+Import extraction uses an LLM by default. Set an OpenRouter model id to run it there (a `/`-containing
+id needs `OPENROUTER_API_KEY`); without `EXTRACT_MODEL`, a configured Ollama chat model is used, and
+with neither the deterministic markdown parser is the fallback:
+
+```sh
+export EXTRACT_MODEL=deepseek/deepseek-v4.1-flash   # OpenRouter extraction (needs OPENROUTER_API_KEY)
+```
+
 ```sh
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
@@ -68,8 +76,8 @@ their page content and vectors automatically when scraping and embeddings are av
 ### Importing bookmarks from markdown
 
 The main way to get bookmarks in is a markdown collection file. In the UI, use the **Import** button
-(top bar) and either paste the markdown or upload a file, then **Preview** to see how many bookmarks
-it will parse.
+(top bar) and either paste the markdown or upload a file, then **Extract** to preview the parsed
+bookmarks.
 
 Collection files use headings and bullets:
 
@@ -83,29 +91,24 @@ Collection files use headings and bullets:
 - Fast scraper: https://example.com/scraper
 ```
 
-- `## Heading` (H2) becomes a **section**.
-- `### Heading` (H3) becomes a **category** inside the current section.
+- `## Heading` (H2) becomes a **category** (unless an `###` follows).
+- `### Heading` (H3) becomes a **category** inside the current heading.
 - A bullet with a URL becomes a bookmark; the note text stands in for the title until the page is
   scraped.
 - A leading `*`/`**`/`***` on a bullet is a personal priority (1–3).
-- YAML frontmatter `tags: [a, b]` attaches existing tags.
+- YAML frontmatter `tags: [a, b]` attaches tags (missing ones are created automatically).
 
-**Import is two-phase.** When every heading and tag in the file already exists in your vocabulary,
-the import commits immediately. When the file introduces anything new, the import is **staged**
-instead: no bookmarks are written yet, and the proposed sections/categories/tags appear in the
-**Review queue**. There you can **Accept** or **Reject** each proposal, then **Commit import** (writes
-the bookmarks) or **Discard** (drops the staged batch and its proposals). Rejected names are
-remembered, so re-importing the same file resolves them silently instead of re-proposing them.
+**Import is direct-commit.** Clicking **Extract** runs LLM extraction (or the deterministic parser
+when no LLM is configured) and shows editable rows. Clicking **Import** commits them immediately:
+missing categories and tags are created as **active**, bookmarks are upserted by URL (so re-importing
+the same file merges instead of duplicating), and enrichment is queued. There is no staging step.
 
 ### Review queue
 
-The Review queue (left sidebar) has three sections:
-
-- **Proposed vocabulary** — new sections/categories/tags from staged imports; accept, reject, then
-  commit or discard the batch.
-- **Proposed tags** — tags the classifier suggested; approve to allow auto-assignment, or reject.
-- **Below-threshold candidates** — classifier suggestions under the auto-assign threshold; accept to
-  assign them manually.
+The Review queue (left sidebar) lists **classifier suggestions**: tags whose classification
+probability fell below the auto-assign threshold. Accept one to assign it manually
+(`source='user'`). Vocabulary itself is curated directly (rename, delete, deprecate) — there is no
+proposal queue.
 
 ### Seed datasets
 
@@ -131,9 +134,8 @@ Seeding is otherwise idempotent (bookmarks are upserted by URL).
 
 ### Clearing a dataset
 
-To test imports from a clean slate, `bun run db:clear` wipes one dataset's bookmarks, vocabulary
-(sections, categories, tags) and staged import batches, keeping the dataset row itself so the name
-can be reused. It prompts for confirmation; pass `--yes` to skip it. The dataset defaults to
+To test imports from a clean slate, `bun run db:clear` wipes one dataset's bookmarks and vocabulary
+(sections, categories, tags), keeping the dataset row itself so the name can be reused. It prompts for confirmation; pass `--yes` to skip it. The dataset defaults to
 `DEFAULT_DATASET`, then `default`:
 
 ```sh
