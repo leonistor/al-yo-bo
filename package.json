@@ -18,7 +18,9 @@
     "db:clear": "bun run packages/db/src/clear-dataset.ts",
     "qdrant:install": "bash scripts/qdrant/install.sh",
     "qdrant:start": ".tools/qdrant/qdrant --config-path config/qdrant.yaml",
-    "chrome:install": "bash scripts/chrome/install.sh"
+    "chrome:install": "bash scripts/chrome/install.sh",
+    "browser:install": "bunx playwriter@latest browser install",
+    "browser:start": "bunx playwriter@latest browser start --user-data-dir ./.playwriter-profile --headed"
   },
   "devDependencies": {
     "@types/bun": "latest",

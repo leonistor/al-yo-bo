@@ -59,9 +59,11 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
 
-- **Browser QA:** use **Playwriter**, never Playwright. The project-scoped Chrome launcher
-  (`bun run browser:start`, headed, `./.playwriter-profile`, gitignored) is planned but **not
-  implemented yet** — don't assume the script exists until the scaffold lands.
+- **Browser QA:** use **Playwriter**, never Playwright. `bun run browser:install` (once) downloads
+  Chrome for Testing into `~/.playwriter/browsers`; `bun run browser:start` launches it **headed**
+  with the project profile `./.playwriter-profile` (gitignored) and the Playwriter extension
+  auto-loaded — connect with `playwriter session new`. No extension in your personal browser is
+  needed for project QA.
 - **Behavioral code questions:** start with **jevgrep** (`jg`) — how/why/where something works,
   even when a function or setting is named. Use plain grep/glob only for exact symbol definitions,
   string matches, or filenames; don't jump to broad text searches first.
