@@ -122,6 +122,8 @@ export interface ImportedBookmark {
   category: string | null;
   subsection: string | null;
   priority: number | null;
+  /** Frontmatter-derived tag names; `[]` when the file has no frontmatter tags. */
+  tags: string[];
 }
 
 export interface ReviewCandidate {
@@ -139,6 +141,8 @@ export interface ImportReport {
   updated: number;
   skipped: number;
   categoriesCreated: number;
+  /** Count of tag assignments made by the import. */
+  tagsAssigned: number;
   parsed: number;
   bookmarks: ImportedBookmark[];
   /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §8). */

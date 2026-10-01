@@ -310,19 +310,23 @@ entries containing a URL plus an optional note and optional priority stars.
 
 **Mapping rules (decided):**
 
-| Source element            | Maps to                                            |
-| ------------------------- | -------------------------------------------------- |
-| `## Heading` (H2)         | category, created on demand                        |
-| `### Heading` (H3)        | section context, **not** a category or tag         |
-| `*` / `**` / `***` prefix | personal priority (1–3), **not** a tag             |
-| bullet note               | `title` / `description` until the page is scraped  |
-| URL                       | `bookmarks.url` (unique; upsert key)               |
+| Source element             | Maps to                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| `## Heading` (H2)          | category, created on demand                                      |
+| `### Heading` (H3)         | section context, **not** a category or tag                       |
+| `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                           |
+| bullet note                | `title` / `description` until the page is scraped                |
+| URL                        | `bookmarks.url` (unique; upsert key)                             |
+| frontmatter `tags: [a, b]` | `source='import'` tag rows, for names already in the vocabulary   |
+| fenced code block          | opaque — never a heading, bullet, or URL source                  |
 
-Structure never creates tags. `metadata.import` preserves what would otherwise be lost
-(`{ file, section, subsection, priority }`), so review and future tooling can use it.
+Structure never creates tags, and frontmatter tag names are matched against existing tags only.
+`metadata.import` preserves what would otherwise be lost (`{ file, section, subsection, priority }`),
+so review and future tooling can use it.
 
-`source='import'` tag rows are written **only** for explicit inline tags in a note (a token matching
-an existing tag). The importer never invents tags and never creates `proposed` ones.
+`source='import'` tag rows are written **only** for explicit YAML frontmatter `tags:` whose name
+matches an existing tag. The importer never invents tags and never creates `proposed` ones. (Inline-
+token tag syntax inside a note remains deferred; see §11.)
 
 ### Stage 2 — Enrich (background jobs)
 

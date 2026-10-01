@@ -1,8 +1,10 @@
 import type { Database } from 'bun:sqlite';
 
 import {
+  assignTag,
   createCategory,
   getCategoryByName,
+  getTagByName,
   upsertBookmarkByUrl,
 } from '@al-yo-bo/db';
 import type { ImportReport, ImportedBookmark } from '@al-yo-bo/shared';
@@ -25,6 +27,7 @@ export function ingestBookmarks(
     updated: 0,
     skipped: options.skipped ?? 0,
     categoriesCreated: 0,
+    tagsAssigned: 0,
     parsed: bookmarks.length,
     bookmarks,
     addedIds: [],
@@ -62,6 +65,17 @@ export function ingestBookmarks(
         report.addedIds.push(bookmark.id);
       } else {
         report.updated += 1;
+      }
+
+      // Frontmatter may only attach tags that already exist in the vocabulary;
+      // the importer never invents tags.
+      for (const name of entry.tags) {
+        const tag = getTagByName(db, name, null);
+        if (!tag) {
+          continue;
+        }
+        assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'import' });
+        report.tagsAssigned += 1;
       }
     }
   });

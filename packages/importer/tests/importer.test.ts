@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { openDatabase, setupDatabase } from '@al-yo-bo/db';
+import { createTag, getTagByName, openDatabase, setupDatabase } from '@al-yo-bo/db';
 
 import { importMarkdown, ingestBookmarks, parseCollection } from '../src/index.ts';
 
@@ -51,6 +51,70 @@ describe('parseCollection', () => {
     const { bookmarks } = parseCollection('- see (https://example.com/a).');
     expect(bookmarks[0]?.url).toBe('https://example.com/a');
   });
+
+  test('parses frontmatter tags and keeps frontmatter out of content', () => {
+    const { bookmarks } = parseCollection(`---
+tags: [imported, dev]
+---
+
+## dev
+
+- link: https://example.com/one
+`);
+    expect(bookmarks.length).toBe(1);
+    expect(bookmarks[0]?.tags).toEqual(['imported', 'dev']);
+    expect(bookmarks[0]?.category).toBe('dev');
+  });
+
+  test('merges tags from concatenated frontmatter blocks positionally', () => {
+    const { bookmarks } = parseCollection(`---
+tags: [alpha]
+---
+
+## first
+
+- a: https://example.com/a
+
+---
+tags: [beta]
+---
+
+## second
+
+- b: https://example.com/b
+`);
+    expect(bookmarks[0]?.tags).toEqual(['alpha']);
+    expect(bookmarks[1]?.tags).toEqual(['alpha', 'beta']);
+  });
+
+  test('does not treat a bare --- separator as frontmatter', () => {
+    const { bookmarks } = parseCollection(`## dev
+
+- x: https://example.com/x
+
+---
+
+## later
+
+- y: https://example.com/y
+`);
+    expect(bookmarks[0]?.category).toBe('dev');
+    expect(bookmarks[1]?.category).toBe('later');
+    expect(bookmarks.every((bookmark) => bookmark.tags.length === 0)).toBe(true);
+  });
+
+  test('ignores URLs and bullets inside fenced code blocks', () => {
+    const { bookmarks } = parseCollection(`## dev
+
+\`\`\`bash
+- leaked: https://example.com/leak
+\`\`\`
+
+- real: https://example.com/real
+`);
+    expect(bookmarks.length).toBe(1);
+    expect(bookmarks[0]?.url).toBe('https://example.com/real');
+  });
 });
 
 describe('ingest', () => {
@@ -75,6 +139,26 @@ describe('ingest', () => {
     const report = ingestBookmarks(db, []);
     expect(report.added).toBe(0);
     expect(report.parsed).toBe(0);
+  });
+
+  test('assigns only tags that already exist in the vocabulary', () => {
+    const db = openDatabase(':memory:');
+    setupDatabase(db);
+    createTag(db, { name: 'imported', status: 'active' });
+
+    const report = importMarkdown(
+      db,
+      `---
+tags: [imported, unknown]
+---
+
+- x: https://example.com/tag-test
+`,
+    );
+
+    expect(report.tagsAssigned).toBe(1);
+    expect(getTagByName(db, 'imported', null)).not.toBeNull();
+    expect(getTagByName(db, 'unknown', null)).toBeNull();
   });
 
   test('parses a real collection file from docs/examples-mds', async () => {
