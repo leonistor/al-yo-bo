@@ -45,6 +45,9 @@ export class ScrapeError extends Error {
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
+/** Default html-to-markdown conversion timeout (ms) when none is configured. */
+const DEFAULT_CONVERSION_TIMEOUT_MS = 15_000;
+
 /** Fetched page plus the response facts worth keeping in bookmark metadata. */
 export interface FetchedPage {
   html: string;
@@ -82,7 +85,12 @@ export async function fetchPageHtml(url: string, timeoutMs: number): Promise<Fet
 }
 
 /** Converts HTML to markdown via the html-to-markdown CLI (stdin → stdout). */
-export async function convertHtmlToMarkdown(html: string, binary: string): Promise<string> {
+export async function convertHtmlToMarkdown(
+  html: string,
+  binary: string,
+  /** Conversion timeout (ms); the subprocess is killed when it is exceeded. */
+  timeoutMs: number = DEFAULT_CONVERSION_TIMEOUT_MS,
+): Promise<string> {
   if (!Bun.which(binary)) {
     throw new ScrapeError(
       `html-to-markdown binary not found: "${binary}" (install it or set HTML_TO_MARKDOWN_BIN)`,
@@ -102,15 +110,35 @@ export async function convertHtmlToMarkdown(html: string, binary: string): Promi
   }
   stdin.write(html);
   stdin.end();
-  const [stdout, stderr, code] = await Promise.all([
+  const conversion = Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  if (code !== 0) {
-    throw new ScrapeError(`${binary} exited with ${code}: ${stderr.trim().slice(0, 300)}`);
+  // A stuck CLI must never hang the sequential worker: race the conversion
+  // against a timer, kill the subprocess on expiry, and surface the failure as
+  // a transient ScrapeError (no status code → retryable, never dead-link).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      proc.kill();
+      reject(new ScrapeError(`${binary} conversion timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    const [stdout, stderr, code] = await Promise.race([conversion, expiry]);
+    if (code !== 0) {
+      throw new ScrapeError(`${binary} exited with ${code}: ${stderr.trim().slice(0, 300)}`);
+    }
+    return stdout;
+  } catch (error) {
+    // If the expiry won the race, the killed subprocess's streams may still
+    // reject later; mark them handled so the rejection is not unobserved.
+    conversion.catch(() => {});
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return stdout;
 }
 
 export function sha256Hex(value: string): string {
@@ -130,7 +158,7 @@ export function makeScraper(
 
   return async (url: string): Promise<ScrapeResult> => {
     const page = await fetchPage(url, options.timeoutMs);
-    const markdown = (await convert(page.html, options.binary)).trim();
+    const markdown = (await convert(page.html, options.binary, options.conversionTimeoutMs)).trim();
     const truncated = markdown.length > options.maxContentChars;
     // Hash the stored content so an unchanged hash reliably means "skip downstream".
     const content = truncated ? markdown.slice(0, options.maxContentChars) : markdown;

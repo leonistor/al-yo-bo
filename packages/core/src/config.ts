@@ -28,5 +28,7 @@ export interface CoreConfig {
     binary: string;
     /** Dead-link invalidation cap; shared with the job retry loop. */
     maxAttempts: number;
+    /** HTML→markdown conversion subprocess timeout; defaults to 15000ms in scrape.ts. */
+    conversionTimeoutMs?: number;
   };
 }
