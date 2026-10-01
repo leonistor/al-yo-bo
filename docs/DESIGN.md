@@ -19,7 +19,7 @@
 | ----------- | ------------------------------------ | --------------------------------------------------------- |
 | Base unit   | `4px` (Tailwind spacing scale)       | Use scale steps (`2`, `3`, `4`, `6`, …), not arbitrary px |
 | Radius      | `--radius` (shadcn default `0.5rem`) | Cards, inputs, popovers inherit it                        |
-| Font (UI)   | Inter Variable                       | Via `font-sans`; loaded from `@fontsource-variable/inter` |
+| Font (UI)   | Work Sans Variable                   | Via `font-sans`; loaded from `@fontsource-variable/work-sans` |
 | Font (mono) | system mono stack                    | For URLs, hashes, code (`font-mono`)                      |
 | Type scale  | Tailwind `text-xs` → `text-2xl`      | Body `text-sm`; page titles `text-2xl`                    |
 | Color       | shadcn **CSS variables** (oklch)     | Define semantic tokens, never raw hex in components       |
