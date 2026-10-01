@@ -26,6 +26,7 @@ export type { BookmarkHit } from './dto.ts';
 
 export { createVectorProvider, type VectorProvider } from './vector/provider.ts';
 export { syncVectorPayload } from './vector/sync.ts';
+export { drainImportBatches, type DrainReport } from './drain.ts';
 
 export {
   createSearchService,
@@ -60,7 +61,6 @@ export {
   type ImportServiceDeps,
   type ImportOptions,
   type ImportPreview,
-  type StagedBatch,
 } from './services/import.ts';
 export {
   createEnrichmentService,
@@ -116,3 +116,4 @@ export {
   type ScrapeResult,
   type FetchedPage,
 } from './scrape.ts';
+export { type ScreenshotClient, type ScreenshotResult } from './screenshot.ts';

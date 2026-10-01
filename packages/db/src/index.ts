@@ -10,7 +10,6 @@ export * from './queries/categories.ts';
 export * from './queries/classification.ts';
 export * from './queries/datasets.ts';
 export * from './queries/embeddings.ts';
-export * from './queries/import-batches.ts';
 export * from './queries/review.ts';
 export * from './queries/sections.ts';
 export * from './queries/tags.ts';

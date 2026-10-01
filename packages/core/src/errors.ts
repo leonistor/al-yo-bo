@@ -17,7 +17,8 @@ export type DomainErrorCode =
   | 'scrape_unavailable'
   | 'classify_failed'
   | 'classify_unavailable'
-  | 'chat_unavailable';
+  | 'chat_unavailable'
+  | 'screenshot_failed';
 
 export class DomainError extends Error {
   constructor(

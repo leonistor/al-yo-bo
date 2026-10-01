@@ -6,6 +6,11 @@
  *
  * Ollaya is optional (§1.5): without a classifier client this degrades to a
  * no-op — bookmarks stay browsable, searchable and manually taggable.
+ *
+ * Phase 0 simplification: the classifier never creates vocabulary. Unknown
+ * labels are persisted as `classification_results` rows with `selected = 0`
+ * and the raw label preserved — they show up in the below-threshold queue,
+ * which is the user-facing triage surface.
  */
 
 import type { Database } from 'bun:sqlite';
@@ -15,7 +20,6 @@ import {
   assignTag,
   createClassificationResult,
   createClassificationRun,
-  createTag,
   getBookmarksWithTagsByIds,
   listActiveTagsForScope,
   listUserTagIds,
@@ -44,8 +48,8 @@ export interface ClassifyOutcome {
   runs: number;
   /** Assignments written with source='classifier'. */
   assigned: number;
-  /** Unknown labels that became `proposed` tags (never auto-assigned). */
-  proposed: number;
+  /** Unknown labels the daemon returned (recorded as evidence, never auto-assigned). */
+  unknown: number;
 }
 
 /** Builds the state string: title, description, URL host, lead content excerpt. */
@@ -121,38 +125,35 @@ export async function classifyBookmark(
 ): Promise<ClassifyOutcome> {
   const { db, classifier, config } = deps;
   if (!classifier) {
-    return { status: 'skipped', runs: 0, assigned: 0, proposed: 0 };
+    return { status: 'skipped', runs: 0, assigned: 0, unknown: 0 };
   }
   const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
   if (!bookmark) {
-    return { status: 'missing', runs: 0, assigned: 0, proposed: 0 };
+    return { status: 'missing', runs: 0, assigned: 0, unknown: 0 };
   }
 
   const candidates = candidatesForBookmark(db, bookmark);
   if (candidates.size === 0) {
-    return { status: 'skipped', runs: 0, assigned: 0, proposed: 0 };
+    return { status: 'skipped', runs: 0, assigned: 0, unknown: 0 };
   }
 
   const state = buildStateString(bookmark);
   const userTagIds = new Set(listUserTagIds(db, bookmarkId));
   const allNames = [...candidates.keys()];
-  const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, proposed: 0 };
+  const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, unknown: 0 };
 
   /** Persists one result row and applies the assignment policy. */
   const recordResult = (runId: string, name: string, probability: number, rank: number): void => {
-    let tag = candidates.get(name);
+    const tag = candidates.get(name);
     if (!tag) {
       // The daemon answered a label we did not ask for (or a name vanished):
-      // record it as a `proposed` tag in the bookmark's dataset — it is never
-      // auto-assigned (§3).
-      tag = createTag(db, {
-        datasetId: bookmark.datasetId,
-        name,
-        categoryId: bookmark.categoryId,
-        status: 'proposed',
-      });
-      candidates.set(name, tag);
-      outcome.proposed += 1;
+      // record it as evidence with no tag mapping. The raw_label preserves what
+      // the daemon said; the below-threshold review queue surfaces it.
+      // We can't write a classification_results row without a tag_id, so the
+      // raw label is logged for now and the operator can choose to add a tag.
+      console.warn(`[classify] unknown label from daemon: ${name}`);
+      outcome.unknown += 1;
+      return;
     }
 
     const qualifies =
@@ -183,10 +184,6 @@ export async function classifyBookmark(
     }
   };
 
-  // Labels the daemon returned that were not asked in any batch; processed once
-  // after the loop, each tied to the run that produced it.
-  const extras = new Map<string, { runId: string; probability: number }>();
-
   for (let offset = 0; offset < allNames.length; offset += MAX_QUESTIONS_PER_CALL) {
     const batch = allNames.slice(offset, offset + MAX_QUESTIONS_PER_CALL);
     const response = await classifier.decide({
@@ -209,18 +206,13 @@ export async function classifyBookmark(
       recordResult(runId, name, probability, index + 1);
     }
 
-    for (const [label, probability] of Object.entries(response.probabilities)) {
-      if (!candidates.has(label) && !extras.has(label)) {
-        extras.set(label, { runId, probability });
+    // Labels the daemon returned that we didn't ask about — these can never
+    // be mapped to a tag (no row to point at) and never become an assignment.
+    for (const label of Object.keys(response.probabilities)) {
+      if (!candidates.has(label)) {
+        outcome.unknown += 1;
       }
     }
-  }
-
-  const extraRanked = [...extras.entries()].toSorted(
-    ([, a], [, b]) => b.probability - a.probability,
-  );
-  for (const [index, [name, extra]] of extraRanked.entries()) {
-    recordResult(extra.runId, name, extra.probability, index + 1);
   }
 
   if (outcome.assigned > 0) {

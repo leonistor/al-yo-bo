@@ -4,8 +4,7 @@ import { bytesToUuid, newIdBytes, uuidToBytes, type Tag, type TagStatus } from '
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
 
-const COLUMNS =
-  'id, dataset_id, category_id, name, description, status, merged_into_id, created_at';
+const COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';
 
 export function listTags(db: Database, datasetId: string): Tag[] {
   return db
@@ -56,7 +55,6 @@ export interface TagInput {
   name: string;
   categoryId?: string | null;
   description?: string | null;
-  status?: TagStatus;
 }
 
 export function createTag(db: Database, input: TagInput): Tag {
@@ -75,7 +73,7 @@ export function createTag(db: Database, input: TagInput): Tag {
     categoryId ? uuidToBytes(categoryId) : null,
     input.name,
     input.description ?? null,
-    input.status ?? 'active',
+    'active',
   );
   const created = getTagById(db, bytesToUuid(id));
   if (!created) {
@@ -99,7 +97,6 @@ export function updateTag(
     name?: string;
     description?: string | null;
     categoryId?: string | null;
-    mergedIntoId?: string | null;
   },
 ): Tag | null {
   const current = getTagById(db, id);
@@ -107,14 +104,10 @@ export function updateTag(
     return null;
   }
   const categoryId = patch.categoryId === undefined ? current.categoryId : patch.categoryId;
-  const mergedIntoId = patch.mergedIntoId === undefined ? current.mergedIntoId : patch.mergedIntoId;
-  db.query(
-    'UPDATE tags SET name = ?, description = ?, category_id = ?, merged_into_id = ? WHERE id = ?',
-  ).run(
+  db.query('UPDATE tags SET name = ?, description = ?, category_id = ? WHERE id = ?').run(
     patch.name ?? current.name,
     patch.description === undefined ? current.description : patch.description,
     categoryId ? uuidToBytes(categoryId) : null,
-    mergedIntoId ? uuidToBytes(mergedIntoId) : null,
     uuidToBytes(id),
   );
   return getTagById(db, id);

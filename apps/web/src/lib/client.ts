@@ -4,17 +4,16 @@ import type {
   BookmarkSort,
   BookmarkWithTags,
   Category,
+  ImportedBookmark,
   ReviewCandidate,
   SearchMode,
   SearchResponse,
   Section,
   Tag,
   TagStatus,
-  VocabularyProposal,
 } from '@al-yo-bo/shared';
 
 import { api } from './api.ts';
-import type { ImportResult } from './import.ts';
 
 interface JsonResponse {
   ok: boolean;
@@ -84,23 +83,45 @@ export function fetchTags(): Promise<Tag[]> {
   return api.api.tags.$get().then((response) => unwrap<Tag[]>(response));
 }
 
-export function fetchProposedTags(): Promise<Tag[]> {
-  return api.api.review['proposed-tags'].$get().then((response) => unwrap<Tag[]>(response));
-}
-
 export function fetchReviewCandidates(): Promise<ReviewCandidate[]> {
   return api.api.review.candidates.$get().then((response) => unwrap<ReviewCandidate[]>(response));
 }
 
-export interface StagedBatch {
-  id: string;
-  file: string | null;
-  bookmarkCount: number;
-  proposals: VocabularyProposal[];
+export interface ImportPreview {
+  /** Ids of bookmarks created by this import — the enrichment trigger. */
+  addedIds?: string[];
+  parsed: number;
+  skipped: number;
+  bookmarks: ImportedBookmark[];
+  provider: 'llm' | 'fallback';
+  warnings?: string[];
 }
 
-export function fetchStagedBatches(): Promise<StagedBatch[]> {
-  return api.api.import.staged.$get().then((response) => unwrap<StagedBatch[]>(response));
+export interface ImportCommit {
+  bookmarks: ImportedBookmark[];
+  provider: 'llm' | 'fallback';
+  warnings?: string[];
+}
+
+export interface ImportResult {
+  addedIds: string[];
+  parsed: number;
+  skipped: number;
+  bookmarks: ImportedBookmark[];
+  provider: 'llm' | 'fallback';
+  warnings?: string[];
+}
+
+export function extractImport(text: string): Promise<ImportPreview> {
+  return api.api.import.preview
+    .$post({ json: { markdown: text } })
+    .then((response) => unwrap<ImportPreview>(response));
+}
+
+export function commitImport(text: string): Promise<ImportResult> {
+  return api.api.import
+    .$post({ json: { markdown: text } })
+    .then((response) => unwrap<ImportResult>(response));
 }
 
 export interface CreateBookmarkInput {
@@ -198,30 +219,4 @@ export function acceptCandidate(bookmarkId: string, tagId: string): Promise<Book
   return api.api.review.candidates.accept
     .$post({ json: { bookmarkId, tagId } })
     .then((response) => unwrap<BookmarkWithTags>(response));
-}
-
-export type ProposalKind = VocabularyProposal['kind'];
-
-export function acceptProposal(kind: ProposalKind, id: string): Promise<void> {
-  return api.api.review.vocabulary[':kind'][':id'].accept
-    .$post({ param: { kind, id } })
-    .then((response) => unwrap<void>(response));
-}
-
-export function rejectProposal(kind: ProposalKind, id: string): Promise<void> {
-  return api.api.review.vocabulary[':kind'][':id'].reject
-    .$post({ param: { kind, id } })
-    .then((response) => unwrap<void>(response));
-}
-
-export function commitImportBatch(batchId: string): Promise<ImportResult> {
-  return api.api.import.batches[':id'].commit
-    .$post({ param: { id: batchId } })
-    .then((response) => unwrap<ImportResult>(response));
-}
-
-export function discardImportBatch(batchId: string): Promise<void> {
-  return api.api.import.batches[':id'].discard
-    .$post({ param: { id: batchId } })
-    .then((response) => unwrap<void>(response));
 }

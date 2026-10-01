@@ -4,7 +4,7 @@ import { bytesToUuid, newIdBytes, uuidToBytes, type Section } from '@al-yo-bo/sh
 
 import { mapSection, type SectionRow } from '../row-mapping.ts';
 
-const COLUMNS = 'id, dataset_id, name, description, status, merged_into_id, created_at';
+const COLUMNS = 'id, dataset_id, name, description, created_at';
 
 export function listSections(db: Database, datasetId: string): Section[] {
   return db
@@ -12,19 +12,6 @@ export function listSections(db: Database, datasetId: string): Section[] {
       `SELECT ${COLUMNS} FROM sections WHERE dataset_id = ? ORDER BY name`,
     )
     .all(uuidToBytes(datasetId))
-    .map(mapSection);
-}
-
-export function listSectionsByStatus(
-  db: Database,
-  datasetId: string,
-  status: 'active' | 'proposed' | 'rejected',
-): Section[] {
-  return db
-    .query<SectionRow, [Uint8Array, string]>(
-      `SELECT ${COLUMNS} FROM sections WHERE dataset_id = ? AND status = ? ORDER BY name`,
-    )
-    .all(uuidToBytes(datasetId), status)
     .map(mapSection);
 }
 
@@ -48,7 +35,6 @@ export interface SectionInput {
   datasetId: string;
   name: string;
   description?: string | null;
-  status?: 'active' | 'proposed' | 'rejected';
 }
 
 /** Returns the existing section when the name is taken (unique per dataset). */
@@ -59,13 +45,12 @@ export function createSection(db: Database, input: SectionInput): Section {
   }
   const id = newIdBytes();
   db.query(
-    'INSERT INTO sections (id, dataset_id, name, description, status) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO sections (id, dataset_id, name, description) VALUES (?, ?, ?, ?)',
   ).run(
     id,
     uuidToBytes(input.datasetId),
     input.name,
     input.description ?? null,
-    input.status ?? 'active',
   );
   const created = getSectionById(db, bytesToUuid(id));
   if (!created) {
@@ -74,34 +59,18 @@ export function createSection(db: Database, input: SectionInput): Section {
   return created;
 }
 
-export function setSectionStatus(
-  db: Database,
-  id: string,
-  status: 'active' | 'proposed' | 'rejected',
-): Section | null {
-  const result = db
-    .query('UPDATE sections SET status = ? WHERE id = ?')
-    .run(status, uuidToBytes(id));
-  if (result.changes === 0) {
-    return null;
-  }
-  return getSectionById(db, id);
-}
-
 export function updateSection(
   db: Database,
   id: string,
-  patch: { name?: string; description?: string | null; mergedIntoId?: string | null },
+  patch: { name?: string; description?: string | null },
 ): Section | null {
   const current = getSectionById(db, id);
   if (!current) {
     return null;
   }
-  const mergedIntoId = patch.mergedIntoId === undefined ? current.mergedIntoId : patch.mergedIntoId;
-  db.query('UPDATE sections SET name = ?, description = ?, merged_into_id = ? WHERE id = ?').run(
+  db.query('UPDATE sections SET name = ?, description = ? WHERE id = ?').run(
     patch.name ?? current.name,
     patch.description === undefined ? current.description : patch.description,
-    mergedIntoId ? uuidToBytes(mergedIntoId) : null,
     uuidToBytes(id),
   );
   return getSectionById(db, id);

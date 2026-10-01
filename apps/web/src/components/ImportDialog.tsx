@@ -13,34 +13,40 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { previewImport, runImport, type ImportPreview, type ImportResult } from '@/lib/import';
+import {
+  commitImport,
+  extractImport,
+  type ImportPreview,
+} from '@/lib/client';
 
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported: () => void;
-  /** Called when the import was staged for vocabulary review. */
-  onStaged: (result: ImportResult) => void;
 }
 
-export function ImportDialog({ open, onOpenChange, onImported, onStaged }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogProps) {
   const [markdown, setMarkdown] = useState('');
-  const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function readFile(file: File) {
-    setFileName(file.name);
     setMarkdown(await file.text());
     setPreview(null);
   }
 
-  async function handlePreview() {
+  async function handleExtract() {
     setBusy(true);
     try {
-      setPreview(await previewImport(markdown));
+      const result = await extractImport(markdown);
+      setPreview(result);
+      if (result.warnings && result.warnings.length > 0) {
+        for (const warning of result.warnings) {
+          toast.warning(warning);
+        }
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Preview failed');
+      toast.error(error instanceof Error ? error.message : 'Extract failed');
     } finally {
       setBusy(false);
     }
@@ -49,23 +55,11 @@ export function ImportDialog({ open, onOpenChange, onImported, onStaged }: Impor
   async function handleImport() {
     setBusy(true);
     try {
-      const result = await runImport(markdown, fileName ?? undefined);
-      if (result.staged) {
-        toast.info(
-          `${result.proposals?.length ?? 0} new vocabulary entries need review before the import commits`,
-        );
-        setMarkdown('');
-        setFileName(null);
-        setPreview(null);
-        onStaged(result);
-        onOpenChange(false);
-        return;
-      }
+      const result = await commitImport(markdown);
       toast.success(
-        `Imported ${result.added} new, updated ${result.updated}, ${result.categoriesCreated} categories created`,
+        `Imported ${result.bookmarks.length} bookmarks (${result.provider === 'llm' ? 'LLM' : 'parser'})`,
       );
       setMarkdown('');
-      setFileName(null);
       setPreview(null);
       onImported();
       onOpenChange(false);
@@ -82,9 +76,8 @@ export function ImportDialog({ open, onOpenChange, onImported, onStaged }: Impor
         <DialogHeader>
           <DialogTitle>Import bookmarks</DialogTitle>
           <DialogDescription>
-            Paste or upload a markdown collection file. Headings become sections and categories;
-            bullets with URLs become bookmarks. New vocabulary is reviewed before the import
-            commits.
+            Paste or upload any text. The LLM extractor will pull out URLs, titles, and tags;
+            the deterministic parser is used as a fallback when no model is configured.
           </DialogDescription>
         </DialogHeader>
 
@@ -105,7 +98,7 @@ export function ImportDialog({ open, onOpenChange, onImported, onStaged }: Impor
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="import-text">Or paste markdown</Label>
+            <Label htmlFor="import-text">Or paste text</Label>
             <Textarea
               id="import-text"
               value={markdown}
@@ -120,7 +113,7 @@ export function ImportDialog({ open, onOpenChange, onImported, onStaged }: Impor
 
           {preview && (
             <p className="text-sm text-muted-foreground">
-              Found {preview.parsed} bookmarks ({preview.skipped} skipped).
+              {preview.bookmarks.length} bookmarks via {preview.provider}.
             </p>
           )}
         </div>
@@ -128,10 +121,10 @@ export function ImportDialog({ open, onOpenChange, onImported, onStaged }: Impor
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={handlePreview}
+            onClick={handleExtract}
             disabled={busy || markdown.trim() === ''}
           >
-            Preview
+            Extract
           </Button>
           <Button onClick={handleImport} disabled={busy || markdown.trim() === ''}>
             Import

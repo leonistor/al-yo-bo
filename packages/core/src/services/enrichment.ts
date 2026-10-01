@@ -7,16 +7,19 @@ import type { BookmarkWithTags, VectorIndex } from '@al-yo-bo/shared';
 
 import { DomainError, NotFoundError } from '../errors.ts';
 import { ScrapeError, type ScrapeFn } from '../scrape.ts';
+import type { ScreenshotClient } from '../screenshot.ts';
 import type { CoreConfig } from '../config.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import {
   reconcileEnrichment,
   scrapeAndStore,
+  screenshotAndStore,
   startJobQueue,
   type JobQueue,
   type JobType,
   type ReconcileReport,
   type ScrapeOutcome,
+  type ScreenshotOutcome,
 } from '../enrichment/jobs.ts';
 import { classifyBookmark, type ClassifyOutcome } from '../enrichment/classify.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
@@ -38,6 +41,10 @@ export interface EnrichmentServiceDeps {
   classifier?: ClassifierClient;
   /** Absent = the manual scrape endpoint reports unavailable and scrape jobs fail. */
   scrape?: ScrapeFn;
+  /** Screenshot capture port; absent = screenshot jobs are a no-op. */
+  screenshot?: ScreenshotClient | null;
+  /** Absolute path the screenshot job writes image bytes to. */
+  screenshotsDir?: string;
   maxAttempts?: number;
   baseDelayMs?: number;
 }
@@ -51,6 +58,11 @@ export interface ClassifyResponse extends ClassifyOutcome {
   bookmark: BookmarkWithTags;
 }
 
+export interface ScreenshotResponse {
+  status: ScreenshotOutcome;
+  bookmark: BookmarkWithTags;
+}
+
 export interface EnrichmentService extends JobScheduler {
   pendingCount(): number;
   /** Resolves when no job is queued or running (test/drain helper). */
@@ -59,10 +71,13 @@ export interface EnrichmentService extends JobScheduler {
   /** Capability probes so the app edge can decide whether an endpoint is served. */
   readonly scrapeAvailable: boolean;
   readonly classifierAvailable: boolean;
+  readonly screenshotAvailable: boolean;
   /** Manual scrape for one bookmark; maps scrape failures to domain errors. */
   scrape(id: string): Promise<ScrapeResponse>;
   /** Manual classification for one bookmark; maps failures to domain errors. */
   classify(id: string): Promise<ClassifyResponse>;
+  /** Manual screenshot capture for one bookmark; returns 'skipped' when no client. */
+  screenshot(id: string): Promise<ScreenshotResponse>;
   reconcile(): ReconcileReport;
 }
 
@@ -85,7 +100,7 @@ function routingVector(provider: VectorProvider): VectorIndex {
 
 /** Enabled only when deps are configured; workspace is optional (§1.5) */
 export function createEnrichmentService(deps: EnrichmentServiceDeps): EnrichmentService {
-  const { db, config, vector, embeddings, classifier, scrape } = deps;
+  const { db, config, vector, embeddings, classifier, scrape, screenshot } = deps;
 
   // The queue chains scrape → embed → classify and is the JobScheduler other
   // services receive. `queue` is referenced from the onEmbedded hook, which only
@@ -102,6 +117,8 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
       (async () => {
         throw new ScrapeError('Scraping is not available');
       }),
+    screenshot: screenshot ?? null,
+    screenshotsDir: deps.screenshotsDir,
     classifier,
     config,
     maxAttempts: deps.maxAttempts ?? config.scrape.maxAttempts,
@@ -121,6 +138,9 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
     },
     get classifierAvailable() {
       return Boolean(classifier);
+    },
+    get screenshotAvailable() {
+      return Boolean(screenshot);
     },
 
     async scrape(id) {
@@ -174,8 +194,45 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
       }
     },
 
+    async screenshot(id) {
+      if (!getBookmarkById(db, id)) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      if (!screenshot) {
+        return { status: 'skipped', bookmark: bookmarkViewOrThrow(db, id) };
+      }
+      try {
+        const status = await screenshotAndStore(
+          {
+            db,
+            vector: vector.current(),
+            embeddings,
+            scrape: scrape ?? (async () => {
+              throw new ScrapeError('Scraping is not available');
+            }),
+            screenshot,
+            screenshotsDir: deps.screenshotsDir,
+            config,
+            queue,
+          },
+          id,
+        );
+        return { status, bookmark: bookmarkViewOrThrow(db, id) };
+      } catch (error) {
+        throw new DomainError(
+          `Screenshot failed: ${error instanceof Error ? error.message : error}`,
+          'screenshot_failed',
+        );
+      }
+    },
+
     reconcile() {
-      return reconcileEnrichment(queue, db, embeddings ? config.embeddings.model : undefined);
+      return reconcileEnrichment(
+        queue,
+        db,
+        embeddings ? config.embeddings.model : undefined,
+        Boolean(screenshot),
+      );
     },
   };
 }

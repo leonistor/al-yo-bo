@@ -18,6 +18,7 @@ const STATUS_BY_CODE: Record<DomainErrorCode, number> = {
   upstream_failed: 502,
   scrape_failed: 502,
   classify_failed: 502,
+  screenshot_failed: 502,
 };
 
 /** `DomainErrorCode` → the `type` slug used in `/problems/<slug>` (stable API surface). */
@@ -32,6 +33,7 @@ const TYPE_BY_CODE: Record<DomainErrorCode, string> = {
   upstream_failed: 'upstream-failed',
   scrape_failed: 'scrape-failed',
   classify_failed: 'classify-failed',
+  screenshot_failed: 'screenshot-failed',
 };
 
 export interface ProblemDetails {

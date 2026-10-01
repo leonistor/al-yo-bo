@@ -12,14 +12,12 @@ import {
   listCategories,
   listSections,
   listTags,
-  setCategoryStatus,
-  setSectionStatus,
   setTagStatus,
   updateCategory,
   updateSection,
   updateTag,
 } from '@al-yo-bo/db';
-import type { Category, CategoryStatus, Section, Tag, TagStatus } from '@al-yo-bo/shared';
+import type { Category, Section, Tag, TagStatus } from '@al-yo-bo/shared';
 
 import { NotFoundError } from '../errors.ts';
 import type { JobScheduler } from './enrichment.ts';
@@ -70,23 +68,24 @@ export interface VocabularyService {
   createSection(input: SectionInput): Section;
   updateSection(id: string, input: SectionPatch): Section;
   deleteSection(id: string): void;
-  setSectionStatus(id: string, status: 'active' | 'proposed' | 'rejected'): Section;
   listCategories(): Category[];
   createCategory(input: CategoryInput): Category;
   updateCategory(id: string, input: CategoryPatch): Category;
   deleteCategory(id: string): void;
-  setCategoryStatus(id: string, status: CategoryStatus): Category;
   listTags(): Tag[];
   createTag(input: TagInput): Tag;
   updateTag(id: string, input: TagPatch): Tag;
   deleteTag(id: string): void;
+  /** Tag-only lifecycle hook: switch between `active` and `deprecated`. */
   setTagStatus(id: string, status: TagStatus): Tag;
 }
 
 /**
- * Categories/sections/tags management, dataset-scoped. The only behaviour beyond
- * CRUD is the vocabulary re-run trigger (ARCHITECTURE §7): activating a tag
- * makes it a candidate again, so every bookmark in its scope is re-classified.
+ * Categories/sections/tags management, dataset-scoped. Sections and categories
+ * are no longer gated by status — vocabulary is always created active, so the
+ * service only exposes CRUD. Tags retain an `active`/`deprecated` toggle
+ * because the classifier's candidate set (ARCHITECTURE §7) and the UI's tag
+ * chips both react to it.
  */
 export function createVocabularyService(deps: VocabularyServiceDeps): VocabularyService {
   const { db, jobs, datasetId } = deps;
@@ -121,14 +120,6 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       }
     },
 
-    setSectionStatus(id, status) {
-      const updated = setSectionStatus(db, id, status);
-      if (!updated) {
-        throw new NotFoundError('Section not found');
-      }
-      return updated;
-    },
-
     listCategories() {
       return listCategories(db, datasetId);
     },
@@ -158,14 +149,6 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       if (!deleteCategory(db, id)) {
         throw new NotFoundError('Category not found');
       }
-    },
-
-    setCategoryStatus(id, status) {
-      const updated = setCategoryStatus(db, id, status);
-      if (!updated) {
-        throw new NotFoundError('Category not found');
-      }
-      return updated;
     },
 
     listTags() {
@@ -208,8 +191,8 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       if (!updated) {
         throw new NotFoundError('Tag not found');
       }
-      // Vocabulary change (§7 re-run triggers): activating a tag makes it a
-      // candidate again -> re-classify the bookmarks in its scope.
+      // Vocabulary change (§7 re-run triggers): activating a deprecated tag
+      // makes it a candidate again -> re-classify the bookmarks in its scope.
       if (previous.status !== 'active' && status === 'active') {
         for (const bookmarkId of listBookmarkIdsForCategoryScope(
           db,

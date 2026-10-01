@@ -9,7 +9,6 @@ import type {
   SearchResponse,
   Section,
   Tag,
-  VocabularyProposal,
 } from '@al-yo-bo/shared';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -46,21 +45,13 @@ import { VocabDialog } from '@/components/VocabDialog';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   acceptCandidate,
-  acceptProposal,
-  commitImportBatch,
   deleteBookmark,
-  discardImportBatch,
   fetchAggregates,
   fetchBookmarks,
   fetchCategories,
-  fetchProposedTags,
   fetchReviewCandidates,
   fetchSections,
-  fetchStagedBatches,
   fetchTags,
-  rejectProposal,
-  setTagStatus,
-  type StagedBatch,
 } from '@/lib/client';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
@@ -113,9 +104,7 @@ export function App() {
   const [sections, setSections] = useState<Section[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [bookmarks, setBookmarks] = useState<SearchResponse | null>(null);
-  const [proposed, setProposed] = useState<Tag[]>([]);
   const [candidates, setCandidates] = useState<ReviewCandidate[]>([]);
-  const [stagedBatches, setStagedBatches] = useState<StagedBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BookmarkWithTags | null>(null);
   const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
@@ -169,30 +158,18 @@ export function App() {
 
   const refreshMeta = useCallback(async () => {
     try {
-      const [
-        aggregateData,
-        categoryData,
-        sectionData,
-        tagData,
-        proposedData,
-        candidateData,
-        batchData,
-      ] = await Promise.all([
+      const [aggregateData, categoryData, sectionData, tagData, candidateData] = await Promise.all([
         fetchAggregates(),
         fetchCategories(),
         fetchSections(),
         fetchTags(),
-        fetchProposedTags(),
         fetchReviewCandidates(),
-        fetchStagedBatches(),
       ]);
       setAggregates(aggregateData);
       setCategories(categoryData);
       setSections(sectionData);
       setTags(tagData);
-      setProposed(proposedData);
       setCandidates(candidateData);
-      setStagedBatches(batchData);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load data');
     }
@@ -234,26 +211,6 @@ export function App() {
     void refreshResults();
   }, [refreshMeta, refreshResults]);
 
-  async function approveTag(id: string) {
-    try {
-      await setTagStatus(id, 'active');
-      toast.success('Tag approved');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to approve tag');
-    }
-  }
-
-  async function rejectTag(id: string) {
-    try {
-      await setTagStatus(id, 'deprecated');
-      toast.success('Tag rejected');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to reject tag');
-    }
-  }
-
   async function accept(candidate: ReviewCandidate) {
     try {
       await acceptCandidate(candidate.bookmarkId, candidate.tagId);
@@ -261,46 +218,6 @@ export function App() {
       reload();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to accept candidate');
-    }
-  }
-
-  async function acceptVocabulary(batchId: string, proposalId: string, kind: string) {
-    try {
-      await acceptProposal(kind as VocabularyProposal['kind'], proposalId);
-      toast.success('Vocabulary activated');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to accept proposal');
-    }
-  }
-
-  async function rejectVocabulary(batchId: string, proposalId: string, kind: string) {
-    try {
-      await rejectProposal(kind as VocabularyProposal['kind'], proposalId);
-      toast.success('Vocabulary rejected');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to reject proposal');
-    }
-  }
-
-  async function commitBatch(batchId: string) {
-    try {
-      const report = await commitImportBatch(batchId);
-      toast.success(`Committed ${report.added} new, updated ${report.updated}`);
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to commit import');
-    }
-  }
-
-  async function discardBatch(batchId: string) {
-    try {
-      await discardImportBatch(batchId);
-      toast.success('Import discarded');
-      reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to discard import');
     }
   }
 
@@ -331,10 +248,7 @@ export function App() {
     setPage(0);
   }
 
-  const reviewCount =
-    proposed.length +
-    candidates.length +
-    stagedBatches.reduce((sum, b) => sum + b.proposals.length, 0);
+  const reviewCount = candidates.length;
   const total = bookmarks?.total ?? 0;
   const filtered =
     searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
@@ -454,19 +368,7 @@ export function App() {
               </>
             ) : (
               <div className="min-h-0 flex-1 overflow-auto">
-                <ReviewQueue
-                  proposed={proposed}
-                  candidates={candidates}
-                  batches={stagedBatches}
-                  loading={loading}
-                  onApprove={approveTag}
-                  onReject={rejectTag}
-                  onAccept={accept}
-                  onAcceptProposal={acceptVocabulary}
-                  onRejectProposal={rejectVocabulary}
-                  onCommitBatch={commitBatch}
-                  onDiscardBatch={discardBatch}
-                />
+                <ReviewQueue candidates={candidates} loading={loading} onAccept={accept} />
               </div>
             )}
           </div>
@@ -538,10 +440,6 @@ export function App() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={reload}
-        onStaged={() => {
-          setView('review');
-          reload();
-        }}
       />
       <VocabDialog
         open={vocabOpen}

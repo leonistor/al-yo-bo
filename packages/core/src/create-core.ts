@@ -3,9 +3,11 @@ import type { Database } from 'bun:sqlite';
 import type { ClassifierClient } from '@al-yo-bo/classifier';
 import { createDataset, getDatasetByName, rebuildFts } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
+import type { ExtractionClient } from '@al-yo-bo/importer';
 
 import type { CoreConfig } from './config.ts';
 import type { ScrapeFn } from './scrape.ts';
+import type { ScreenshotClient } from './screenshot.ts';
 import { createBookmarkService, type BookmarkService } from './services/bookmarks.ts';
 import { createEnrichmentService, type EnrichmentService } from './services/enrichment.ts';
 import { createHealthService, type HealthService } from './services/health.ts';
@@ -22,6 +24,12 @@ export interface CoreDeps {
   embeddings?: EmbeddingClient;
   classifier?: ClassifierClient;
   scrape?: ScrapeFn;
+  /** LLM extraction port for the import page; `null` falls back to the deterministic parser. */
+  extract?: ExtractionClient | null;
+  /** Screenshot capture port; absent = screenshot job is a no-op. */
+  screenshot?: ScreenshotClient | null;
+  /** Absolute path the screenshot job writes image bytes to. */
+  screenshotsDir?: string;
   maxAttempts?: number;
   /**
    * Rebuilds the vector serving stack from SQLite and hot-swaps it. The app edge
@@ -55,7 +63,7 @@ export interface Core {
  * scrape/classify/reconcile surface. Services never construct each other.
  */
 export function createCore(deps: CoreDeps): Core {
-  const { db, config, vector, embeddings, classifier, scrape } = deps;
+  const { db, config, vector, embeddings, classifier, scrape, extract, screenshot } = deps;
 
   // The default dataset is the scoping boundary for everything that does not
   // name one explicitly (bookmark CRUD, searches, review queues, imports).
@@ -69,6 +77,8 @@ export function createCore(deps: CoreDeps): Core {
     embeddings,
     classifier,
     scrape,
+    screenshot: screenshot ?? null,
+    screenshotsDir: deps.screenshotsDir,
     maxAttempts: deps.maxAttempts,
   });
 
@@ -77,7 +87,7 @@ export function createCore(deps: CoreDeps): Core {
     bookmarks: createBookmarkService({ db, jobs: enrichment, vector, datasetId: dataset.id }),
     vocabulary: createVocabularyService({ db, jobs: enrichment, datasetId: dataset.id }),
     review: createReviewService({ db, config, vector, datasetId: dataset.id }),
-    import: createImportService({ db, jobs: enrichment }),
+    import: createImportService({ db, jobs: enrichment, extract: extract ?? null }),
     enrichment,
     defaultDatasetId: dataset.id,
     health: createHealthService({
@@ -87,6 +97,8 @@ export function createCore(deps: CoreDeps): Core {
       jobs: enrichment,
       scrape,
       classifier,
+      extract: extract ?? null,
+      screenshot: screenshot ?? null,
     }),
     async reindex() {
       const ftsRows = rebuildFts(db);

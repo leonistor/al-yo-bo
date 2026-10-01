@@ -1,11 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { bytesToUuid, uuidToBytes, type ReviewCandidate, type Tag } from '@al-yo-bo/shared';
-
-import { mapTag, type TagRow } from '../row-mapping.ts';
-
-const TAG_COLUMNS =
-  'id, dataset_id, category_id, name, description, status, merged_into_id, created_at';
+import { bytesToUuid, uuidToBytes, type ReviewCandidate } from '@al-yo-bo/shared';
 
 interface CandidateRow {
   bookmark_id: Uint8Array;
@@ -15,17 +10,6 @@ interface CandidateRow {
   name: string;
   probability: number;
   run_id: Uint8Array;
-}
-
-/** Proposed tags awaiting approval (MODEL.md: proposed -> active/deprecated/rejected). */
-export function listProposedTags(db: Database, datasetId: string): Tag[] {
-  return db
-    .query<TagRow, [Uint8Array]>(
-      `SELECT ${TAG_COLUMNS} FROM tags
-        WHERE status = 'proposed' AND dataset_id = ? ORDER BY name`,
-    )
-    .all(uuidToBytes(datasetId))
-    .map(mapTag);
 }
 
 /**

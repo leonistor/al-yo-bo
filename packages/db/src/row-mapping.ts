@@ -2,10 +2,10 @@ import {
   bytesToUuid,
   type AssignmentSource,
   type Bookmark,
+  type BookmarkImage,
   type BookmarkStatus,
   type BookmarkTagView,
   type Category,
-  type CategoryStatus,
   type Dataset,
   type Section,
   type Tag,
@@ -88,8 +88,6 @@ export function mapSection(row: SectionRow): Section {
     datasetId: bytesToUuid(row.dataset_id),
     name: row.name,
     description: row.description,
-    status: row.status as Section['status'],
-    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
     createdAt: row.created_at,
   };
 }
@@ -101,8 +99,6 @@ export function mapCategory(row: CategoryRow): Category {
     sectionId: row.section_id ? bytesToUuid(row.section_id) : null,
     name: row.name,
     description: row.description,
-    status: row.status as CategoryStatus,
-    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
     createdAt: row.created_at,
   };
 }
@@ -115,7 +111,6 @@ export function mapTag(row: TagRow): Tag {
     name: row.name,
     description: row.description,
     status: row.status as TagStatus,
-    mergedIntoId: row.merged_into_id ? bytesToUuid(row.merged_into_id) : null,
     createdAt: row.created_at,
   };
 }
@@ -130,6 +125,27 @@ export function parseMetadata(raw: string | null): Record<string, unknown> | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * Pulls the bookmark image references out of `metadata.image` (set by import
+ * and the screenshot job — see ARCHITECTURE §8). Missing or malformed entries
+ * fall back to a both-null record so consumers never branch on presence.
+ */
+export function parseBookmarkImage(metadata: Record<string, unknown> | null): BookmarkImage {
+  if (!metadata) {
+    return { ogImageUrl: null, screenshotPath: null };
+  }
+  const raw = metadata['image'];
+  if (!raw || typeof raw !== 'object') {
+    return { ogImageUrl: null, screenshotPath: null };
+  }
+  const candidate = raw as Record<string, unknown>;
+  return {
+    ogImageUrl: typeof candidate['ogImageUrl'] === 'string' ? candidate['ogImageUrl'] : null,
+    screenshotPath:
+      typeof candidate['screenshotPath'] === 'string' ? candidate['screenshotPath'] : null,
+  };
 }
 
 export function mapBookmark(row: BookmarkRow): Bookmark {

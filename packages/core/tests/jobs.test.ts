@@ -216,7 +216,11 @@ describe('scrapeAndStore', () => {
     expect(bookmark.metadata).toEqual({
       scrape: { at: 123, contentType: 'text/html', finalUrl: null, truncated: false },
     });
-    expect(deps.queue.calls).toEqual([{ id, type: 'embed' }]);
+    // Scrape chains both the embed and the screenshot job (independent of scrape content).
+    expect(deps.queue.calls).toEqual([
+      { id, type: 'embed' },
+      { id, type: 'screenshot' },
+    ]);
   });
 
   test('an unchanged page skips downstream and refreshes scraped_at', async () => {
@@ -232,11 +236,16 @@ describe('scrapeAndStore', () => {
 
     await scrapeAndStore(deps, id);
     const scrapedAt = getBookmarkById(db, id)!.scrapedAt;
-    expect(deps.queue.calls).toEqual([{ id, type: 'embed' }]);
+    // First scrape chains embed + screenshot (screenshot fires even when content
+    // is unchanged because the bookmark may have transitioned to a new URL elsewhere).
+    expect(deps.queue.calls).toEqual([
+      { id, type: 'embed' },
+      { id, type: 'screenshot' },
+    ]);
 
-    // Second run: same hash -> no re-embed.
+    // Second run: same hash -> no re-embed, no re-screenshot.
     expect(await scrapeAndStore(deps, id)).toBe('unchanged');
-    expect(deps.queue.calls.length).toBe(1);
+    expect(deps.queue.calls.length).toBe(2);
     expect(getBookmarkById(db, id)!.scrapedAt).toBeGreaterThanOrEqual(scrapedAt!);
   });
 
@@ -560,7 +569,7 @@ describe('reconcileEnrichment', () => {
     ).toEqual([unembedded.id, staleModel.id].toSorted());
   });
 
-  test('skips embedding reconciliation when no model is configured', () => {
+  test('skips embedding reconciliation when no model is configured (screenshot still reconciles)', () => {
     const db = makeDb();
     createBookmark(db, {
       datasetId: db.datasetId,
@@ -573,7 +582,24 @@ describe('reconcileEnrichment', () => {
 
     const report = reconcileEnrichment(queue, db);
 
-    expect(report).toEqual({ scrape: 0, embed: 0, reembed: 0 });
+    expect(report).toEqual({ scrape: 0, embed: 0, reembed: 0, screenshot: 1 });
+    expect(queue.calls).toEqual([{ id: expect.any(String), type: 'screenshot' }]);
+  });
+
+  test('skips screenshot reconciliation when no client is configured', () => {
+    const db = makeDb();
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/l',
+      content: 'body',
+      contentHash: 'h',
+      scrapedAt: 1,
+    });
+    const queue = recordingQueue();
+
+    const report = reconcileEnrichment(queue, db, undefined, false);
+
+    expect(report).toEqual({ scrape: 0, embed: 0, reembed: 0, screenshot: 0 });
     expect(queue.calls).toEqual([]);
   });
 });

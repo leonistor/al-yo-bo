@@ -274,6 +274,30 @@ export function listBookmarkIdsMissingContent(db: Database): string[] {
 }
 
 /**
+ * Bookmarks that still need a screenshot (ARCHITECTURE §8, post-simplification):
+ * they have neither a local `metadata.image.screenshotPath` nor a remote
+ * `metadata.image.ogImageUrl` — the placeholder fallback in the UI is the last
+ * resort, so reconciliation retries the capture on the next start.
+ */
+export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
+  return db
+    .query<{ id: Uint8Array }, []>(
+      `SELECT id FROM bookmarks
+        WHERE status = 'active'
+          AND (
+            metadata IS NULL
+            OR json_extract(metadata, '$.image.screenshotPath') IS NULL
+          )
+          AND (
+            metadata IS NULL
+            OR json_extract(metadata, '$.image.ogImageUrl') IS NULL
+          )`,
+    )
+    .all()
+    .map((row) => bytesToUuid(row.id));
+}
+
+/**
  * Rebuilds the FTS5 index from the bookmarks table (the `reindex` job, §8). The
  * trigger-sync normally keeps it current; this repairs drift or corruption.
  * Returns the number of indexed rows.

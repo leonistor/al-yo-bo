@@ -1,19 +1,19 @@
 import type { Database } from 'bun:sqlite';
 
 import {
-  createImportBatch,
-  deleteImportBatch,
-  getImportBatchById,
-  listStagedBatches,
-  setImportBatchStatus,
-} from '@al-yo-bo/db';
-import { ingestBookmarks, parseCollection, resolveVocabulary } from '@al-yo-bo/importer';
-import type { ImportReport, ImportedBookmark, VocabularyProposal } from '@al-yo-bo/shared';
-import { uuidToBytes } from '@al-yo-bo/shared';
+  fallbackExtraction,
+  ingestBookmarks,
+  parseCollection,
+  resolveVocabulary,
+  type ExtractionClient,
+  type ExtractionResult,
+} from '@al-yo-bo/importer';
+import type { ImportedBookmark } from '@al-yo-bo/shared';
 
 import type { JobScheduler } from './enrichment.ts';
 
-export interface ImportPreview {
+export interface ImportPreview extends ExtractionResult {
+  /** Re-run of the deterministic parser — cheap, used to report `skipped` lines. */
   parsed: number;
   skipped: number;
   bookmarks: ImportedBookmark[];
@@ -23,157 +23,87 @@ export interface ImportOptions {
   file?: string;
 }
 
-/** A staged import batch and the vocabulary proposals awaiting review for it. */
-export interface StagedBatch {
-  id: string;
-  file: string | null;
-  bookmarkCount: number;
-  proposals: VocabularyProposal[];
-}
-
 export interface ImportServiceDeps {
   db: Database;
   jobs: JobScheduler;
+  /** LLM-backed extraction; `null` falls back to the deterministic parser. */
+  extract: ExtractionClient | null;
 }
 
 export interface ImportService {
-  preview(markdown: string): ImportPreview;
-  /** Two-phase import: resolves vocabulary; stages when proposals exist. */
-  import(markdown: string, datasetId: string, options?: ImportOptions): ImportReport;
-  /** Commits a staged batch after review resolved its proposals. */
-  commit(batchId: string): ImportReport;
-  /** Discards a staged batch and its still-proposed vocabulary. */
-  discard(batchId: string): void;
-  /** Staged batches with their proposals, for the vocabulary review page. */
-  listStaged(datasetId: string): StagedBatch[];
+  /**
+   * Extraction preview (ARCHITECTURE §7 stage 1, post-simplification). Never
+   * writes — used by the Import page's "Extract" button before commit.
+   */
+  preview(text: string): Promise<ImportPreview>;
+  /** Direct-commit import: resolves vocabulary, ingests, enqueues enrichment. */
+  import(text: string, datasetId: string, options?: ImportOptions): Promise<ImportPreview>;
 }
 
 /**
- * Markdown collection import (ARCHITECTURE §7 Stage 1). Preview never writes.
- * Import resolves the file's vocabulary against the dataset: when every name
- * resolves to existing vocabulary the import commits immediately; when anything
- * is new, the batch is staged in `import_batches` and committed later by the
- * review flow (after the proposed vocabulary is accepted/merged/rejected).
+ * Markdown collection import (ARCHITECTURE §7 stage 1, post-simplification).
+ * The extraction path (LLM or deterministic fallback) is followed by a single
+ * ingest pass that auto-creates any missing vocabulary as active.
+ *
+ * No staging, no review, no proposals. The user reviews and edits the preview
+ * in the UI before the import button commits.
  */
 export function createImportService(deps: ImportServiceDeps): ImportService {
-  const { db, jobs } = deps;
+  const { db, jobs, extract } = deps;
 
-  function enqueueScrapes(report: ImportReport): ImportReport {
+  async function extractBookmarks(text: string): Promise<ExtractionResult> {
+    if (!extract) {
+      const { bookmarks, skipped } = parseCollection(text);
+      return { bookmarks, provider: 'fallback', warnings: skipped > 0 ? [] : undefined };
+    }
+    try {
+      const bookmarks = await extract.extract(text);
+      return { bookmarks, provider: 'llm' };
+    } catch (error) {
+      console.warn('[import] extraction failed, falling back to deterministic parser', error);
+      return {
+        bookmarks: fallbackExtraction(text),
+        provider: 'fallback',
+        warnings: ['LLM extraction failed; falling back to deterministic parser.'],
+      };
+    }
+  }
+
+  function enqueueScrapes(report: { addedIds: string[] }): void {
     for (const id of report.addedIds) {
       jobs.enqueue(id, 'scrape');
+      jobs.enqueue(id, 'screenshot');
     }
-    return report;
   }
 
   return {
-    preview(markdown) {
-      const { bookmarks, skipped } = parseCollection(markdown);
-      return { parsed: bookmarks.length, skipped, bookmarks };
-    },
-
-    import(markdown, datasetId, options = {}) {
-      const { bookmarks, skipped } = parseCollection(markdown);
-      const resolution = resolveVocabulary(db, datasetId, bookmarks);
-
-      // Nothing new: commit immediately, fully automatic.
-      if (resolution.proposals.length === 0) {
-        const report = ingestBookmarks(db, datasetId, bookmarks, resolution, {
-          file: options.file,
-          skipped,
-        });
-        return enqueueScrapes(report);
-      }
-
-      // New vocabulary proposed: stage the batch for review.
-      const batch = createImportBatch(db, {
-        datasetId,
-        file: options.file,
-        bookmarks,
-      });
+    async preview(text) {
+      const extraction = await extractBookmarks(text);
+      const parsed = parseCollection(text);
       return {
-        added: 0,
-        updated: 0,
-        skipped,
-        categoriesCreated: 0,
-        tagsAssigned: 0,
-        parsed: bookmarks.length,
-        bookmarks,
-        addedIds: [],
-        staged: true,
-        batchId: batch.id,
-        proposals: resolution.proposals,
+        ...extraction,
+        parsed: parsed.bookmarks.length,
+        skipped: parsed.skipped,
+        bookmarks: extraction.bookmarks,
       };
     },
 
-    commit(batchId) {
-      const batch = getImportBatchById(db, batchId);
-      if (!batch) {
-        throw new Error(`Import batch ${batchId} not found`);
-      }
-      if (batch.status !== 'staged') {
-        throw new Error(`Import batch ${batchId} is ${batch.status}, not staged`);
-      }
-      // Re-resolve: the review flow may have accepted/merged/rejected the
-      // proposed vocabulary since staging. Remaining proposals mean the review
-      // is incomplete — refuse to commit.
-      const resolution = resolveVocabulary(db, batch.datasetId, batch.bookmarks);
-      if (resolution.proposals.length > 0) {
-        throw new Error(
-          `Import batch ${batchId} still has unresolved vocabulary: ${resolution.proposals
-            .map((p) => `${p.kind} "${p.name}"`)
-            .join(', ')}`,
-        );
-      }
-      const report = ingestBookmarks(db, batch.datasetId, batch.bookmarks, resolution, {
-        file: batch.file ?? undefined,
+    async import(text, datasetId, options = {}) {
+      const extraction = await extractBookmarks(text);
+      const parsed = parseCollection(text);
+      const bookmarks = extraction.bookmarks;
+      const resolution = resolveVocabulary(db, datasetId, bookmarks);
+      const report = ingestBookmarks(db, datasetId, bookmarks, resolution, {
+        file: options.file,
+        skipped: parsed.skipped,
       });
-      setImportBatchStatus(db, batchId, 'committed');
-      return enqueueScrapes(report);
-    },
-
-    discard(batchId) {
-      const batch = getImportBatchById(db, batchId);
-      if (!batch) {
-        throw new Error(`Import batch ${batchId} not found`);
-      }
-      // Delete the still-proposed vocabulary this batch created, then the batch.
-      for (const name of new Set(
-        batch.bookmarks.flatMap((b) => [b.category, b.subsection, ...b.tags]),
-      )) {
-        if (!name) {
-          continue;
-        }
-        deleteProposedByName(db, batch.datasetId, name);
-      }
-      deleteImportBatch(db, batchId);
-    },
-
-    listStaged(datasetId) {
-      return listStagedBatches(db, datasetId).map((batch) => {
-        // Re-resolve the batch's stored bookmarks: proposals are the names that
-        // still have no active entry (the review flow may have resolved some).
-        const resolution = resolveVocabulary(db, batch.datasetId, batch.bookmarks);
-        return {
-          id: batch.id,
-          file: batch.file,
-          bookmarkCount: batch.bookmarks.length,
-          proposals: resolution.proposals,
-        };
-      });
+      enqueueScrapes(report);
+      return {
+        ...extraction,
+        parsed: parsed.bookmarks.length,
+        skipped: parsed.skipped,
+        bookmarks,
+      };
     },
   };
-}
-
-function deleteProposedByName(db: Database, datasetId: string, name: string): void {
-  db.query(`DELETE FROM sections WHERE dataset_id = ? AND name = ? AND status = 'proposed'`).run(
-    uuidToBytes(datasetId),
-    name,
-  );
-  db.query(`DELETE FROM categories WHERE dataset_id = ? AND name = ? AND status = 'proposed'`).run(
-    uuidToBytes(datasetId),
-    name,
-  );
-  db.query(
-    `DELETE FROM tags WHERE dataset_id = ? AND name = ? AND category_id IS NULL AND status = 'proposed'`,
-  ).run(uuidToBytes(datasetId), name);
 }

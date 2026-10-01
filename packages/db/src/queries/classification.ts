@@ -4,8 +4,7 @@ import { bytesToUuid, newIdBytes, uuidToBytes, type Tag } from '@al-yo-bo/shared
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
 
-const TAG_COLUMNS =
-  'id, dataset_id, category_id, name, description, status, merged_into_id, created_at';
+const TAG_COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';
 
 export interface ClassificationRunInput {
   bookmarkId: string;

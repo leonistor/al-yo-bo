@@ -11,7 +11,6 @@ import {
   createClassificationResult,
   createClassificationRun,
   createDataset,
-  createImportBatch,
   createSection,
   createTag,
   getDatasetByName,
@@ -20,7 +19,6 @@ import {
   listBookmarks,
   listCategories,
   listSections,
-  listStagedBatches,
   listTags,
   openDatabase,
   setupDatabase,
@@ -63,7 +61,6 @@ function populate(db: Database, datasetId: string, slug: string): Populated {
     dims: 1,
     embedding: new Uint8Array([0, 0, 0, 0]),
   });
-  createImportBatch(db, { datasetId, file: 'collection.md', bookmarks: [] });
 
   return { bookmarkId: bookmark.id };
 }
@@ -82,7 +79,7 @@ describe('clearDatasetContent', () => {
 
     const report = clearDatasetContent(db, wipe.id);
 
-    expect(report).toEqual({ bookmarks: 1, importBatches: 1, tags: 1, categories: 1, sections: 1 });
+    expect(report).toEqual({ bookmarks: 1, tags: 1, categories: 1, sections: 1 });
 
     // Dataset row survives so the name can be reused for a fresh import.
     expect(getDatasetByName(db, 'wipe')).not.toBeNull();
@@ -92,7 +89,6 @@ describe('clearDatasetContent', () => {
     expect(listTags(db, wipe.id)).toHaveLength(0);
     expect(listCategories(db, wipe.id)).toHaveLength(0);
     expect(listSections(db, wipe.id)).toHaveLength(0);
-    expect(listStagedBatches(db, wipe.id)).toHaveLength(0);
     expect(keywordSearch(db, { q: 'body', datasetId: wipe.id })).toHaveLength(0);
 
     // Child rows cascade away with the bookmark.
@@ -122,7 +118,6 @@ describe('clearDatasetContent', () => {
     const empty = createDataset(db, 'empty');
     expect(clearDatasetContent(db, empty.id)).toEqual({
       bookmarks: 0,
-      importBatches: 0,
       tags: 0,
       categories: 0,
       sections: 0,

@@ -1,6 +1,4 @@
-export type TagStatus = 'active' | 'proposed' | 'deprecated' | 'rejected';
-
-export type CategoryStatus = 'active' | 'proposed' | 'rejected';
+export type TagStatus = 'active' | 'deprecated';
 
 export type BookmarkStatus = 'active' | 'invalid';
 
@@ -11,8 +9,6 @@ export type AssignmentSource = 'classifier' | 'user' | 'import';
 export type SearchMode = 'keyword' | 'semantic' | 'hybrid';
 
 export type BookmarkSort = 'created_at' | 'updated_at' | 'title';
-
-export type ImportBatchStatus = 'staged' | 'committed' | 'discarded';
 
 export interface Dataset {
   id: string;
@@ -25,8 +21,6 @@ export interface Section {
   datasetId: string;
   name: string;
   description: string | null;
-  status: 'active' | 'proposed' | 'rejected';
-  mergedIntoId: string | null;
   createdAt: number;
 }
 
@@ -36,8 +30,6 @@ export interface Category {
   sectionId: string | null;
   name: string;
   description: string | null;
-  status: CategoryStatus;
-  mergedIntoId: string | null;
   createdAt: number;
 }
 
@@ -47,8 +39,8 @@ export interface Tag {
   categoryId: string | null;
   name: string;
   description: string | null;
+  /** Lifecycle: `active` is normal; `deprecated` keeps the row for evidence but excludes it from new assignments. */
   status: TagStatus;
-  mergedIntoId: string | null;
   createdAt: number;
 }
 
@@ -77,8 +69,17 @@ export interface BookmarkTagView {
   confidence: number | null;
 }
 
+/** Visual references parsed from `bookmarks.metadata.image`. */
+export interface BookmarkImage {
+  /** og:image URL discovered at scrape/import time (may be a remote URL). */
+  ogImageUrl: string | null;
+  /** Local path under `data/screenshots/`, relative to the server root. */
+  screenshotPath: string | null;
+}
+
 export interface BookmarkWithTags extends Bookmark {
   tags: BookmarkTagView[];
+  image?: BookmarkImage;
 }
 
 export interface CategoryAggregate {
@@ -151,14 +152,19 @@ export interface BookmarkListResponse {
   pagination: Pagination;
 }
 
+/**
+ * A bookmark extracted from arbitrary text. `category` is the most specific
+ * category name available; the import pipeline auto-creates any missing
+ * vocabulary as active. (Phase 0 simplification: there is no separate
+ * `subsection` field — the markdown parser flattens H2/H3 into one category.)
+ */
 export interface ImportedBookmark {
   url: string;
   title: string | null;
   description: string | null;
   category: string | null;
-  subsection: string | null;
   priority: number | null;
-  /** Frontmatter-derived tag names; `[]` when the file has no frontmatter tags. */
+  /** Tag names declared in the source (frontmatter, etc.). */
   tags: string[];
 }
 
@@ -172,18 +178,6 @@ export interface ReviewCandidate {
   runId: string;
 }
 
-/** A vocabulary name the import could not resolve to an active entry. */
-export interface VocabularyProposal {
-  kind: 'section' | 'category' | 'tag';
-  /** Entity id of the `proposed` row (for review actions). */
-  id: string;
-  name: string;
-  /** Raw source context: H2 heading (section/category) or frontmatter tag. */
-  source: string;
-  /** Number of bookmarks in the batch that reference this proposal. */
-  count: number;
-}
-
 export interface ImportReport {
   added: number;
   updated: number;
@@ -195,10 +189,4 @@ export interface ImportReport {
   bookmarks: ImportedBookmark[];
   /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §8). */
   addedIds: string[];
-  /** When the import was staged for vocabulary review instead of committed. */
-  staged?: boolean;
-  /** `import_batches` id when staged; commit/discard via the review flow. */
-  batchId?: string;
-  /** Proposed vocabulary awaiting review (present when staged). */
-  proposals?: VocabularyProposal[];
 }

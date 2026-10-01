@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createBookmark, createCategory, createTag } from '@al-yo-bo/db';
+import { createBookmark, createCategory, createTag, setTagStatus } from '@al-yo-bo/db';
 
 import { NotFoundError } from '../src/errors.ts';
 import { createVocabularyService } from '../src/services/vocabulary.ts';
@@ -17,8 +17,8 @@ describe('VocabularyService.setTagStatus', () => {
       datasetId: db.datasetId,
       name: 'rust',
       categoryId: category.id,
-      status: 'proposed',
     });
+    setTagStatus(db, tag.id, 'deprecated');
     const inScopeA = createBookmark(db, {
       datasetId: db.datasetId,
       url: 'https://example.com/a',
@@ -52,7 +52,6 @@ describe('VocabularyService.setTagStatus', () => {
       datasetId: db.datasetId,
       name: 'rust',
       categoryId: category.id,
-      status: 'active',
     });
     createBookmark(db, {
       datasetId: db.datasetId,

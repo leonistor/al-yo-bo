@@ -9,8 +9,8 @@ import {
   createTag,
   getBookmarkTags,
   getBookmarksWithTagsByIds,
-  listProposedTags,
   openDatabase,
+  setTagStatus,
   setupDatabase,
 } from '@al-yo-bo/db';
 import type { RankedCandidate, VectorFilter, VectorIndex } from '@al-yo-bo/shared';
@@ -65,26 +65,17 @@ interface Fixture {
   db: Database;
   datasetId: string;
   bookmarkId: string;
-  tagIds: { rust: string; webdev: string; proposedOld: string };
+  tagIds: { rust: string; webdev: string };
 }
 
 /** One category ("dev") with scoped active tags; bookmark in that category. */
 function makeFixture(db: Database): Fixture {
   const datasetId = createDataset(db, 'test').id;
   const category = createCategory(db, { datasetId, name: 'dev' });
-  const rust = createTag(db, {
-    datasetId,
-    name: 'rust',
-    categoryId: category.id,
-    status: 'active',
-  });
-  const webdev = createTag(db, {
-    datasetId,
-    name: 'webdev',
-    categoryId: category.id,
-    status: 'active',
-  });
-  createTag(db, { datasetId, name: 'inactive', categoryId: category.id, status: 'deprecated' });
+  const rust = createTag(db, { datasetId, name: 'rust', categoryId: category.id });
+  const webdev = createTag(db, { datasetId, name: 'webdev', categoryId: category.id });
+  const deprecated = createTag(db, { datasetId, name: 'inactive', categoryId: category.id });
+  setTagStatus(db, deprecated.id, 'deprecated');
   const { id: bookmarkId } = createBookmark(db, {
     datasetId,
     url: 'https://example.com/rust',
@@ -97,7 +88,7 @@ function makeFixture(db: Database): Fixture {
     db,
     datasetId,
     bookmarkId,
-    tagIds: { rust: rust.id, webdev: webdev.id, proposedOld: '' },
+    tagIds: { rust: rust.id, webdev: webdev.id },
   };
 }
 
@@ -193,17 +184,16 @@ describe('classifyBookmark', () => {
     expect(tags[0]!.source).toBe('user');
   });
 
-  test('unknown labels become proposed tags and are never auto-assigned', async () => {
+  test('unknown labels are recorded as unknown, never auto-assigned, never propose a tag', async () => {
     const outcome = await classifyBookmark(
       makeDeps(db, stubClassifier({ rust: 0.9, mystery: 0.99 })),
       fixture.bookmarkId,
     );
 
-    expect(outcome.proposed).toBe(1);
-    expect(outcome.assigned).toBe(1); // only rust; mystery is proposed
-    const proposed = listProposedTags(db, fixture.datasetId);
-    expect(proposed.map((tag) => tag.name)).toEqual(['mystery']);
-    expect(getBookmarkTags(db, fixture.bookmarkId).map((tag) => tag.name)).toEqual(['rust']);
+    expect(outcome.unknown).toBe(1);
+    expect(outcome.assigned).toBe(1);
+    const tagNames = getBookmarkTags(db, fixture.bookmarkId).map((tag) => tag.name);
+    expect(tagNames).toEqual(['rust']);
   });
 
   test('skips without a classifier or without candidates', async () => {
@@ -211,7 +201,7 @@ describe('classifyBookmark', () => {
       status: 'skipped',
       runs: 0,
       assigned: 0,
-      proposed: 0,
+      unknown: 0,
     });
 
     const emptyDb = makeDb();
@@ -223,7 +213,7 @@ describe('classifyBookmark', () => {
       status: 'skipped',
       runs: 0,
       assigned: 0,
-      proposed: 0,
+      unknown: 0,
     });
   });
 
@@ -231,12 +221,7 @@ describe('classifyBookmark', () => {
     const category = createCategory(db, { datasetId: fixture.datasetId, name: 'big' });
     const names = Array.from({ length: MAX_QUESTIONS_PER_CALL + 5 }, (_, index) => `tag-${index}`);
     for (const name of names) {
-      createTag(db, {
-        datasetId: fixture.datasetId,
-        name,
-        categoryId: category.id,
-        status: 'active',
-      });
+      createTag(db, { datasetId: fixture.datasetId, name, categoryId: category.id });
     }
     const { id } = createBookmark(db, {
       datasetId: fixture.datasetId,

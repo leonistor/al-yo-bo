@@ -146,7 +146,7 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
       if (!getTagByName(db, dataset.id, name, null)) {
         report.tagsCreated += 1;
       }
-      createTag(db, { datasetId: dataset.id, name, status: 'active' });
+      createTag(db, { datasetId: dataset.id, name });
     }
 
     for (const entry of seed.bookmarks) {

@@ -72,8 +72,7 @@ for (const file of files) {
       metadata: {
         import: {
           file,
-          section: entry.category,
-          subsection: entry.subsection,
+          category: entry.category,
           priority: entry.priority,
         },
       },

@@ -1,16 +1,10 @@
 import type { Database } from 'bun:sqlite';
 
-import {
-  bytesToUuid,
-  newIdBytes,
-  uuidToBytes,
-  type Category,
-  type CategoryStatus,
-} from '@al-yo-bo/shared';
+import { bytesToUuid, newIdBytes, uuidToBytes, type Category } from '@al-yo-bo/shared';
 
 import { mapCategory, type CategoryRow } from '../row-mapping.ts';
 
-const COLUMNS = 'id, dataset_id, section_id, name, description, status, merged_into_id, created_at';
+const COLUMNS = 'id, dataset_id, section_id, name, description, created_at';
 
 export function listCategories(db: Database, datasetId: string): Category[] {
   return db
@@ -18,19 +12,6 @@ export function listCategories(db: Database, datasetId: string): Category[] {
       `SELECT ${COLUMNS} FROM categories WHERE dataset_id = ? ORDER BY name`,
     )
     .all(uuidToBytes(datasetId))
-    .map(mapCategory);
-}
-
-export function listCategoriesByStatus(
-  db: Database,
-  datasetId: string,
-  status: CategoryStatus,
-): Category[] {
-  return db
-    .query<CategoryRow, [Uint8Array, string]>(
-      `SELECT ${COLUMNS} FROM categories WHERE dataset_id = ? AND status = ? ORDER BY name`,
-    )
-    .all(uuidToBytes(datasetId), status)
     .map(mapCategory);
 }
 
@@ -55,7 +36,6 @@ export interface CategoryInput {
   name: string;
   description?: string | null;
   sectionId?: string | null;
-  status?: CategoryStatus;
 }
 
 /** Returns the existing category when the name is taken (unique per dataset). */
@@ -66,35 +46,20 @@ export function createCategory(db: Database, input: CategoryInput): Category {
   }
   const id = newIdBytes();
   db.query(
-    `INSERT INTO categories (id, dataset_id, section_id, name, description, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO categories (id, dataset_id, section_id, name, description)
+     VALUES (?, ?, ?, ?, ?)`,
   ).run(
     id,
     uuidToBytes(input.datasetId),
     input.sectionId ? uuidToBytes(input.sectionId) : null,
     input.name,
     input.description ?? null,
-    input.status ?? 'active',
   );
   const created = getCategoryById(db, bytesToUuid(id));
   if (!created) {
     throw new Error('Category insert did not persist');
   }
   return created;
-}
-
-export function setCategoryStatus(
-  db: Database,
-  id: string,
-  status: CategoryStatus,
-): Category | null {
-  const result = db
-    .query('UPDATE categories SET status = ? WHERE id = ?')
-    .run(status, uuidToBytes(id));
-  if (result.changes === 0) {
-    return null;
-  }
-  return getCategoryById(db, id);
 }
 
 export function updateCategory(
@@ -104,7 +69,6 @@ export function updateCategory(
     name?: string;
     description?: string | null;
     sectionId?: string | null;
-    mergedIntoId?: string | null;
   },
 ): Category | null {
   const current = getCategoryById(db, id);
@@ -112,14 +76,12 @@ export function updateCategory(
     return null;
   }
   const sectionId = patch.sectionId === undefined ? current.sectionId : patch.sectionId;
-  const mergedIntoId = patch.mergedIntoId === undefined ? current.mergedIntoId : patch.mergedIntoId;
   db.query(
-    'UPDATE categories SET name = ?, description = ?, section_id = ?, merged_into_id = ? WHERE id = ?',
+    'UPDATE categories SET name = ?, description = ?, section_id = ? WHERE id = ?',
   ).run(
     patch.name ?? current.name,
     patch.description === undefined ? current.description : patch.description,
     sectionId ? uuidToBytes(sectionId) : null,
-    mergedIntoId ? uuidToBytes(mergedIntoId) : null,
     uuidToBytes(id),
   );
   return getCategoryById(db, id);

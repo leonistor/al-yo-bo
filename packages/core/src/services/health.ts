@@ -1,8 +1,10 @@
 import type { ClassifierClient } from '@al-yo-bo/classifier';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
+import type { ExtractionClient } from '@al-yo-bo/importer';
 
 import type { CoreConfig } from '../config.ts';
 import type { ScrapeFn } from '../scrape.ts';
+import type { ScreenshotClient } from '../screenshot.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 
 /** Minimal view of the queue needed for reporting; avoids depending on the queue type. */
@@ -14,6 +16,16 @@ export interface HealthJobs {
 export interface ChatHealth {
   available: boolean;
   model: string | null;
+}
+
+/** Optional extraction/screenshot availability supplied by the app edge. */
+export interface ExtractHealth {
+  available: boolean;
+  provider: 'llm' | 'fallback';
+}
+
+export interface ScreenshotHealth {
+  available: boolean;
 }
 
 export interface HealthReport {
@@ -37,6 +49,8 @@ export interface HealthReport {
     reachable: boolean;
   };
   chat: ChatHealth;
+  extract: ExtractHealth;
+  screenshot: ScreenshotHealth;
 }
 
 export interface HealthServiceDeps {
@@ -46,6 +60,10 @@ export interface HealthServiceDeps {
   jobs?: HealthJobs;
   scrape?: ScrapeFn;
   classifier?: ClassifierClient;
+  /** LLM extraction port; `null` falls back to the deterministic parser. */
+  extract?: ExtractionClient | null;
+  /** Screenshot capture port; absent = screenshot jobs are a no-op. */
+  screenshot?: ScreenshotClient | null;
 }
 
 export interface HealthService {
@@ -70,7 +88,7 @@ const DEFAULT_CHAT: ChatHealth = { available: false, model: null };
  * probes clobbering each other.
  */
 export function createHealthService(deps: HealthServiceDeps): HealthService {
-  const { vector, config, embeddings, jobs, scrape, classifier } = deps;
+  const { vector, config, embeddings, jobs, scrape, classifier, extract, screenshot } = deps;
   let probe: { at: number; reachable: boolean } | null = null;
 
   async function probeOllaya(): Promise<boolean> {
@@ -114,6 +132,13 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
           reachable: classifier ? await probeOllaya() : false,
         },
         chat,
+        extract: {
+          available: true, // always available — the deterministic fallback always works
+          provider: extract ? 'llm' : 'fallback',
+        },
+        screenshot: {
+          available: Boolean(screenshot),
+        },
       };
     },
   };
