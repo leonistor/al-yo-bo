@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite';
 
 import { bytesToUuid, uuidToBytes } from '@al-yo-bo/shared';
 
+import { prepared } from './statements.ts';
+
 export interface EmbeddingRecord {
   bookmarkId: string;
   model: string;
@@ -24,10 +26,10 @@ interface EmbeddingRow {
 }
 
 export function listEmbeddings(db: Database): EmbeddingRecord[] {
-  return db
-    .query<EmbeddingRow, []>(
-      'SELECT bookmark_id, model, dims, embedding FROM bookmark_embeddings',
-    )
+  return prepared<EmbeddingRow, []>(
+    db,
+    'SELECT bookmark_id, model, dims, embedding FROM bookmark_embeddings',
+  )
     .all()
     .map((row) => ({
       bookmarkId: bytesToUuid(row.bookmark_id),
@@ -38,11 +40,10 @@ export function listEmbeddings(db: Database): EmbeddingRecord[] {
 }
 
 export function getEmbedding(db: Database, bookmarkId: string): EmbeddingRecord | null {
-  const row = db
-    .query<EmbeddingRow, [Uint8Array]>(
-      'SELECT bookmark_id, model, dims, embedding FROM bookmark_embeddings WHERE bookmark_id = ?',
-    )
-    .get(uuidToBytes(bookmarkId));
+  const row = prepared<EmbeddingRow, [Uint8Array]>(
+    db,
+    'SELECT bookmark_id, model, dims, embedding FROM bookmark_embeddings WHERE bookmark_id = ?',
+  ).get(uuidToBytes(bookmarkId));
   return row
     ? {
         bookmarkId: bytesToUuid(row.bookmark_id),
@@ -55,13 +56,13 @@ export function getEmbedding(db: Database, bookmarkId: string): EmbeddingRecord 
 
 /** Bookmarks with scraped content but no embedding yet (startup reconciliation). */
 export function listBookmarkIdsMissingEmbeddings(db: Database): string[] {
-  return db
-    .query<{ id: Uint8Array }, []>(
-      `SELECT b.id FROM bookmarks b
+  return prepared<{ id: Uint8Array }, []>(
+    db,
+    `SELECT b.id FROM bookmarks b
         WHERE b.content IS NOT NULL
           AND b.status = 'active'
           AND NOT EXISTS (SELECT 1 FROM bookmark_embeddings e WHERE e.bookmark_id = b.id)`,
-    )
+  )
     .all()
     .map((row) => bytesToUuid(row.id));
 }
@@ -72,18 +73,19 @@ export function listBookmarkIdsMissingEmbeddings(db: Database): string[] {
  * reconciliation drives).
  */
 export function listEmbeddingModelMismatches(db: Database, model: string): string[] {
-  return db
-    .query<{ bookmark_id: Uint8Array }, [string]>(
-      `SELECT e.bookmark_id FROM bookmark_embeddings e
+  return prepared<{ bookmark_id: Uint8Array }, [string]>(
+    db,
+    `SELECT e.bookmark_id FROM bookmark_embeddings e
          JOIN bookmarks b ON b.id = e.bookmark_id
         WHERE e.model != ? AND b.status = 'active'`,
-    )
+  )
     .all(model)
     .map((row) => bytesToUuid(row.bookmark_id));
 }
 
 export function upsertEmbedding(db: Database, input: EmbeddingInput): void {
-  db.query(
+  prepared(
+    db,
     `INSERT INTO bookmark_embeddings (bookmark_id, model, dims, embedding)
      VALUES (?, ?, ?, ?)
      ON CONFLICT (bookmark_id) DO UPDATE SET
@@ -94,8 +96,8 @@ export function upsertEmbedding(db: Database, input: EmbeddingInput): void {
 }
 
 export function deleteEmbedding(db: Database, bookmarkId: string): boolean {
-  const result = db
-    .query('DELETE FROM bookmark_embeddings WHERE bookmark_id = ?')
-    .run(uuidToBytes(bookmarkId));
+  const result = prepared(db, 'DELETE FROM bookmark_embeddings WHERE bookmark_id = ?').run(
+    uuidToBytes(bookmarkId),
+  );
   return result.changes > 0;
 }

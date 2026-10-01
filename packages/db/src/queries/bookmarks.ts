@@ -17,6 +17,7 @@ import {
 
 import { mapBookmark, parseBookmarkImage, type BookmarkRow } from '../row-mapping.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
+import { prepared } from './statements.ts';
 
 const COLUMNS =
   'id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
@@ -86,6 +87,20 @@ function sortColumn(sort: BookmarkSort = 'created_at'): string {
   }
 }
 
+/**
+ * SQLite's default host-parameter limit is 999; IN-lists are chunked well below
+ * it so large id sets never throw "too many SQL variables".
+ */
+const IN_CLAUSE_CHUNK = 500;
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CLAUSE_CHUNK) {
+    chunks.push(ids.slice(i, i + IN_CLAUSE_CHUNK));
+  }
+  return chunks;
+}
+
 function buildFilterClauses(filters: ListBookmarksFilters): {
   whereSql: string;
   params: SQLQueryBindings[];
@@ -122,43 +137,53 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
 }
 
 export function getBookmarkById(db: Database, id: string): Bookmark | null {
-  const row = db
-    .query<BookmarkRow, [Uint8Array]>(`SELECT ${COLUMNS} FROM bookmarks WHERE id = ?`)
-    .get(uuidToBytes(id));
+  const row = prepared<BookmarkRow, [Uint8Array]>(
+    db,
+    `SELECT ${COLUMNS} FROM bookmarks WHERE id = ?`,
+  ).get(uuidToBytes(id));
   return row ? mapBookmark(row) : null;
 }
 
 export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
-  const row = db
-    .query<BookmarkRow, [string]>(`SELECT ${COLUMNS} FROM bookmarks WHERE url = ?`)
-    .get(normalizeUrl(url));
+  const row = prepared<BookmarkRow, [string]>(
+    db,
+    `SELECT ${COLUMNS} FROM bookmarks WHERE url = ?`,
+  ).get(normalizeUrl(url));
   return row ? mapBookmark(row) : null;
 }
 
+/**
+ * Insert-then-read runs in one immediate transaction, closing the TOCTOU gap
+ * where another connection could write between the insert and the read-back.
+ */
 export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
-  const id = newIdBytes();
-  db.query(
-    `INSERT INTO bookmarks (id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
+  const run = db.transaction(() => {
+    const id = newIdBytes();
+    prepared(
+      db,
+      `INSERT INTO bookmarks (id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    uuidToBytes(input.datasetId),
-    normalizeUrl(input.url),
-    input.title ?? null,
-    input.description ?? null,
-    input.content ?? null,
-    input.metadata ? JSON.stringify(input.metadata) : null,
-    input.categoryId ? uuidToBytes(input.categoryId) : null,
-    input.contentHash ?? null,
-    input.scrapedAt ?? null,
-    input.status ?? 'active',
-    input.scrapeAttempts ?? 0,
-  );
-  const created = getBookmarkById(db, bytesToUuid(id));
-  if (!created) {
-    throw new Error('Bookmark insert did not persist');
-  }
-  return created;
+    ).run(
+      id,
+      uuidToBytes(input.datasetId),
+      normalizeUrl(input.url),
+      input.title ?? null,
+      input.description ?? null,
+      input.content ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+      input.categoryId ? uuidToBytes(input.categoryId) : null,
+      input.contentHash ?? null,
+      input.scrapedAt ?? null,
+      input.status ?? 'active',
+      input.scrapeAttempts ?? 0,
+    );
+    const created = getBookmarkById(db, bytesToUuid(id));
+    if (!created) {
+      throw new Error('Bookmark insert did not persist');
+    }
+    return created;
+  });
+  return run.immediate();
 }
 
 export function updateBookmark(
@@ -190,7 +215,8 @@ export function updateBookmark(
   const scrapeAttempts =
     patch.scrapeAttempts !== undefined ? patch.scrapeAttempts : current.scrapeAttempts;
 
-  db.query(
+  prepared(
+    db,
     `UPDATE bookmarks
         SET url = ?, title = ?, description = ?, content = ?, metadata = ?, category_id = ?, content_hash = ?, scraped_at = ?, status = ?, scrape_attempts = ?
       WHERE id = ?`,
@@ -228,41 +254,45 @@ export function upsertBookmarkByUrl(
 }
 
 export function deleteBookmark(db: Database, id: string): boolean {
-  const result = db.query('DELETE FROM bookmarks WHERE id = ?').run(uuidToBytes(id));
+  const result = prepared(db, 'DELETE FROM bookmarks WHERE id = ?').run(uuidToBytes(id));
   return result.changes > 0;
 }
 
 export function countBookmarks(db: Database, datasetId?: string): number {
   if (!datasetId) {
     return (
-      db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0
+      prepared<{ count: number }, []>(db, 'SELECT COUNT(*) AS count FROM bookmarks').get()?.count ??
+      0
     );
   }
   return (
-    db
-      .query<{ count: number }, [Uint8Array]>(
-        'SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ?',
-      )
-      .get(uuidToBytes(datasetId))?.count ?? 0
+    prepared<{ count: number }, [Uint8Array]>(
+      db,
+      'SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ?',
+    ).get(uuidToBytes(datasetId))?.count ?? 0
   );
 }
 
 /**
  * Batched id → status lookup, so callers filtering a candidate list (e.g. semantic
- * search) issue one query instead of one per id. Unknown ids are absent from the map.
+ * search) issue a few queries instead of one per id. Unknown ids are absent from
+ * the map.
  */
 export function getBookmarkStatuses(db: Database, ids: string[]): Map<string, BookmarkStatus> {
-  const unique = [...new Set(ids)];
-  if (unique.length === 0) {
-    return new Map();
+  const statuses = new Map<string, BookmarkStatus>();
+  for (const chunk of chunkIds(ids)) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    // Dynamic arity (varies with chunk size) — intentionally not cached.
+    const rows = db
+      .query<{ id: Uint8Array; status: string }, Uint8Array[]>(
+        `SELECT id, status FROM bookmarks WHERE id IN (${placeholders})`,
+      )
+      .all(...chunk.map(uuidToBytes));
+    for (const row of rows) {
+      statuses.set(bytesToUuid(row.id), row.status as BookmarkStatus);
+    }
   }
-  const placeholders = unique.map(() => '?').join(', ');
-  const rows = db
-    .query<{ id: Uint8Array; status: string }, Uint8Array[]>(
-      `SELECT id, status FROM bookmarks WHERE id IN (${placeholders})`,
-    )
-    .all(...unique.map(uuidToBytes));
-  return new Map(rows.map((row) => [bytesToUuid(row.id), row.status as BookmarkStatus]));
+  return statuses;
 }
 
 /**
@@ -271,10 +301,10 @@ export function getBookmarkStatuses(db: Database, ids: string[]): Map<string, Bo
  * retried on the next server start.
  */
 export function listBookmarkIdsMissingContent(db: Database): string[] {
-  return db
-    .query<{ id: Uint8Array }, []>(
-      `SELECT id FROM bookmarks WHERE scraped_at IS NULL AND status = 'active'`,
-    )
+  return prepared<{ id: Uint8Array }, []>(
+    db,
+    `SELECT id FROM bookmarks WHERE scraped_at IS NULL AND status = 'active'`,
+  )
     .all()
     .map((row) => bytesToUuid(row.id));
 }
@@ -286,9 +316,9 @@ export function listBookmarkIdsMissingContent(db: Database): string[] {
  * resort, so reconciliation retries the capture on the next start.
  */
 export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
-  return db
-    .query<{ id: Uint8Array }, []>(
-      `SELECT id FROM bookmarks
+  return prepared<{ id: Uint8Array }, []>(
+    db,
+    `SELECT id FROM bookmarks
         WHERE status = 'active'
           AND (
             metadata IS NULL
@@ -298,7 +328,7 @@ export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
             metadata IS NULL
             OR json_extract(metadata, '$.image.ogImageUrl') IS NULL
           )`,
-    )
+  )
     .all()
     .map((row) => bytesToUuid(row.id));
 }
@@ -310,12 +340,13 @@ export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
  */
 export function rebuildFts(db: Database): number {
   const run = db.transaction(() => {
-    db.query('DELETE FROM bookmark_fts').run();
-    db.query(
+    prepared(db, 'DELETE FROM bookmark_fts').run();
+    prepared(
+      db,
       `INSERT INTO bookmark_fts (bookmark_id, url, title, description, content)
        SELECT id, url, title, description, content FROM bookmarks`,
     ).run();
-    return db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmark_fts').get()!
+    return prepared<{ count: number }, []>(db, 'SELECT COUNT(*) AS count FROM bookmark_fts').get()!
       .count;
   });
   return run.immediate();
@@ -329,54 +360,50 @@ export function listBookmarks(
   const { whereSql, params } = buildFilterClauses(filters);
 
   const total =
-    db
-      .query<{ count: number }, SQLQueryBindings[]>(
-        `SELECT COUNT(*) AS count FROM bookmarks ${whereSql}`,
-      )
-      .get(...params)?.count ?? 0;
+    prepared<{ count: number }, SQLQueryBindings[]>(
+      db,
+      `SELECT COUNT(*) AS count FROM bookmarks ${whereSql}`,
+    ).get(...params)?.count ?? 0;
 
   const direction = filters.direction === 'asc' ? 'ASC' : 'DESC';
-  const rows = db
-    .query<BookmarkRow, SQLQueryBindings[]>(
-      `SELECT ${COLUMNS} FROM bookmarks ${whereSql}
+  const rows = prepared<BookmarkRow, SQLQueryBindings[]>(
+    db,
+    `SELECT ${COLUMNS} FROM bookmarks ${whereSql}
         ORDER BY ${sortColumn(filters.sort)} ${direction}, created_at DESC
         LIMIT ? OFFSET ?`,
-    )
-    .all(...params, limit, offset);
+  ).all(...params, limit, offset);
 
   return { items: hydrate(db, rows), total };
 }
 
 export function getBookmarksWithTagsByIds(db: Database, ids: string[]): BookmarkWithTags[] {
   const unique = [...new Set(ids)];
-  if (unique.length === 0) {
-    return [];
+  const byId = new Map<string, BookmarkWithTags>();
+  for (const chunk of chunkIds(unique)) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    // Dynamic arity (varies with chunk size) — intentionally not cached.
+    const rows = db
+      .query<BookmarkRow, Uint8Array[]>(
+        `SELECT ${COLUMNS} FROM bookmarks WHERE id IN (${placeholders})`,
+      )
+      .all(...chunk.map(uuidToBytes));
+    for (const bookmark of hydrate(db, rows)) {
+      byId.set(bookmark.id, bookmark);
+    }
   }
-
-  const placeholders = unique.map(() => '?').join(', ');
-  const rows = db
-    .query<BookmarkRow, Uint8Array[]>(
-      `SELECT ${COLUMNS} FROM bookmarks WHERE id IN (${placeholders})`,
-    )
-    .all(...unique.map(uuidToBytes));
-
-  const byId = new Map(hydrate(db, rows).map((bookmark) => [bookmark.id, bookmark]));
   return unique
     .map((id) => byId.get(id))
     .filter((bookmark): bookmark is BookmarkWithTags => bookmark !== undefined);
 }
 
 /**
- * Keyword candidates from FTS5, BM25-ranked (lower/negative is better). This is
- * the only SQL in the keyword path; `packages/search` fuses the ranked lists.
+ * Shared WHERE-clause builder for `keywordSearch`/`countKeywordMatches` so the
+ * two queries can never drift apart on filter semantics.
  */
-export function keywordSearch(db: Database, params: KeywordSearchParams): RankedCandidate[] {
-  const match = toFtsMatch(params.q);
-  if (!match) {
-    return [];
-  }
-
-  const { limit, offset } = clampPagination(params.limit, params.offset);
+function buildFtsWhere(
+  params: KeywordSearchParams,
+  match: string,
+): { where: string; bind: SQLQueryBindings[] } {
   const where = ['bookmark_fts MATCH ?'];
   const bind: SQLQueryBindings[] = [match];
 
@@ -405,20 +432,35 @@ export function keywordSearch(db: Database, params: KeywordSearchParams): Ranked
     bind.push(params.status);
   }
 
-  const rows = db
-    .query<{ id: Uint8Array; score: number; snippet: string }, SQLQueryBindings[]>(
-      // FTS5 column 4 is `content` (bookmark_id, url, title, description,
-      // content). snippet() returns '' when the match is only in another
-      // column (e.g. title), so fall back to the title for display.
-      `SELECT b.id AS id, bm25(bookmark_fts) AS score,
+  return { where: where.join(' AND '), bind };
+}
+
+/**
+ * Keyword candidates from FTS5, BM25-ranked (lower/negative is better). This is
+ * the only SQL in the keyword path; `packages/search` fuses the ranked lists.
+ */
+export function keywordSearch(db: Database, params: KeywordSearchParams): RankedCandidate[] {
+  const match = toFtsMatch(params.q);
+  if (!match) {
+    return [];
+  }
+
+  const { limit, offset } = clampPagination(params.limit, params.offset);
+  const { where, bind } = buildFtsWhere(params, match);
+
+  const rows = prepared<{ id: Uint8Array; score: number; snippet: string }, SQLQueryBindings[]>(
+    db,
+    // FTS5 column 4 is `content` (bookmark_id, url, title, description,
+    // content). snippet() returns '' when the match is only in another
+    // column (e.g. title), so fall back to the title for display.
+    `SELECT b.id AS id, bm25(bookmark_fts) AS score,
               COALESCE(NULLIF(snippet(bookmark_fts, 4, '[', ']', '…', 12), ''), b.title) AS snippet
          FROM bookmark_fts
          JOIN bookmarks b ON b.id = bookmark_fts.bookmark_id
-        WHERE ${where.join(' AND ')}
+        WHERE ${where}
         ORDER BY score
         LIMIT ? OFFSET ?`,
-    )
-    .all(...bind, limit, offset);
+  ).all(...bind, limit, offset);
 
   return rows.map((row, index) => ({
     bookmarkId: bytesToUuid(row.id),
@@ -435,42 +477,15 @@ export function countKeywordMatches(db: Database, params: KeywordSearchParams): 
     return 0;
   }
 
-  const where = ['bookmark_fts MATCH ?'];
-  const bind: SQLQueryBindings[] = [match];
-
-  if (params.datasetId) {
-    where.push('b.dataset_id = ?');
-    bind.push(uuidToBytes(params.datasetId));
-  }
-  if (params.categoryId) {
-    where.push('b.category_id = ?');
-    bind.push(uuidToBytes(params.categoryId));
-  }
-  if (params.tagId) {
-    where.push('b.id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?)');
-    bind.push(uuidToBytes(params.tagId));
-  }
-  if (params.dateFrom !== undefined) {
-    where.push('b.created_at >= ?');
-    bind.push(params.dateFrom);
-  }
-  if (params.dateTo !== undefined) {
-    where.push('b.created_at <= ?');
-    bind.push(params.dateTo);
-  }
-  if (params.status && params.status !== 'all') {
-    where.push('b.status = ?');
-    bind.push(params.status);
-  }
+  const { where, bind } = buildFtsWhere(params, match);
 
   return (
-    db
-      .query<{ count: number }, SQLQueryBindings[]>(
-        `SELECT COUNT(*) AS count
+    prepared<{ count: number }, SQLQueryBindings[]>(
+      db,
+      `SELECT COUNT(*) AS count
            FROM bookmark_fts
            JOIN bookmarks b ON b.id = bookmark_fts.bookmark_id
-          WHERE ${where.join(' AND ')}`,
-      )
-      .get(...bind)?.count ?? 0
+          WHERE ${where}`,
+    ).get(...bind)?.count ?? 0
   );
 }

@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { bytesToUuid, newIdBytes, uuidToBytes, type Tag } from '@al-yo-bo/shared';
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
+import { prepared } from './statements.ts';
 
 const TAG_COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';
 
@@ -40,23 +41,23 @@ export function listActiveTagsForScope(
 ): Tag[] {
   const datasetBytes = uuidToBytes(datasetId);
   const categoryBytes = categoryId ? uuidToBytes(categoryId) : null;
-  return db
-    .query<TagRow, [Uint8Array, Uint8Array | null, Uint8Array | null]>(
-      `SELECT ${TAG_COLUMNS} FROM tags
+  return prepared<TagRow, [Uint8Array, Uint8Array | null, Uint8Array | null]>(
+    db,
+    `SELECT ${TAG_COLUMNS} FROM tags
         WHERE dataset_id = ? AND status = 'active'
           AND (? IS NULL OR category_id = ? OR category_id IS NULL)
         ORDER BY name`,
-    )
+  )
     .all(datasetBytes, categoryBytes, categoryBytes)
     .map(mapTag);
 }
 
 /** Tag ids explicitly assigned by the user — classifier runs never touch these. */
 export function listUserTagIds(db: Database, bookmarkId: string): string[] {
-  return db
-    .query<{ tag_id: Uint8Array }, [Uint8Array]>(
-      "SELECT tag_id FROM bookmark_tags WHERE bookmark_id = ? AND source = 'user'",
-    )
+  return prepared<{ tag_id: Uint8Array }, [Uint8Array]>(
+    db,
+    "SELECT tag_id FROM bookmark_tags WHERE bookmark_id = ? AND source = 'user'",
+  )
     .all(uuidToBytes(bookmarkId))
     .map((row) => bytesToUuid(row.tag_id));
 }
@@ -69,21 +70,22 @@ export function listBookmarkIdsForCategoryScope(
 ): string[] {
   return (
     categoryId
-      ? db
-          .query<{ id: Uint8Array }, [Uint8Array, Uint8Array]>(
-            'SELECT id FROM bookmarks WHERE dataset_id = ? AND category_id = ?',
-          )
-          .all(uuidToBytes(datasetId), uuidToBytes(categoryId))
-      : db
-          .query<{ id: Uint8Array }, [Uint8Array]>('SELECT id FROM bookmarks WHERE dataset_id = ?')
-          .all(uuidToBytes(datasetId))
+      ? prepared<{ id: Uint8Array }, [Uint8Array, Uint8Array]>(
+          db,
+          'SELECT id FROM bookmarks WHERE dataset_id = ? AND category_id = ?',
+        ).all(uuidToBytes(datasetId), uuidToBytes(categoryId))
+      : prepared<{ id: Uint8Array }, [Uint8Array]>(
+          db,
+          'SELECT id FROM bookmarks WHERE dataset_id = ?',
+        ).all(uuidToBytes(datasetId))
   ).map((row) => bytesToUuid(row.id));
 }
 
 /** Inserts one classification run and returns its id (evidence is immutable). */
 export function createClassificationRun(db: Database, input: ClassificationRunInput): string {
   const id = newIdBytes();
-  db.query(
+  prepared(
+    db,
     `INSERT INTO classification_runs (id, bookmark_id, classifier, classifier_version, model, confidence)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -99,7 +101,8 @@ export function createClassificationRun(db: Database, input: ClassificationRunIn
 
 /** Inserts one immutable result row for a run. */
 export function createClassificationResult(db: Database, input: ClassificationResultInput): void {
-  db.query(
+  prepared(
+    db,
     `INSERT INTO classification_results (id, run_id, tag_id, probability, rank, selected, raw_label)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -137,7 +140,8 @@ export function createUnknownClassificationLabel(
   db: Database,
   input: UnknownClassificationLabelInput,
 ): void {
-  db.query(
+  prepared(
+    db,
     `INSERT INTO unknown_classification_labels (id, run_id, raw_label, probability)
      VALUES (?, ?, ?, ?)`,
   ).run(newIdBytes(), uuidToBytes(input.runId), input.rawLabel, input.probability);
@@ -148,16 +152,22 @@ export function listUnknownClassificationLabels(
   db: Database,
   runId: string,
 ): UnknownClassificationLabel[] {
-  return db
-    .query<
-      { id: Uint8Array; run_id: Uint8Array; raw_label: string; probability: number; created_at: number },
-      [Uint8Array]
-    >(
-      `SELECT id, run_id, raw_label, probability, created_at
+  return prepared<
+    {
+      id: Uint8Array;
+      run_id: Uint8Array;
+      raw_label: string;
+      probability: number;
+      created_at: number;
+    },
+    [Uint8Array]
+  >(
+    db,
+    `SELECT id, run_id, raw_label, probability, created_at
          FROM unknown_classification_labels
         WHERE run_id = ?
         ORDER BY probability DESC, raw_label`,
-    )
+  )
     .all(uuidToBytes(runId))
     .map((row) => ({
       id: bytesToUuid(row.id),

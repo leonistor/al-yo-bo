@@ -1,8 +1,8 @@
 import { Database } from 'bun:sqlite';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { bytesToUuid, newIdBytes, uuidToBytes } from '@al-yo-bo/shared';
 
@@ -200,6 +200,39 @@ describe('bookmark status', () => {
     expect(statuses.has(unknown)).toBe(false);
     expect(getBookmarkStatuses(db, []).size).toBe(0);
   });
+
+  test('IN-list lookups chunk past SQLite host-parameter limits', () => {
+    // 1200 ids exceeds SQLite's default host-parameter limit (999), so an
+    // unchunked IN (...) would throw "too many SQL variables".
+    const ids: string[] = [];
+    db.transaction(() => {
+      const insert = db.query(
+        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (let i = 0; i < 1200; i++) {
+        const id = newIdBytes();
+        insert.run(
+          id,
+          uuidToBytes(db.datasetId),
+          `https://chunk.test/${i}`,
+          `Chunk ${i}`,
+          'active',
+        );
+        ids.push(bytesToUuid(id));
+      }
+    }).immediate();
+
+    const unknown = '00000000-0000-0000-0000-000000000000';
+    const statuses = getBookmarkStatuses(db, [...ids, unknown]);
+    expect(statuses.size).toBe(1200);
+    expect(statuses.get(ids[0]!)).toBe('active');
+    expect(statuses.has(unknown)).toBe(false);
+
+    const hydrated = getBookmarksWithTagsByIds(db, ids);
+    expect(hydrated).toHaveLength(1200);
+    expect(hydrated[0]!.id).toBe(ids[0]!);
+    expect(hydrated[1199]!.id).toBe(ids[1199]!);
+  });
 });
 
 describe('tag assignments', () => {
@@ -273,7 +306,10 @@ describe('unknown classification labels', () => {
   });
 
   test('cascades away with the classification run', () => {
-    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://ucl-cascade.test' });
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://ucl-cascade.test',
+    });
     const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
     createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.9 });
 
@@ -481,14 +517,22 @@ describe('orphan evidence cleanup migration', () => {
     // PRAGMA foreign_keys is a no-op inside a transaction (see src/migrations.ts),
     // so the orphan fixtures are planted with bare statements, not wrapped.
     db.exec('PRAGMA foreign_keys = OFF');
-    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)')
-      .run(newIdBytes(), uuidToBytes(bookmark.id), orphanTagId, 'user');
+    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)').run(
+      newIdBytes(),
+      uuidToBytes(bookmark.id),
+      orphanTagId,
+      'user',
+    );
     db.query(
       'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
     ).run(newIdBytes(), runId, orphanTagId, 0.9);
     // Valid rows sharing the same tables must survive the cleanup.
-    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)')
-      .run(newIdBytes(), uuidToBytes(bookmark.id), uuidToBytes(tag.id), 'user');
+    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)').run(
+      newIdBytes(),
+      uuidToBytes(bookmark.id),
+      uuidToBytes(tag.id),
+      'user',
+    );
     db.query(
       'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
     ).run(newIdBytes(), runId, uuidToBytes(tag.id), 0.5);

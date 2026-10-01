@@ -2,6 +2,8 @@ import type { Database } from 'bun:sqlite';
 
 import { bytesToUuid, uuidToBytes, type ReviewCandidate } from '@al-yo-bo/shared';
 
+import { prepared } from './statements.ts';
+
 interface CandidateRow {
   bookmark_id: Uint8Array;
   url: string;
@@ -22,9 +24,9 @@ export function listBelowThresholdCandidates(
   threshold: number,
   limit = 50,
 ): ReviewCandidate[] {
-  return db
-    .query<CandidateRow, [number, Uint8Array, number]>(
-      `SELECT r.bookmark_id AS bookmark_id, b.url AS url, b.title AS title,
+  return prepared<CandidateRow, [number, Uint8Array, number]>(
+    db,
+    `SELECT r.bookmark_id AS bookmark_id, b.url AS url, b.title AS title,
               cr.tag_id AS tag_id, t.name AS name, cr.probability AS probability, cr.run_id AS run_id
          FROM classification_results cr
          JOIN classification_runs r ON r.id = cr.run_id
@@ -34,7 +36,7 @@ export function listBelowThresholdCandidates(
           AND b.dataset_id = ?
         ORDER BY cr.probability DESC
         LIMIT ?`,
-    )
+  )
     .all(threshold, uuidToBytes(datasetId), limit)
     .map((row) => ({
       bookmarkId: bytesToUuid(row.bookmark_id),

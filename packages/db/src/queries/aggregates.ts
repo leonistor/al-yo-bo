@@ -11,6 +11,7 @@ import {
 } from '@al-yo-bo/shared';
 
 import { countBookmarks } from './bookmarks.ts';
+import { prepared } from './statements.ts';
 
 interface SectionCountRow {
   id: Uint8Array;
@@ -33,16 +34,16 @@ interface TagCountRow {
 }
 
 export function getAggregates(db: Database, datasetId: string): Aggregates {
-  const sections = db
-    .query<SectionCountRow, [Uint8Array]>(
-      `SELECT s.id AS id, s.name AS name, COUNT(b.id) AS count
+  const sections = prepared<SectionCountRow, [Uint8Array]>(
+    db,
+    `SELECT s.id AS id, s.name AS name, COUNT(b.id) AS count
          FROM sections s
          LEFT JOIN categories c ON c.section_id = s.id
          LEFT JOIN bookmarks b ON b.category_id = c.id
         WHERE s.dataset_id = ?
         GROUP BY s.id
         ORDER BY s.name`,
-    )
+  )
     .all(uuidToBytes(datasetId))
     .map<SectionAggregate>((row) => ({
       id: bytesToUuid(row.id),
@@ -50,15 +51,15 @@ export function getAggregates(db: Database, datasetId: string): Aggregates {
       count: row.count,
     }));
 
-  const categories = db
-    .query<CategoryCountRow, [Uint8Array]>(
-      `SELECT c.id AS id, c.name AS name, c.section_id AS section_id, COUNT(b.id) AS count
+  const categories = prepared<CategoryCountRow, [Uint8Array]>(
+    db,
+    `SELECT c.id AS id, c.name AS name, c.section_id AS section_id, COUNT(b.id) AS count
          FROM categories c
          LEFT JOIN bookmarks b ON b.category_id = c.id
         WHERE c.dataset_id = ?
         GROUP BY c.id
         ORDER BY c.name`,
-    )
+  )
     .all(uuidToBytes(datasetId))
     .map<CategoryAggregate>((row) => ({
       id: bytesToUuid(row.id),
@@ -67,15 +68,15 @@ export function getAggregates(db: Database, datasetId: string): Aggregates {
       count: row.count,
     }));
 
-  const tags = db
-    .query<TagCountRow, [Uint8Array]>(
-      `SELECT t.id AS id, t.name AS name, t.status AS status, COUNT(bt.bookmark_id) AS count
+  const tags = prepared<TagCountRow, [Uint8Array]>(
+    db,
+    `SELECT t.id AS id, t.name AS name, t.status AS status, COUNT(bt.bookmark_id) AS count
          FROM tags t
          LEFT JOIN bookmark_tags bt ON bt.tag_id = t.id
         WHERE t.dataset_id = ?
         GROUP BY t.id
         ORDER BY count DESC, t.name ASC`,
-    )
+  )
     .all(uuidToBytes(datasetId))
     .map<TagAggregate>((row) => ({
       id: bytesToUuid(row.id),
@@ -85,11 +86,10 @@ export function getAggregates(db: Database, datasetId: string): Aggregates {
     }));
 
   const invalidCount =
-    db
-      .query<{ count: number }, [Uint8Array]>(
-        `SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ? AND status = 'invalid'`,
-      )
-      .get(uuidToBytes(datasetId))?.count ?? 0;
+    prepared<{ count: number }, [Uint8Array]>(
+      db,
+      `SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ? AND status = 'invalid'`,
+    ).get(uuidToBytes(datasetId))?.count ?? 0;
 
   return {
     total: countBookmarks(db, datasetId),
