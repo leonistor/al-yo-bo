@@ -15,15 +15,24 @@ export interface IngestOptions {
 }
 
 /**
- * Resolved vocabulary for a batch. Maps raw source names to entity ids; the
- * caller is guaranteed the maps cover every name in the batch (missing entries
- * are created active — see ARCHITECTURE §7 stage 1, post-simplification).
+ * Resolved vocabulary for a batch. Maps raw source names to entity ids; every
+ * name in the batch is covered by a map entry unless it resolved to a
+ * non-active tag (deprecated rows are never assigned — MODEL.md invariant),
+ * in which case the name is reported in `skippedTags`.
  */
 export interface VocabularyResolution {
   /** Name → category id (active rows only). */
   categoryIds: Map<string, string>;
   /** Name → tag id (active rows only). */
   tagIds: Map<string, string>;
+  /** Tag names left unmapped because their existing row was not active. */
+  skippedTags: string[];
+}
+
+/** `ImportReport` plus the soft warnings surfaced during ingest. */
+export interface IngestReport extends ImportReport {
+  /** Non-fatal issues to surface in the UI, mirroring `ExtractionResult.warnings`. */
+  warnings?: string[];
 }
 
 function uniqueNames(
@@ -64,6 +73,7 @@ export function resolveVocabulary(
   const resolution: VocabularyResolution = {
     categoryIds: new Map(),
     tagIds: new Map(),
+    skippedTags: [],
   };
 
   for (const name of uniqueNames(bookmarks, (b) => b.category)) {
@@ -75,6 +85,13 @@ export function resolveVocabulary(
 
   for (const name of uniqueTagNames(bookmarks)) {
     const tag = createTag(db, { datasetId, name });
+    // createTag reuses an existing row regardless of status; re-importing a
+    // previously deprecated tag must not re-activate it or assign it
+    // (MODEL.md invariant: only active tags may be assigned to bookmarks).
+    if (tag.status !== 'active') {
+      resolution.skippedTags.push(name);
+      continue;
+    }
     resolution.tagIds.set(name, tag.id);
   }
 
@@ -93,8 +110,8 @@ export function ingestBookmarks(
   bookmarks: ImportedBookmark[],
   resolution: VocabularyResolution,
   options: IngestOptions = {},
-): ImportReport {
-  const report: ImportReport = {
+): IngestReport {
+  const report: IngestReport = {
     added: 0,
     updated: 0,
     skipped: options.skipped ?? 0,
@@ -148,5 +165,10 @@ export function ingestBookmarks(
   });
 
   insideTransaction.immediate();
+  if (resolution.skippedTags.length > 0) {
+    report.warnings = resolution.skippedTags.map(
+      (name) => `Deprecated tag "${name}" was not assigned to imported bookmarks.`,
+    );
+  }
   return report;
 }

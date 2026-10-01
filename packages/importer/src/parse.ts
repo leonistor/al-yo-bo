@@ -185,8 +185,46 @@ function tryParseFrontmatter(lines: string[], startIndex: number): Frontmatter |
   return null;
 }
 
+/**
+ * Strips sentence punctuation glued to the end of a URL match. Trailing
+ * `[.,;:!?]` are always prose artifacts. A trailing `)` or `]`, however, is
+ * only stripped under the balanced-bracket rule: it is removed only when the
+ * rest of the URL holds no unmatched `(`/`[` for it to close — otherwise the
+ * bracket belongs to the URL (e.g. Wikipedia's
+ * `https://en.wikipedia.org/wiki/Foo_(bar)`) and stripping stops there.
+ */
 function stripTrailingPunctuation(url: string): string {
-  return url.replace(/[)\].,;:!?]+$/, '');
+  let end = url.length;
+  while (end > 0) {
+    const ch = url.charAt(end - 1);
+    if ('.,;:!?'.includes(ch)) {
+      end -= 1;
+      continue;
+    }
+    if (ch === ')' || ch === ']') {
+      const open = ch === ')' ? '(' : '[';
+      if (unmatchedOpen(url.slice(0, end - 1), open, ch) > 0) {
+        break;
+      }
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return url.slice(0, end);
+}
+
+/** Count of `open` brackets in `text` left unclosed by a matching `close`. */
+function unmatchedOpen(text: string, open: string, close: string): number {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === open) {
+      depth += 1;
+    } else if (ch === close && depth > 0) {
+      depth -= 1;
+    }
+  }
+  return depth;
 }
 
 function stripUrls(text: string): string {

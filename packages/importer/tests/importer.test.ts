@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   createDataset,
+  createTag,
   getCategoryByName,
   getTagByName,
   openDatabase,
+  setTagStatus,
   setupDatabase,
 } from '@al-yo-bo/db';
 import { uuidToBytes } from '@al-yo-bo/shared';
@@ -68,6 +70,18 @@ describe('parseCollection', () => {
 
   test('strips trailing punctuation from URLs', () => {
     const { bookmarks } = parseCollection('- see (https://example.com/a).');
+    expect(bookmarks[0]?.url).toBe('https://example.com/a');
+  });
+
+  test('keeps a URL whose trailing bracket closes an opener inside the URL', () => {
+    const { bookmarks } = parseCollection(
+      '- wiki: (see https://en.wikipedia.org/wiki/Foo_(bar)).',
+    );
+    expect(bookmarks[0]?.url).toBe('https://en.wikipedia.org/wiki/Foo_(bar)');
+  });
+
+  test('strips an unmatched closing bracket as prose punctuation', () => {
+    const { bookmarks } = parseCollection('- see https://example.com/a].');
     expect(bookmarks[0]?.url).toBe('https://example.com/a');
   });
 
@@ -186,6 +200,25 @@ tags: [imported, unknown]
     expect(getTagByName(db, datasetId, 'imported', null)).not.toBeNull();
     expect(getTagByName(db, datasetId, 'unknown', null)).not.toBeNull();
   });
+
+  test('skips a previously deprecated tag instead of re-activating it', () => {
+    const { db, datasetId } = freshDb();
+    const deprecated = createTag(db, { datasetId, name: 'legacy' });
+    setTagStatus(db, deprecated.id, 'deprecated');
+    const { bookmarks } = parseCollection(`---
+tags: [legacy]
+---
+
+- x: https://example.com/deprecated-tag
+`);
+
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+
+    expect(resolution.tagIds.has('legacy')).toBe(false);
+    expect(resolution.skippedTags).toEqual(['legacy']);
+    // The existing row stays deprecated; no new duplicate tag is created.
+    expect(getTagByName(db, datasetId, 'legacy', null)?.status).toBe('deprecated');
+  });
 });
 
 describe('ingest', () => {
@@ -214,6 +247,7 @@ describe('ingest', () => {
     const report = ingestBookmarks(db, datasetId, [], {
       categoryIds: new Map(),
       tagIds: new Map(),
+      skippedTags: [],
     });
     expect(report.added).toBe(0);
     expect(report.parsed).toBe(0);
@@ -233,6 +267,29 @@ tags: [imported, unknown]
     expect(report.tagsAssigned).toBe(2);
     expect(getTagByName(db, datasetId, 'imported', null)).not.toBeNull();
     expect(getTagByName(db, datasetId, 'unknown', null)).not.toBeNull();
+  });
+
+  test('does not assign a deprecated tag and surfaces a warning', () => {
+    const { db, datasetId } = freshDb();
+    const deprecated = createTag(db, { datasetId, name: 'legacy' });
+    setTagStatus(db, deprecated.id, 'deprecated');
+    const { bookmarks } = parseCollection(`---
+tags: [legacy]
+---
+
+- x: https://example.com/deprecated-tag
+`);
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    const report = ingestBookmarks(db, datasetId, bookmarks, resolution);
+
+    expect(report.tagsAssigned).toBe(0);
+    expect(report.warnings).toEqual([
+      'Deprecated tag "legacy" was not assigned to imported bookmarks.',
+    ]);
+    const assignments = db
+      .query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmark_tags')
+      .get();
+    expect(assignments?.count).toBe(0);
   });
 
   test('parses a real collection file from docs/examples-mds', async () => {
