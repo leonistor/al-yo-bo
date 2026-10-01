@@ -1,7 +1,8 @@
-import type { BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
+import type { BookmarkImage, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
 import {
   CircleAlertIcon,
   ExternalLinkIcon,
+  GlobeIcon,
   RefreshCwIcon,
   Trash2Icon,
   XIcon,
@@ -75,6 +76,61 @@ function scrapeLastError(metadata: Record<string, unknown> | null): ScrapeLastEr
     status: typeof value.status === 'number' ? value.status : undefined,
     message: typeof value.message === 'string' ? value.message : undefined,
   };
+}
+
+// Mirrors the server's `/data/screenshots/:filename` guard: a malformed or
+// absolute stored path never reaches the route at all.
+const SCREENSHOT_FILENAME = /^[0-9a-f-]{36}\.jpg$/i;
+
+/**
+ * Image fallback chain (ARCHITECTURE §8): local screenshot first, then the
+ * remote og:image, otherwise nothing (the caller renders the placeholder).
+ */
+function resolveImageSrc(
+  image: BookmarkImage | undefined,
+): { src: string; remote: boolean } | null {
+  if (!image) {
+    return null;
+  }
+  if (image.screenshotPath) {
+    const filename = image.screenshotPath.split('/').pop() ?? '';
+    if (SCREENSHOT_FILENAME.test(filename)) {
+      return { src: `/data/screenshots/${filename}`, remote: false };
+    }
+  }
+  if (image.ogImageUrl) {
+    return { src: image.ogImageUrl, remote: true };
+  }
+  return null;
+}
+
+/**
+ * Dialog header visual. Screenshots crop top-aligned (page heroes read best);
+ * a failed <img> load falls through to the muted placeholder, never a broken
+ * image. Keyed by bookmark id at the call site so the failed state resets
+ * when a different bookmark opens.
+ */
+function HeaderImage({ bookmark }: { bookmark: BookmarkWithTags }) {
+  const [failed, setFailed] = useState(false);
+  const resolved = failed ? null : resolveImageSrc(bookmark.image);
+
+  return (
+    <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+      {resolved ? (
+        <img
+          src={resolved.src}
+          alt=""
+          decoding="async"
+          draggable={false}
+          className="size-full object-cover object-top"
+          {...(resolved.remote ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <GlobeIcon className="size-6" aria-hidden />
+      )}
+    </div>
+  );
 }
 
 interface BookmarkDetailDialogProps {
@@ -202,6 +258,8 @@ export function BookmarkDetailDialog({
             </a>
           </DialogDescription>
         </DialogHeader>
+
+        <HeaderImage key={current.id} bookmark={current} />
 
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">

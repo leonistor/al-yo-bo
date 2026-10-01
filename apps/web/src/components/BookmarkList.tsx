@@ -1,6 +1,14 @@
-import { BookmarkIcon, ExternalLinkIcon, PlusIcon, SearchXIcon, Trash2Icon, UploadIcon } from 'lucide-react';
-
-import type { BookmarkWithTags } from '@al-yo-bo/shared';
+import type { BookmarkImage, BookmarkWithTags } from '@al-yo-bo/shared';
+import {
+  BookmarkIcon,
+  ExternalLinkIcon,
+  GlobeIcon,
+  PlusIcon,
+  SearchXIcon,
+  Trash2Icon,
+  UploadIcon,
+} from 'lucide-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +24,71 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate, hostOf } from '@/lib/format';
 import type { Layout } from '@/lib/useLayout';
 import { cn } from '@/lib/utils';
+
+// Mirrors the server's `/data/screenshots/:filename` guard: a malformed or
+// absolute stored path never reaches the route at all.
+const SCREENSHOT_FILENAME = /^[0-9a-f-]{36}\.jpg$/i;
+
+/**
+ * Image fallback chain (ARCHITECTURE §8): local screenshot first, then the
+ * remote og:image, otherwise nothing (the caller renders the placeholder).
+ * `remote` marks the og:image case so the <img> can relax CORS/referrer.
+ */
+function resolveImageSrc(
+  image: BookmarkImage | undefined,
+): { src: string; remote: boolean } | null {
+  if (!image) {
+    return null;
+  }
+  if (image.screenshotPath) {
+    const filename = image.screenshotPath.split('/').pop() ?? '';
+    if (SCREENSHOT_FILENAME.test(filename)) {
+      return { src: `/data/screenshots/${filename}`, remote: false };
+    }
+  }
+  if (image.ogImageUrl) {
+    return { src: image.ogImageUrl, remote: true };
+  }
+  return null;
+}
+
+/**
+ * Card thumbnail with the full fallback chain, including a failed <img> load
+ * (dead remote URLs fall through to the placeholder instead of breaking).
+ * Placeholder is a plain muted block with a globe mark — calm, no favicon
+ * service round-trip.
+ */
+function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: Layout }) {
+  const [failed, setFailed] = useState(false);
+  const resolved = failed ? null : resolveImageSrc(bookmark.image);
+
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center overflow-hidden bg-muted text-muted-foreground',
+        layout === 'grid'
+          ? '-mx-3 -mt-3 mb-1 aspect-video rounded-t-lg'
+          : 'aspect-video w-24 rounded-md',
+      )}
+      aria-hidden={!resolved}
+    >
+      {resolved ? (
+        <img
+          src={resolved.src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className="size-full object-cover object-top"
+          {...(resolved.remote ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <GlobeIcon className="size-4" aria-hidden />
+      )}
+    </div>
+  );
+}
 
 interface BookmarkListProps {
   items: BookmarkWithTags[];
@@ -64,57 +137,55 @@ function BookmarkCard({
   return (
     <article
       className={cn(
-        'flex w-full flex-col gap-1 rounded-lg border border-border bg-card p-3 text-card-foreground transition-colors hover:bg-accent/50',
-        layout === 'grid' && 'h-full',
+        'flex w-full gap-3 rounded-lg border border-border bg-card p-3 text-card-foreground transition-colors hover:bg-accent/50',
+        layout === 'grid' ? 'h-full flex-col' : 'flex-row items-start',
       )}
     >
-      <div className="flex items-start gap-1">
-        <button
-          type="button"
-          onClick={() => onOpen(bookmark)}
-          className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <h3 className="truncate text-sm font-medium">{title}</h3>
-        </button>
-        <span className="shrink-0 self-center text-xs text-muted-foreground">
-          {formatDate(bookmark.createdAt)}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          asChild
-          aria-label={`Open ${title} in a new tab`}
-        >
-          <a href={bookmark.url} target="_blank" rel="noreferrer">
-            <ExternalLinkIcon />
-          </a>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Delete ${title}`}
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(bookmark)}
-        >
-          <Trash2Icon />
-        </Button>
-      </div>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="truncate">{hostOf(bookmark.url)}</span>
-        {bookmark.status === 'invalid' && <Badge variant="destructive">Invalid</Badge>}
-      </p>
-      {bookmark.description && (
-        <p className="line-clamp-2 text-sm text-muted-foreground">{bookmark.description}</p>
-      )}
-      {bookmark.tags.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {bookmark.tags.map((tag) => (
-            <Badge key={tag.tagId} variant="secondary">
-              {tag.name}
-            </Badge>
-          ))}
+      <CardThumb bookmark={bookmark} layout={layout} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start gap-1">
+          <button
+            type="button"
+            onClick={() => onOpen(bookmark)}
+            className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <h3 className="truncate text-sm font-medium">{title}</h3>
+          </button>
+          <span className="shrink-0 self-center text-xs text-muted-foreground">
+            {formatDate(bookmark.createdAt)}
+          </span>
+          <Button variant="ghost" size="icon-sm" asChild aria-label={`Open ${title} in a new tab`}>
+            <a href={bookmark.url} target="_blank" rel="noreferrer">
+              <ExternalLinkIcon />
+            </a>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Delete ${title}`}
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => onDelete(bookmark)}
+          >
+            <Trash2Icon />
+          </Button>
         </div>
-      )}
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate">{hostOf(bookmark.url)}</span>
+          {bookmark.status === 'invalid' && <Badge variant="destructive">Invalid</Badge>}
+        </p>
+        {bookmark.description && (
+          <p className="line-clamp-2 text-sm text-muted-foreground">{bookmark.description}</p>
+        )}
+        {bookmark.tags.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {bookmark.tags.map((tag) => (
+              <Badge key={tag.tagId} variant="secondary">
+                {tag.name}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
     </article>
   );
 }
@@ -133,7 +204,9 @@ export function BookmarkList({
   if (loading) {
     const skeletons = Array.from({ length: 6 }, (_, index) => <CardSkeleton key={index} />);
     if (layout === 'grid') {
-      return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{skeletons}</div>;
+      return (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{skeletons}</div>
+      );
     }
     return <div className="flex flex-col gap-2">{skeletons}</div>;
   }
