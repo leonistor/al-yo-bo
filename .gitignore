@@ -2,6 +2,7 @@
 .omo/*
 !.omo/omo.jsonc
 .codegraph
+.octto
 .playwriter-profile/
 .zed/local/
 
