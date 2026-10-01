@@ -76,24 +76,28 @@ export function resolveVocabulary(
     skippedTags: [],
   };
 
-  for (const name of uniqueNames(bookmarks, (b) => b.category)) {
-    const category =
-      getCategoryByName(db, datasetId, name) ??
-      createCategory(db, { datasetId, name });
-    resolution.categoryIds.set(name, category.id);
-  }
-
-  for (const name of uniqueTagNames(bookmarks)) {
-    const tag = createTag(db, { datasetId, name });
-    // createTag reuses an existing row regardless of status; re-importing a
-    // previously deprecated tag must not re-activate it or assign it
-    // (MODEL.md invariant: only active tags may be assigned to bookmarks).
-    if (tag.status !== 'active') {
-      resolution.skippedTags.push(name);
-      continue;
+  // Resolution runs in its own immediate transaction so a failure part-way
+  // cannot commit a half-created vocabulary (categories without tags).
+  const run = db.transaction(() => {
+    for (const name of uniqueNames(bookmarks, (b) => b.category)) {
+      const category =
+        getCategoryByName(db, datasetId, name) ?? createCategory(db, { datasetId, name });
+      resolution.categoryIds.set(name, category.id);
     }
-    resolution.tagIds.set(name, tag.id);
-  }
+
+    for (const name of uniqueTagNames(bookmarks)) {
+      const tag = createTag(db, { datasetId, name });
+      // createTag reuses an existing row regardless of status; re-importing a
+      // previously deprecated tag must not re-activate it or assign it
+      // (MODEL.md invariant: only active tags may be assigned to bookmarks).
+      if (tag.status !== 'active') {
+        resolution.skippedTags.push(name);
+        continue;
+      }
+      resolution.tagIds.set(name, tag.id);
+    }
+  });
+  run.immediate();
 
   return resolution;
 }
