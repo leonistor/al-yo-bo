@@ -48,6 +48,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     host: env.HOST ?? '127.0.0.1',
     dbPath: env.DB_PATH ?? DEFAULT_DB_PATH,
     autoAssignThreshold: numberFromEnv(env.AUTO_ASSIGN_THRESHOLD, 0.5),
+    defaultDataset: env.DEFAULT_DATASET ?? 'default',
     ollaya: {
       baseUrl: env.OLLAYA_URL ?? 'http://127.0.0.1:11435',
       apiKey: env.OLLAYA_API_KEY,

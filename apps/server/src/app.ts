@@ -1,7 +1,3 @@
-import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { validator } from 'hono/validator';
-
 import {
   DomainError,
   NotFoundError,
@@ -16,10 +12,13 @@ import {
   type SearchMode,
   type TagStatus,
 } from '@al-yo-bo/shared';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { validator } from 'hono/validator';
 
+import { createChatHandler } from './chat.ts';
 import type { ServerConfig } from './env.ts';
 import { toProblemDetails } from './errors.ts';
-import { createChatHandler } from './chat.ts';
 
 /**
  * Transport adapter (ARCHITECTURE §4): parse/validate the HTTP request, call one
@@ -59,6 +58,14 @@ function parseDirection(value: string | undefined): 'asc' | 'desc' {
 /** Invalid bookmarks stay out of default views; `invalid`/`all` must be explicit. */
 function parseStatus(value: string | undefined): BookmarkListStatus {
   return value === 'invalid' || value === 'all' ? value : 'active';
+}
+
+function parseProposalKind(c: Context): 'section' | 'category' | 'tag' {
+  const kind = c.req.param('kind');
+  if (kind !== 'section' && kind !== 'category' && kind !== 'tag') {
+    throw new NotFoundError('Proposal not found');
+  }
+  return kind;
 }
 
 function parseNumber(value: string | undefined): number | undefined {
@@ -220,6 +227,7 @@ export function createApp(core: Core, config: ServerConfig) {
         core.vocabulary.createCategory({
           name: requiredString(body, 'name'),
           description: optionalString(body, 'description'),
+          sectionId: optionalId(body, 'sectionId'),
         }),
         201,
       );
@@ -231,12 +239,57 @@ export function createApp(core: Core, config: ServerConfig) {
         core.vocabulary.updateCategory(pathId(c, 'Category not found'), {
           name: 'name' in body ? requiredString(body, 'name') : undefined,
           description: 'description' in body ? optionalString(body, 'description') : undefined,
+          sectionId: 'sectionId' in body ? optionalId(body, 'sectionId') : undefined,
         }),
       );
     })
 
+    .post('/api/categories/:id/status', jsonBody, (c) => {
+      const status = requiredString(c.req.valid('json'), 'status') as
+        | 'active'
+        | 'proposed'
+        | 'rejected';
+      return c.json(core.vocabulary.setCategoryStatus(pathId(c, 'Category not found'), status));
+    })
+
     .delete('/api/categories/:id', (c) => {
       core.vocabulary.deleteCategory(pathId(c, 'Category not found'));
+      return c.body(null, 204);
+    })
+
+    .get('/api/sections', (c) => c.json(core.vocabulary.listSections()))
+
+    .post('/api/sections', jsonBody, (c) => {
+      const body = c.req.valid('json');
+      return c.json(
+        core.vocabulary.createSection({
+          name: requiredString(body, 'name'),
+          description: optionalString(body, 'description'),
+        }),
+        201,
+      );
+    })
+
+    .patch('/api/sections/:id', jsonBody, (c) => {
+      const body = c.req.valid('json');
+      return c.json(
+        core.vocabulary.updateSection(pathId(c, 'Section not found'), {
+          name: 'name' in body ? requiredString(body, 'name') : undefined,
+          description: 'description' in body ? optionalString(body, 'description') : undefined,
+        }),
+      );
+    })
+
+    .post('/api/sections/:id/status', jsonBody, (c) => {
+      const status = requiredString(c.req.valid('json'), 'status') as
+        | 'active'
+        | 'proposed'
+        | 'rejected';
+      return c.json(core.vocabulary.setSectionStatus(pathId(c, 'Section not found'), status));
+    })
+
+    .delete('/api/sections/:id', (c) => {
+      core.vocabulary.deleteSection(pathId(c, 'Section not found'));
       return c.body(null, 204);
     })
 
@@ -288,15 +341,60 @@ export function createApp(core: Core, config: ServerConfig) {
       return c.json(await core.review.acceptCandidate(bookmarkId, tagId));
     })
 
-    .post('/api/import/preview', async (c) =>
-      c.json(core.import.preview(await readImportText(c))),
-    )
+    .post('/api/import/preview', async (c) => c.json(core.import.preview(await readImportText(c))))
 
     .post('/api/import', async (c) =>
       c.json(
-        core.import.import(await readImportText(c), { file: c.req.query('file') || undefined }),
+        core.import.import(
+          await readImportText(c),
+          c.req.query('datasetId') || core.defaultDatasetId,
+          { file: c.req.query('file') || undefined },
+        ),
       ),
     )
+
+    .post('/api/import/batches/:id/commit', (c) =>
+      c.json(core.import.commit(pathId(c, 'Import batch not found'))),
+    )
+
+    .post('/api/import/batches/:id/discard', (c) => {
+      core.import.discard(pathId(c, 'Import batch not found'));
+      return c.body(null, 204);
+    })
+
+    .get('/api/import/staged', (c) =>
+      c.json(core.import.listStaged(c.req.query('datasetId') || core.defaultDatasetId)),
+    )
+
+    .post('/api/review/vocabulary/:kind/:id/accept', (c) => {
+      core.review.acceptProposal(parseProposalKind(c), pathId(c, 'Proposal not found'));
+      return c.body(null, 204);
+    })
+
+    .post('/api/review/vocabulary/:kind/:id/reject', (c) => {
+      core.review.rejectProposal(parseProposalKind(c), pathId(c, 'Proposal not found'));
+      return c.body(null, 204);
+    })
+
+    .post('/api/review/vocabulary/:kind/:id/rename', jsonBody, (c) => {
+      const body = c.req.valid('json');
+      core.review.renameProposal(
+        parseProposalKind(c),
+        pathId(c, 'Proposal not found'),
+        requiredString(body, 'name'),
+      );
+      return c.body(null, 204);
+    })
+
+    .post('/api/review/vocabulary/:kind/:id/merge', jsonBody, (c) => {
+      const body = c.req.valid('json');
+      core.review.mergeProposal(
+        parseProposalKind(c),
+        pathId(c, 'Proposal not found'),
+        requiredString(body, 'intoId'),
+      );
+      return c.body(null, 204);
+    })
 
     // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the
     // typed RPC surface above stays clean for apps/web.
