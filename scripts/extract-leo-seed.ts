@@ -38,14 +38,13 @@ interface SeedFile {
   $comment: string;
   source: string;
   extractedAt: string;
+  dataset: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
 }
 
-const files = (await readdir(SOURCE_DIR))
-  .filter((name) => name.endsWith('.md'))
-  .toSorted();
+const files = (await readdir(SOURCE_DIR)).filter((name) => name.endsWith('.md')).toSorted();
 
 const seen = new Set<string>();
 const bookmarks: SeedBookmark[] = [];
@@ -92,6 +91,7 @@ const seed: SeedFile = {
     "Real bookmark collections from Leo's personal Zen archive — a five-file representative sample. Not project content.",
   source: 'docs/examples-mds/',
   extractedAt: new Date().toISOString(),
+  dataset: 'leo',
   categories,
   tags,
   bookmarks,

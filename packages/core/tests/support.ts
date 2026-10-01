@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { openDatabase, setupDatabase } from '@al-yo-bo/db';
+import { createDataset, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import type {
   RankedCandidate,
   VectorFilter,
@@ -13,10 +13,11 @@ import type { CoreConfig } from '../src/config.ts';
 import type { JobType } from '../src/enrichment/jobs.ts';
 import type { JobScheduler } from '../src/services/enrichment.ts';
 
-/** In-memory database with the full schema applied. */
-export function makeDb(): Database {
-  const db = openDatabase(':memory:');
+/** In-memory database with the full schema applied and a test dataset. */
+export function makeDb(datasetName = 'test'): Database & { datasetId: string } {
+  const db = openDatabase(':memory:') as Database & { datasetId: string };
   setupDatabase(db);
+  db.datasetId = createDataset(db, datasetName).id;
   return db;
 }
 
@@ -87,6 +88,7 @@ export function recordingJobs(): JobScheduler & { calls: Array<{ id: string; typ
 export function testConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
   return {
     autoAssignThreshold: 0.5,
+    defaultDataset: 'test',
     embeddings: { model: 'stub-model' },
     ollaya: { baseUrl: 'http://127.0.0.1:11435', model: 'laya' },
     scrape: {

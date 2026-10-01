@@ -1,9 +1,11 @@
+import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   assignTag,
   createBookmark,
   createCategory,
+  createDataset,
   createTag,
   getBookmarkTags,
   getBookmarksWithTagsByIds,
@@ -11,7 +13,6 @@ import {
   openDatabase,
   setupDatabase,
 } from '@al-yo-bo/db';
-import type { Database } from 'bun:sqlite';
 import type { RankedCandidate, VectorFilter, VectorIndex } from '@al-yo-bo/shared';
 
 import {
@@ -30,7 +31,11 @@ class NoVector implements VectorIndex {
   async upsert(): Promise<void> {}
   async updatePayload(): Promise<void> {}
   async delete(): Promise<void> {}
-  async search(_query: Float32Array, _topK: number, _filter?: VectorFilter): Promise<RankedCandidate[]> {
+  async search(
+    _query: Float32Array,
+    _topK: number,
+    _filter?: VectorFilter,
+  ): Promise<RankedCandidate[]> {
     return [];
   }
 }
@@ -49,36 +54,60 @@ function stubClassifier(probabilities: Record<string, number>, calls: DecideCall
   };
 }
 
-function makeDb(): Database {
-  const db = openDatabase(':memory:');
+function makeDb(): Database & { datasetId: string } {
+  const db = openDatabase(':memory:') as Database & { datasetId: string };
   setupDatabase(db);
+  db.datasetId = createDataset(db, 'test').id;
   return db;
 }
 
 interface Fixture {
   db: Database;
+  datasetId: string;
   bookmarkId: string;
   tagIds: { rust: string; webdev: string; proposedOld: string };
 }
 
 /** One category ("dev") with scoped active tags; bookmark in that category. */
 function makeFixture(db: Database): Fixture {
-  const category = createCategory(db, { name: 'dev' });
-  const rust = createTag(db, { name: 'rust', categoryId: category.id, status: 'active' });
-  const webdev = createTag(db, { name: 'webdev', categoryId: category.id, status: 'active' });
-  createTag(db, { name: 'inactive', categoryId: category.id, status: 'deprecated' });
+  const datasetId = createDataset(db, 'test').id;
+  const category = createCategory(db, { datasetId, name: 'dev' });
+  const rust = createTag(db, {
+    datasetId,
+    name: 'rust',
+    categoryId: category.id,
+    status: 'active',
+  });
+  const webdev = createTag(db, {
+    datasetId,
+    name: 'webdev',
+    categoryId: category.id,
+    status: 'active',
+  });
+  createTag(db, { datasetId, name: 'inactive', categoryId: category.id, status: 'deprecated' });
   const { id: bookmarkId } = createBookmark(db, {
+    datasetId,
     url: 'https://example.com/rust',
     title: 'Rust book',
     description: 'Learn Rust',
     categoryId: category.id,
     content: 'Rust ownership and borrowing explained.',
   });
-  return { db, bookmarkId, tagIds: { rust: rust.id, webdev: webdev.id, proposedOld: '' } };
+  return {
+    db,
+    datasetId,
+    bookmarkId,
+    tagIds: { rust: rust.id, webdev: webdev.id, proposedOld: '' },
+  };
 }
 
 function makeDeps(db: Database, classifier?: ClassifyDeps['classifier']): ClassifyDeps {
-  return { db, vector: new NoVector(), classifier, config: testConfig({ autoAssignThreshold: 0.5 }) };
+  return {
+    db,
+    vector: new NoVector(),
+    classifier,
+    config: testConfig({ autoAssignThreshold: 0.5 }),
+  };
 }
 
 describe('buildStateString', () => {
@@ -144,7 +173,7 @@ describe('classifyBookmark', () => {
 
     expect(getBookmarkTags(db, fixture.bookmarkId)).toEqual([]);
     const candidates = await import('@al-yo-bo/db').then((m) =>
-      m.listBelowThresholdCandidates(db, 0.5),
+      m.listBelowThresholdCandidates(db, fixture.datasetId, 0.5),
     );
     expect(candidates.length).toBe(2);
     expect(candidates[0]!.tagName).toBe('rust'); // ranked by probability
@@ -172,7 +201,7 @@ describe('classifyBookmark', () => {
 
     expect(outcome.proposed).toBe(1);
     expect(outcome.assigned).toBe(1); // only rust; mystery is proposed
-    const proposed = listProposedTags(db);
+    const proposed = listProposedTags(db, fixture.datasetId);
     expect(proposed.map((tag) => tag.name)).toEqual(['mystery']);
     expect(getBookmarkTags(db, fixture.bookmarkId).map((tag) => tag.name)).toEqual(['rust']);
   });
@@ -186,19 +215,34 @@ describe('classifyBookmark', () => {
     });
 
     const emptyDb = makeDb();
-    const { id } = createBookmark(emptyDb, { url: 'https://example.com/none' });
-    expect(
-      await classifyBookmark(makeDeps(emptyDb, stubClassifier({ rust: 1 })), id),
-    ).toEqual({ status: 'skipped', runs: 0, assigned: 0, proposed: 0 });
+    const { id } = createBookmark(emptyDb, {
+      datasetId: emptyDb.datasetId,
+      url: 'https://example.com/none',
+    });
+    expect(await classifyBookmark(makeDeps(emptyDb, stubClassifier({ rust: 1 })), id)).toEqual({
+      status: 'skipped',
+      runs: 0,
+      assigned: 0,
+      proposed: 0,
+    });
   });
 
   test('batches candidate questions across multiple runs', async () => {
-    const category = createCategory(db, { name: 'big' });
+    const category = createCategory(db, { datasetId: fixture.datasetId, name: 'big' });
     const names = Array.from({ length: MAX_QUESTIONS_PER_CALL + 5 }, (_, index) => `tag-${index}`);
     for (const name of names) {
-      createTag(db, { name, categoryId: category.id, status: 'active' });
+      createTag(db, {
+        datasetId: fixture.datasetId,
+        name,
+        categoryId: category.id,
+        status: 'active',
+      });
     }
-    const { id } = createBookmark(db, { url: 'https://example.com/big', categoryId: category.id });
+    const { id } = createBookmark(db, {
+      datasetId: fixture.datasetId,
+      url: 'https://example.com/big',
+      categoryId: category.id,
+    });
 
     const calls: DecideCall[] = [];
     const outcome = await classifyBookmark(

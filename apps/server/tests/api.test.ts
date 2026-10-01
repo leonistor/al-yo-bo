@@ -1,23 +1,18 @@
+import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { Database } from 'bun:sqlite';
-
+import type { ClassifierClient } from '@al-yo-bo/classifier';
+import { ScrapeError, createCore, createVectorProvider, type ScrapeFn } from '@al-yo-bo/core';
 import {
   createBookmark,
   getBookmarkById,
+  getDatasetByName,
   openDatabase,
   resolveSeedDataset,
   seedFromFile,
   setupDatabase,
 } from '@al-yo-bo/db';
-import type { ClassifierClient } from '@al-yo-bo/classifier';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
-import {
-  ScrapeError,
-  createCore,
-  createVectorProvider,
-  type ScrapeFn,
-} from '@al-yo-bo/core';
 import type {
   RankedCandidate,
   VectorFilter,
@@ -77,10 +72,14 @@ interface AppOptions {
 }
 
 /** Builds a core (with the stub subsystems) over an already-seeded db, then the app. */
-function buildApp(db: Database, options: AppOptions = {}) {
+function buildApp(db: Database & { datasetId: string }, options: AppOptions = {}) {
   const vector = options.vector ?? new StubVectorIndex([]);
   const env = options.embeddings ? { EMBEDDING_MODEL: 'stub-model' } : {};
-  const config: ServerConfig = loadConfig(env);
+  const config: ServerConfig = {
+    ...loadConfig(env),
+    // The test seeds the grimoire dataset; core scopes everything to it.
+    defaultDataset: 'grimoire',
+  };
   const core = createCore({
     db,
     config,
@@ -94,9 +93,14 @@ function buildApp(db: Database, options: AppOptions = {}) {
 }
 
 function makeApp(options: AppOptions = {}) {
-  const db = openDatabase(':memory:');
+  const db = openDatabase(':memory:') as Database & { datasetId: string };
   setupDatabase(db);
   seedFromFile(db, resolveSeedDataset('grimoire'));
+  const dataset = getDatasetByName(db, 'grimoire');
+  if (!dataset) {
+    throw new Error('grimoire dataset missing after seed');
+  }
+  db.datasetId = dataset.id;
   return buildApp(db, options);
 }
 
@@ -141,6 +145,7 @@ describe('bookmark API', () => {
   test('status filter hides invalid bookmarks from default views', async () => {
     const { db, app } = makeApp();
     const invalid = createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://api-invalid.test',
       title: 'Broken',
       status: 'invalid',
@@ -171,6 +176,7 @@ describe('bookmark API', () => {
   test('changing a bookmark URL resets status and scrape attempts', async () => {
     const { db, app } = makeApp();
     const invalid = createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://api-reset-old.test',
       status: 'invalid',
       scrapeAttempts: 3,
@@ -326,6 +332,7 @@ describe('fused search pagination', () => {
     const { db, app } = makeApp();
     const ids = await firstSeededIds(app, 3);
     const invalid = createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://semantic-invalid.test',
       title: 'Hidden',
       status: 'invalid',
@@ -412,7 +419,9 @@ describe('classify API', () => {
     return {
       async decide(request: { questions: Record<string, unknown> }) {
         const asked = Object.keys(request.questions);
-        return { probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])) };
+        return {
+          probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])),
+        };
       },
     };
   }
@@ -436,7 +445,9 @@ describe('classify API', () => {
     };
     expect(body.status).toBe('classified');
     expect(body.assigned).toBe(1);
-    expect(body.bookmark.tags.some((tag) => tag.name === 'animation' && tag.source === 'classifier')).toBe(true);
+    expect(
+      body.bookmark.tags.some((tag) => tag.name === 'animation' && tag.source === 'classifier'),
+    ).toBe(true);
   });
 
   test('reports 503 without a classifier and 404 for unknown ids', async () => {
@@ -456,7 +467,9 @@ describe('reindex API', () => {
     expect(body.vectorBackend).toBe('memory');
 
     // Keyword search still works over the rebuilt index.
-    const search = (await (await app.request('/api/bookmarks?q=sqlite')).json()) as { total: number };
+    const search = (await (await app.request('/api/bookmarks?q=sqlite')).json()) as {
+      total: number;
+    };
     expect(search.total).toBeGreaterThan(0);
   });
 });
@@ -467,7 +480,9 @@ describe('chat API', () => {
     const response = await app.request('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }] }),
+      body: JSON.stringify({
+        messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      }),
     });
     expect(response.status).toBe(503);
     const body = (await response.json()) as { type: string; title: string };
@@ -485,7 +500,7 @@ describe('chat API', () => {
 });
 
 describe('import API', () => {
-  test('previews and imports markdown', async () => {
+  test('previews, stages new vocabulary, and commits after review', async () => {
     const { app } = makeApp();
     const markdown = '## dev\n\n- ** Tool: https://example.com/tool\n';
 
@@ -497,13 +512,36 @@ describe('import API', () => {
     expect(preview.status).toBe(200);
     expect(((await preview.json()) as { parsed: number }).parsed).toBe(1);
 
+    // New section "dev": the import stages instead of committing.
     const imported = await app.request('/api/import?file=test.md', {
       method: 'POST',
       headers: { 'content-type': 'text/plain' },
       body: markdown,
     });
     expect(imported.status).toBe(200);
-    expect(((await imported.json()) as { added: number }).added).toBe(1);
+    const staged = (await imported.json()) as { staged?: boolean; batchId?: string; added: number };
+    expect(staged.staged).toBe(true);
+    expect(staged.batchId).toBeDefined();
+    expect(staged.added).toBe(0);
+
+    // Accept the proposed section, then commit the batch.
+    const stagedBatches = (await (await app.request('/api/import/staged')).json()) as Array<{
+      id: string;
+      proposals: Array<{ kind: string; name: string; id: string }>;
+    }>;
+    const dev = stagedBatches[0]?.proposals.find((p) => p.kind === 'section' && p.name === 'dev');
+    expect(dev).toBeDefined();
+
+    const accepted = await app.request(`/api/review/vocabulary/section/${dev!.id}/accept`, {
+      method: 'POST',
+    });
+    expect(accepted.status).toBe(204);
+
+    const committed = await app.request(`/api/import/batches/${staged.batchId}/commit`, {
+      method: 'POST',
+    });
+    expect(committed.status).toBe(200);
+    expect(((await committed.json()) as { added: number }).added).toBe(1);
   });
 });
 

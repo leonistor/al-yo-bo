@@ -1,10 +1,11 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { bytesToUuid, newIdBytes } from '@al-yo-bo/shared';
+import { bytesToUuid, newIdBytes, uuidToBytes } from '@al-yo-bo/shared';
 
 import {
   assignTag,
+  createDataset,
   createBookmark,
   createCategory,
   createTag,
@@ -15,6 +16,7 @@ import {
   getBookmarkStatuses,
   getBookmarkTags,
   getCategoryById,
+  getDatasetByName,
   keywordSearch,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
@@ -31,28 +33,38 @@ import {
   upsertEmbedding,
 } from '../src/index.ts';
 
-function freshDb(): Database {
-  const db = openDatabase(':memory:');
+function freshDb(): Database & { datasetId: string } {
+  const db = openDatabase(':memory:') as Database & { datasetId: string };
   setupDatabase(db);
+  db.datasetId = createDataset(db, 'test').id;
   return db;
 }
 
 describe('schema & triggers', () => {
-  let db: Database;
+  let db: Database & { datasetId: string };
   beforeEach(() => {
     db = freshDb();
   });
 
   test('forces server timestamps on insert, overriding client values', () => {
     const id = newIdBytes();
-    db.query('INSERT INTO categories (id, name, created_at) VALUES (?, ?, ?)').run(id, 'x', 1);
+    db.query('INSERT INTO categories (id, dataset_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+      id,
+      uuidToBytes(db.datasetId),
+      'x',
+      1,
+    );
     const category = getCategoryById(db, bytesToUuid(id));
     expect(category).not.toBeNull();
     expect(category?.createdAt).toBeGreaterThan(1_000_000_000_000);
   });
 
   test('keeps the FTS index in sync across insert, update and delete', () => {
-    const bookmark = createBookmark(db, { url: 'https://example.com/a', title: 'Hello world' });
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/a',
+      title: 'Hello world',
+    });
     expect(keywordSearch(db, { q: 'hello' }).length).toBe(1);
 
     updateBookmark(db, bookmark.id, { title: 'Goodbye moon' });
@@ -64,8 +76,12 @@ describe('schema & triggers', () => {
   });
 
   test('deleting a category nulls the bookmark reference instead of cascading', () => {
-    const category = createCategory(db, { name: 'Alpha' });
-    const bookmark = createBookmark(db, { url: 'https://example.com/b', categoryId: category.id });
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Alpha' });
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/b',
+      categoryId: category.id,
+    });
     deleteCategory(db, category.id);
     expect(getBookmarkById(db, bookmark.id)?.categoryId).toBeNull();
   });
@@ -77,21 +93,25 @@ describe('schema & triggers', () => {
       .map((row) => row.version);
     expect(versions).toContain('0002_bookmark_status.sql');
 
-    const bookmark = createBookmark(db, { url: 'https://example.com/status-defaults' });
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/status-defaults',
+    });
     expect(bookmark.status).toBe('active');
     expect(bookmark.scrapeAttempts).toBe(0);
   });
 });
 
 describe('bookmark status', () => {
-  let db: Database;
+  let db: Database & { datasetId: string };
   beforeEach(() => {
     db = freshDb();
   });
 
   function createStatusFixtures(): void {
-    createBookmark(db, { url: 'https://s-active.test', title: 'keep me' });
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://s-active.test', title: 'keep me' });
     createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://s-invalid.test',
       title: 'keep me too',
       status: 'invalid',
@@ -117,8 +137,13 @@ describe('bookmark status', () => {
   });
 
   test('reconciliation queries exclude invalid bookmarks', () => {
-    const active = createBookmark(db, { url: 'https://r-active.test', content: 'body' });
+    const active = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://r-active.test',
+      content: 'body',
+    });
     const invalid = createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://r-invalid.test',
       content: 'body',
       status: 'invalid',
@@ -146,14 +171,15 @@ describe('bookmark status', () => {
   test('aggregates report the invalid bookmark count', () => {
     createStatusFixtures();
 
-    const aggregates = getAggregates(db);
+    const aggregates = getAggregates(db, db.datasetId);
     expect(aggregates.total).toBe(2);
     expect(aggregates.invalidCount).toBe(1);
   });
 
   test('getBookmarkStatuses batches id → status lookups', () => {
-    const active = createBookmark(db, { url: 'https://bs-active.test' });
+    const active = createBookmark(db, { datasetId: db.datasetId, url: 'https://bs-active.test' });
     const invalid = createBookmark(db, {
+      datasetId: db.datasetId,
       url: 'https://bs-invalid.test',
       status: 'invalid',
       scrapeAttempts: 3,
@@ -169,28 +195,43 @@ describe('bookmark status', () => {
 });
 
 describe('tag assignments', () => {
-  let db: Database;
+  let db: Database & { datasetId: string };
   beforeEach(() => {
     db = freshDb();
   });
 
   test('classifier assignments never overwrite user assignments', () => {
-    const bookmark = createBookmark(db, { url: 'https://example.com/c' });
-    const tag = createTag(db, { name: 'frontend' });
+    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/c' });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'frontend' });
 
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
-    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'classifier', confidence: 0.9 });
+    assignTag(db, {
+      bookmarkId: bookmark.id,
+      tagId: tag.id,
+      source: 'classifier',
+      confidence: 0.9,
+    });
 
     const [assignment] = getBookmarkTags(db, bookmark.id);
     expect(assignment?.source).toBe('user');
   });
 
   test('classifier assignments do update classifier-sourced rows', () => {
-    const bookmark = createBookmark(db, { url: 'https://example.com/d' });
-    const tag = createTag(db, { name: 'backend' });
+    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/d' });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'backend' });
 
-    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'classifier', confidence: 0.5 });
-    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'classifier', confidence: 0.8 });
+    assignTag(db, {
+      bookmarkId: bookmark.id,
+      tagId: tag.id,
+      source: 'classifier',
+      confidence: 0.5,
+    });
+    assignTag(db, {
+      bookmarkId: bookmark.id,
+      tagId: tag.id,
+      source: 'classifier',
+      confidence: 0.8,
+    });
 
     const [assignment] = getBookmarkTags(db, bookmark.id);
     expect(assignment?.confidence).toBe(0.8);
@@ -198,22 +239,32 @@ describe('tag assignments', () => {
 });
 
 describe('listing & aggregates', () => {
-  let db: Database;
+  let db: Database & { datasetId: string };
   beforeEach(() => {
     db = freshDb();
   });
 
   test('filters by category and paginates', () => {
-    const category = createCategory(db, { name: 'Tools' });
-    createBookmark(db, { url: 'https://a.test', title: 'A', categoryId: category.id });
-    createBookmark(db, { url: 'https://b.test', title: 'B', categoryId: category.id });
-    createBookmark(db, { url: 'https://c.test', title: 'C' });
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Tools' });
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://a.test',
+      title: 'A',
+      categoryId: category.id,
+    });
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://b.test',
+      title: 'B',
+      categoryId: category.id,
+    });
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://c.test', title: 'C' });
 
     const page = listBookmarks(db, { categoryId: category.id, limit: 1, offset: 0 });
     expect(page.total).toBe(2);
     expect(page.items.length).toBe(1);
 
-    const aggregates = getAggregates(db);
+    const aggregates = getAggregates(db, db.datasetId);
     expect(aggregates.total).toBe(3);
     expect(aggregates.categories.find((c) => c.id === category.id)?.count).toBe(2);
   });
@@ -236,9 +287,10 @@ describe('seed fixture', () => {
     expect(second.categoriesCreated).toBe(0);
     expect(second.tagsCreated).toBe(0);
 
-    const aggregates = getAggregates(db);
+    const grimoireId = getDatasetByName(db, 'grimoire')!.id;
+    const aggregates = getAggregates(db, grimoireId);
     expect(aggregates.total).toBe(26);
-    expect(keywordSearch(db, { q: 'sqlite' }).length).toBeGreaterThan(0);
+    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
   });
 
   test('loads the leo dataset from the default path', () => {
@@ -249,7 +301,7 @@ describe('seed fixture', () => {
     expect(report.categoriesCreated).toBe(40);
     expect(report.tagsCreated).toBe(1);
     expect(report.assignments).toBe(118);
-    expect(getAggregates(db).total).toBe(217);
+    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(217);
   });
 
   test('resolves the leo dataset by default and both datasets by name', () => {
@@ -268,15 +320,21 @@ describe('seed fixture', () => {
     const grimoire = resolveSeedDataset('grimoire');
 
     seedFromFile(db, grimoire);
-    expect(getAggregates(db).total).toBe(26);
+    const grimoireId = getDatasetByName(db, 'grimoire')!.id;
+    expect(getAggregates(db, grimoireId).total).toBe(26);
 
     // A stale bookmark outside the dataset proves the reset, not the upsert,
     // produced the post-reset state.
-    const stray = createBookmark(db, { url: 'https://stray.example/only', title: 'Stray' });
-    expect(getAggregates(db).total).toBe(27);
+    const stray = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://stray.example/only',
+      title: 'Stray',
+    });
+    expect(getAggregates(db, grimoireId).total).toBe(26);
+    expect(getAggregates(db, db.datasetId).total).toBe(1);
 
     resetSeedData(db);
-    expect(getAggregates(db).total).toBe(0);
+    expect(getAggregates(db, grimoireId).total).toBe(0);
     expect(getBookmarkById(db, stray.id)).toBeNull();
     // The FTS delete trigger must have fired for the wiped rows too.
     expect(keywordSearch(db, { q: 'Stray' })).toHaveLength(0);
@@ -284,7 +342,7 @@ describe('seed fixture', () => {
     const report = seedFromFile(db, grimoire);
     expect(report.bookmarksAdded).toBe(26);
     expect(report.bookmarksUpdated).toBe(0);
-    expect(getAggregates(db).total).toBe(26);
-    expect(keywordSearch(db, { q: 'sqlite' }).length).toBeGreaterThan(0);
+    expect(getAggregates(db, grimoireId).total).toBe(26);
+    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
   });
 });

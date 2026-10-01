@@ -62,6 +62,7 @@ interface SeedFile {
   $comment: string;
   source: string;
   extractedAt: string;
+  dataset: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
@@ -77,7 +78,9 @@ const demo = (await import(pathToFileURL(resolve(modulePath)).href)) as DemoModu
 const state = demo.createDemoState();
 const flatCategories = new Map(demo.flattenCategories(state.categories).map((c) => [c.id, c]));
 
-const visible = state.bookmarks.filter((b) => (b.is_archived ?? 0) === 0 && (b.is_trashed ?? 0) === 0);
+const visible = state.bookmarks.filter(
+  (b) => (b.is_archived ?? 0) === 0 && (b.is_trashed ?? 0) === 0,
+);
 
 const bookmarks: SeedBookmark[] = visible.map((b) => ({
   url: b.url,
@@ -89,7 +92,9 @@ const bookmarks: SeedBookmark[] = visible.map((b) => ({
   metadata: { seed: { source: 'grimoire-demo', demoId: b.id, note: b.notes ?? null } },
 }));
 
-const categories = [...new Set(bookmarks.map((b) => b.category).filter((c): c is string => Boolean(c)))].toSorted();
+const categories = [
+  ...new Set(bookmarks.map((b) => b.category).filter((c): c is string => Boolean(c))),
+].toSorted();
 const tags = [...new Set(bookmarks.flatMap((b) => b.tags))].toSorted();
 
 const seed: SeedFile = {
@@ -97,6 +102,7 @@ const seed: SeedFile = {
     'Synthetic seed data extracted from the Grimoire public demo (https://goniszewski.com/grimoire/demo/). Not real user data.',
   source: 'https://goniszewski.com/grimoire/demo/',
   extractedAt: new Date().toISOString(),
+  dataset: 'grimoire',
   categories,
   tags,
   bookmarks,
