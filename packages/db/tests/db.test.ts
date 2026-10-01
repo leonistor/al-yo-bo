@@ -13,6 +13,7 @@ import {
   deleteCategory,
   getAggregates,
   getBookmarkById,
+  getBookmarksWithTagsByIds,
   getBookmarkStatuses,
   getBookmarkTags,
   getCategoryById,
@@ -267,6 +268,36 @@ describe('listing & aggregates', () => {
     const aggregates = getAggregates(db, db.datasetId);
     expect(aggregates.total).toBe(3);
     expect(aggregates.categories.find((c) => c.id === category.id)?.count).toBe(2);
+  });
+});
+
+describe('bookmark image projection', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  // Regression: the UI's screenshot -> og:image -> placeholder chain reads
+  // `bookmark.image`, so every hydrated read path must project metadata.image.
+  test('projects metadata.image onto list and by-ids reads', () => {
+    const image = {
+      ogImageUrl: 'https://img.test/og.png',
+      screenshotPath: 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa.jpg',
+    };
+    const created = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://img.test',
+      title: 'With image',
+      metadata: { image },
+    });
+
+    expect(listBookmarks(db).items[0]?.image).toEqual(image);
+    expect(getBookmarksWithTagsByIds(db, [created.id])[0]?.image).toEqual(image);
+  });
+
+  test('falls back to a both-null image when metadata has none', () => {
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://plain.test' });
+    expect(listBookmarks(db).items[0]?.image).toEqual({ ogImageUrl: null, screenshotPath: null });
   });
 });
 

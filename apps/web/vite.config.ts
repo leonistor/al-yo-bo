@@ -14,6 +14,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true },
+      // Local screenshot artifacts (ARCHITECTURE §8). Without this, Vite's SPA
+      // fallback serves index.html for /data/screenshots/*.jpg and every <img>
+      // fails to decode.
+      '/data': { target: 'http://127.0.0.1:3000', changeOrigin: true },
     },
   },
 });

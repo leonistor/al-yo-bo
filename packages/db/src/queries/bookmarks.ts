@@ -15,7 +15,7 @@ import {
   type RankedCandidate,
 } from '@al-yo-bo/shared';
 
-import { mapBookmark, type BookmarkRow } from '../row-mapping.ts';
+import { mapBookmark, parseBookmarkImage, type BookmarkRow } from '../row-mapping.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
 
 const COLUMNS =
@@ -66,7 +66,13 @@ function hydrate(db: Database, rows: BookmarkRow[]): BookmarkWithTags[] {
     db,
     bookmarks.map((bookmark) => bookmark.id),
   );
-  return bookmarks.map((bookmark) => ({ ...bookmark, tags: tags.get(bookmark.id) ?? [] }));
+  return bookmarks.map((bookmark) => ({
+    ...bookmark,
+    tags: tags.get(bookmark.id) ?? [],
+    // Surfaced on every read path (list/search/detail) so the UI can render
+    // the screenshot → og:image → placeholder chain without touching metadata.
+    image: parseBookmarkImage(bookmark.metadata),
+  }));
 }
 
 function sortColumn(sort: BookmarkSort = 'created_at'): string {
