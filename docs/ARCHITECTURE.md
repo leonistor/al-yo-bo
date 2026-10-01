@@ -458,7 +458,9 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
    (`ollaya pull laya`),
 3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the gitignored
    `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
-   `config/qdrant.yaml`; loopback only, storage under `data/qdrant/`).
+   `config/qdrant.yaml`; loopback only, storage under `data/qdrant/`). In development,
+   `bun run dev` starts it automatically when the binary is installed and skips it (in-memory
+   vectors) when it is not.
 
 The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API

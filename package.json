@@ -4,7 +4,10 @@
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "bun run --parallel --filter '*' dev",
+    "dev:server": "bun run --filter '@al-yo-bo/server' dev",
+    "dev:web": "bun run --filter '@al-yo-bo/web' dev",
+    "dev:qdrant": "if [ -x .tools/qdrant/qdrant ]; then exec .tools/qdrant/qdrant --config-path config/qdrant.yaml; else echo '[qdrant] not installed — run: bun run qdrant:install (continuing with in-memory vectors)'; fi",
+    "dev": "bun run --parallel dev:server dev:web dev:qdrant",
     "build": "bun run --filter '@al-yo-bo/web' build",
     "start": "NODE_ENV=production bun run apps/server/src/index.ts",
     "lint": "oxlint .",
