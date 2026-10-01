@@ -10,7 +10,7 @@
  * module; the app never proxies page loads for the UI (§3).
  */
 
-import type { ServerConfig } from './env.ts';
+import type { CoreConfig } from './config.ts';
 
 /** A scraped page, ready to persist onto the bookmark row. */
 export interface ScrapeResult {
@@ -122,7 +122,7 @@ export function sha256Hex(value: string): string {
  * scrape endpoint. `deps` are overridable for tests.
  */
 export function makeScraper(
-  options: ServerConfig['scrape'],
+  options: CoreConfig['scrape'],
   deps: { fetchPage?: typeof fetchPageHtml; convert?: typeof convertHtmlToMarkdown } = {},
 ): ScrapeFn {
   const fetchPage = deps.fetchPage ?? fetchPageHtml;

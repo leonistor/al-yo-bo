@@ -13,23 +13,14 @@ import { convertToModelMessages, isStepCount, streamText, tool, type UIMessage }
 import { createOllama } from 'ollama-ai-provider-v2';
 import { z } from 'zod';
 
-import type { ServerConfig } from './env.ts';
+import type { BookmarkHit } from '@al-yo-bo/core';
 
-/** One bookmark as handed to the model: compact, no page content. */
-export interface ChatBookmarkHit {
-  id: string;
-  url: string;
-  title: string | null;
-  description: string | null;
-  tags: string[];
-  categoryName: string | null;
-  updatedAt: number;
-}
+import type { ServerConfig } from './env.ts';
 
 export interface ChatToolContext {
   config: ServerConfig;
   /** Runs the hybrid search path and returns compact hits (max `limit`). */
-  search: (query: string, limit: number) => Promise<ChatBookmarkHit[]>;
+  search: (query: string, limit: number) => Promise<BookmarkHit[]>;
 }
 
 const MAX_SEARCH_HITS = 8;

@@ -14,14 +14,14 @@ import {
 import type { Database } from 'bun:sqlite';
 import type { RankedCandidate, VectorFilter, VectorIndex } from '@al-yo-bo/shared';
 
-import { loadConfig } from '../src/env.ts';
 import {
   buildQuestions,
   buildStateString,
   classifyBookmark,
   MAX_QUESTIONS_PER_CALL,
   type ClassifyDeps,
-} from '../src/classify.ts';
+} from '../src/enrichment/classify.ts';
+import { testConfig } from './support.ts';
 
 class NoVector implements VectorIndex {
   get size(): number {
@@ -78,7 +78,7 @@ function makeFixture(db: Database): Fixture {
 }
 
 function makeDeps(db: Database, classifier?: ClassifyDeps['classifier']): ClassifyDeps {
-  return { db, vector: new NoVector(), classifier, config: loadConfig({ AUTO_ASSIGN_THRESHOLD: '0.5' }) };
+  return { db, vector: new NoVector(), classifier, config: testConfig({ autoAssignThreshold: 0.5 }) };
 }
 
 describe('buildStateString', () => {
@@ -98,7 +98,7 @@ describe('buildStateString', () => {
 describe('buildQuestions', () => {
   test('one noul question per tag name', () => {
     const questions = buildQuestions(['rust', 'webdev']);
-    expect(Object.keys(questions).sort()).toEqual(['rust', 'webdev']);
+    expect(Object.keys(questions).toSorted()).toEqual(['rust', 'webdev']);
     expect(questions['rust']!.type).toBe('noul');
     expect(questions['rust']!.criteria?.true).toContain('rust');
   });
@@ -132,7 +132,7 @@ describe('classifyBookmark', () => {
     // Exactly-at-threshold qualifies (>=), the deprecated tag never does even at 0.99.
     expect(tags.some((tag) => tag.name === 'inactive')).toBe(false);
     // The question was only asked for active candidates.
-    expect(Object.keys(calls[0]!.questions).sort()).toEqual(['rust', 'webdev']);
+    expect(Object.keys(calls[0]!.questions).toSorted()).toEqual(['rust', 'webdev']);
     expect(calls[0]!.state).toContain('Rust book');
   });
 

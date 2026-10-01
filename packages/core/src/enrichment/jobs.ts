@@ -21,8 +21,8 @@ import {
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { packFloat32, type VectorIndex } from '@al-yo-bo/shared';
 
-import { ScrapeError, type ScrapeFn, type ScrapeResult } from './scrape.ts';
-import type { ServerConfig } from './env.ts';
+import { ScrapeError, type ScrapeFn, type ScrapeResult } from '../scrape.ts';
+import type { CoreConfig } from '../config.ts';
 import { classifyBookmark, type ClassifyDeps } from './classify.ts';
 
 export type JobType = 'scrape' | 'embed' | 'classify';
@@ -35,8 +35,8 @@ export interface JobDeps {
   vector: VectorIndex;
   embeddings?: EmbeddingClient;
   scrape: ScrapeFn;
-  /** Server configuration (embedding model identity, scrape options). */
-  config: ServerConfig;
+  /** Core configuration (embedding model identity, scrape options). */
+  config: CoreConfig;
   /** The queue itself, so job handlers can chain the next job type. Optional in workerless contexts. */
   queue?: JobQueue;
 }
@@ -57,8 +57,8 @@ export interface JobQueueOptions extends Omit<JobDeps, 'queue'> {
   onEmbedded?: (bookmarkId: string) => void;
   /** Classification subsystem; absent = classification stays off (§1.5). */
   classifier?: ClassifyDeps['classifier'];
-  /** Server configuration (threshold, Ollaya model) for the classify job. */
-  config: ServerConfig;
+  /** Core configuration (threshold, Ollaya model) for the classify job. */
+  config: CoreConfig;
 }
 
 /**

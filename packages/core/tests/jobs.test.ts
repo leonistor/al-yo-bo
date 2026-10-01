@@ -19,9 +19,10 @@ import {
   startJobQueue,
   type JobDeps,
   type JobQueue,
-} from '../src/jobs.ts';
+} from '../src/enrichment/jobs.ts';
 import { makeScraper, ScrapeError, sha256Hex, type ScrapeFn } from '../src/scrape.ts';
-import { loadConfig, type ServerConfig } from '../src/env.ts';
+import type { CoreConfig } from '../src/config.ts';
+import { testConfig } from './support.ts';
 
 /** VectorIndex stub that records upserts and answers searches in insertion order. */
 class RecordingVector implements VectorIndex {
@@ -80,6 +81,11 @@ const stubEmbeddings = {
   },
 };
 
+/** Config pinned to the production default embedding model, matching the old loader. */
+function defaultConfig(): CoreConfig {
+  return testConfig({ embeddings: { model: 'openai/text-embedding-3-small' } });
+}
+
 function makeDb(): Database {
   const db = openDatabase(':memory:');
   setupDatabase(db);
@@ -88,7 +94,7 @@ function makeDb(): Database {
 
 function makeDeps(
   db: Database,
-  overrides: { scrape?: ScrapeFn; embeddings?: typeof stubEmbeddings; config?: ServerConfig } = {},
+  overrides: { scrape?: ScrapeFn; embeddings?: typeof stubEmbeddings; config?: CoreConfig } = {},
 ): JobDeps & { vector: RecordingVector; queue: ReturnType<typeof recordingQueue> } {
   const vector = new RecordingVector();
   const queue = recordingQueue();
@@ -96,7 +102,7 @@ function makeDeps(
     db,
     vector,
     queue,
-    config: overrides.config ?? loadConfig({}),
+    config: overrides.config ?? defaultConfig(),
     scrape:
       overrides.scrape ??
       (async () => {
@@ -268,7 +274,7 @@ describe('scrapeAndStore', () => {
   test('honors the configured invalidation cap', async () => {
     const { id } = createBookmark(db, { url: 'https://example.com/dead-cap' });
     const deps = makeDeps(db, {
-      config: loadConfig({ SCRAPE_MAX_ATTEMPTS: '2' }),
+      config: testConfig({ scrape: { ...testConfig().scrape, maxAttempts: 2 } }),
       scrape: async () => {
         throw new ScrapeError('HTTP 410', 410);
       },
@@ -406,7 +412,7 @@ describe('job queue', () => {
         contentHash: sha256Hex('# F'),
         metadata: { scrape: { at: 1, contentType: null, finalUrl: null, truncated: false } },
       }),
-      config: loadConfig({}),
+      config: testConfig(),
       baseDelayMs: 1,
     });
 
@@ -432,7 +438,7 @@ describe('job queue', () => {
         throw new ScrapeError('boom');
       },
       maxAttempts: 3,
-      config: loadConfig({}),
+      config: testConfig(),
       baseDelayMs: 1,
     });
 
@@ -459,7 +465,7 @@ describe('job queue', () => {
           metadata: { scrape: { at: 1, contentType: null, finalUrl: null, truncated: false } },
         };
       },
-      config: loadConfig({}),
+      config: testConfig(),
       baseDelayMs: 1,
     });
 
@@ -505,8 +511,8 @@ describe('reconcileEnrichment', () => {
       queue.calls
         .filter((call) => call.type === 'embed')
         .map((call) => call.id)
-        .sort(),
-    ).toEqual([unembedded.id, staleModel.id].sort());
+        .toSorted(),
+    ).toEqual([unembedded.id, staleModel.id].toSorted());
   });
 
   test('skips embedding reconciliation when no model is configured', () => {

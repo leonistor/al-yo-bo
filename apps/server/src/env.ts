@@ -1,15 +1,18 @@
 import { join } from 'node:path';
 
-export interface ServerConfig {
+import type { CoreConfig } from '@al-yo-bo/core';
+
+/**
+ * Server-only configuration layered on top of the core config the service layer
+ * consumes. `autoAssignThreshold`, `ollaya`, and `scrape` are inherited from
+ * `CoreConfig`; `embeddings` widens the core shape with the adapter credentials
+ * (OpenRouter), and `qdrant`/`chat` are transport/serving concerns that never
+ * reach core.
+ */
+export interface ServerConfig extends CoreConfig {
   port: number;
   host: string;
   dbPath: string;
-  autoAssignThreshold: number;
-  ollaya: {
-    baseUrl: string;
-    apiKey?: string;
-    model: string;
-  };
   /** Vector-serving sidecar (ARCHITECTURE §6); disabled when `url` is undefined. */
   qdrant: {
     url?: string;
@@ -22,15 +25,6 @@ export interface ServerConfig {
     apiKey?: string;
     model?: string;
     baseUrl?: string;
-  };
-  /** Page enrichment; see apps/server/src/scrape.ts. */
-  scrape: {
-    timeoutMs: number;
-    maxContentChars: number;
-    /** html-to-markdown CLI binary (PATH-resolved; absolute paths allowed). */
-    binary: string;
-    /** Dead-link invalidation cap; shared with the job retry loop. */
-    maxAttempts: number;
   };
   /** Chat (AI SDK + local Ollama); off without a model. */
   chat: {

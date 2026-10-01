@@ -67,6 +67,7 @@ flowchart LR
 
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
+    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\nreview · import · enrichment · health"]
     Worker["Job worker (in-process loop)\nscrape · embed · classify · reindex"]
     Search["Search module\nFTS5 + vector top-k + RRF"]
   end
@@ -82,9 +83,11 @@ flowchart LR
   Sites["Web pages\n(to scrape)"]
 
   Web -- "type-safe RPC (Hono AppType)" --> API
-  API --> Search
-  API --> DB
-  API --> OR
+  API --> Core
+  Core --> Search
+  Core --> DB
+  Core --> OR
+  Core --> Ollaya
   Worker --> DB
   Worker --> Ollaya
   Worker --> OR
@@ -97,6 +100,13 @@ flowchart LR
 single-user deployment (the worker is an in-process loop, §8); nothing in the job code assumes
 co-location, so extraction into a separate entry point stays possible. The worker is a
 durability boundary (see §8), so it is shown separately.
+
+**Transport vs. domain.** `apps/server` (the Hono API) is a thin transport adapter: it parses HTTP,
+calls exactly one `packages/core` service, and maps domain errors to problem+json. `packages/core`
+owns the application services — search orchestration, bookmark CRUD and its re-run triggers,
+vocabulary, review, import, the enrichment queue, and health. The app edge constructs the concrete
+adapters (Qdrant stack, OpenRouter embeddings, Ollaya client, scraper) and injects them as
+interfaces, so core stays transport-neutral and testable without a server.
 
 **External participants.**
 
@@ -114,7 +124,7 @@ Bun workspaces. The goal is a small, acyclic package graph, not an exhaustive ta
 
 ```
 apps/
-  server/          Hono routes, RPC contract, worker entry, bootstrapping
+  server/          Hono routes (transport adapters), RPC contract, worker entry, bootstrapping
   web/             React 19 app (shadcn/ui, assistant-ui), talks to server via Hono RPC
 packages/
   db/              schema, migrations, PRAGMAs, typed queries
@@ -123,6 +133,7 @@ packages/
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
   importer/        markdown collection-file parser and ingest
+  core/            domain/application services (search, bookmarks, enrichment, ...); no HTTP
   shared/          domain types + utilities (no framework imports)
 ```
 
@@ -130,8 +141,10 @@ packages/
 
 ```
 web ─▶ shared
-server ─▶ db, search, vectordb, embeddings, classifier, importer, shared
+server ─▶ core, db, search, vectordb, embeddings, classifier, shared
+core ─▶ db, importer, search, embeddings, classifier, shared
 db, search, vectordb, embeddings, classifier, importer ─▶ shared
+importer ─▶ db
 ```
 
 Rules:
@@ -139,13 +152,17 @@ Rules:
 - `shared` imports nothing from the app (no Hono, no Bun-specific runtime, no database client).
   It owns the `VectorIndex` interface and the LE-Float32 BLOB codec shared by `search` and
   `vectordb`.
-- `db` owns all SQL; no other package opens the database directly. Orchestrations that read SQLite
-  (e.g. the Qdrant startup sync) live in `apps/server`, which passes plain records into the
-  packages.
+- `db` owns all SQL; only `apps/server` opens/sets up the SQLite file, then hands the handle to
+  `core`. `core` composes typed `db` queries into application services but writes no SQL of its own;
+  the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
+  `apps/server`.
+- `core` is transport-neutral: it depends on the `EmbeddingClient`/`ClassifierClient` interfaces and
+  a `VectorProvider` port, never on concrete adapters or Hono. It receives an already-open database
+  and a vector provider; only `apps/server` constructs the concrete implementations.
 - `search`, `vectordb`, `embeddings`, and `classifier` take and return plain data, so they are
   testable without a running server.
 - No cycles. `server` is the only package allowed to depend on a concrete implementation of each
-  subsystem.
+  subsystem; `web` depends on `server` only through its exported route type (type-only).
 
 **Hono RPC typing.** `apps/server` exports its route type (`export type AppType = typeof routes`);
 `apps/web` imports it **as a type only** and derives a typed client. This keeps the contract in one

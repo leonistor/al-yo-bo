@@ -6,9 +6,9 @@ Technical reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Project status
 
 **In implementation.** The architecture, data model, and design are decided. The Bun workspace and
-`packages/shared|db|search|vectordb|embeddings|classifier|importer` plus `apps/server|web` are being
-built. Do not invent structure, dependencies, or conventions that contradict the docs — if something
-is genuinely missing, update the docs first or ask.
+`packages/shared|db|search|vectordb|embeddings|classifier|importer|core` plus `apps/server|web` are
+being built. Do not invent structure, dependencies, or conventions that contradict the docs — if
+something is genuinely missing, update the docs first or ask.
 
 ## Sources of truth
 
@@ -26,7 +26,7 @@ Precedence for technical questions: ARCHITECTURE > MODEL > DESIGN > README.
 
 ```
 apps/
-  server/          Hono routes, RPC contract, worker entry, bootstrapping
+  server/          Hono routes (transport adapters), RPC contract, worker entry, bootstrapping
   web/             React 19 app (shadcn/ui, assistant-ui), talks to server via Hono RPC
 packages/
   db/              schema, migrations, PRAGMAs, typed queries
@@ -35,11 +35,13 @@ packages/
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
   importer/        markdown collection-file parser and ingest
+  core/            domain/application services (transport-neutral); orchestrates db/search/importer
   shared/          domain types + utilities (no framework imports)
 ```
 
-Dependency rules: `shared` imports nothing app-specific; `db` owns all SQL; `server` is the only
-package allowed to depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
+Dependency rules: `shared` imports nothing app-specific; `db` owns all SQL; `core` is
+transport-neutral and composes package interfaces only; `server` is the only package allowed to
+depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 
 ## Commands
 

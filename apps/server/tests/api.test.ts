@@ -1,6 +1,23 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { createBookmark, getBookmarkById, openDatabase, seedFromFile, setupDatabase } from '@al-yo-bo/db';
+import type { Database } from 'bun:sqlite';
+
+import {
+  createBookmark,
+  getBookmarkById,
+  openDatabase,
+  resolveSeedDataset,
+  seedFromFile,
+  setupDatabase,
+} from '@al-yo-bo/db';
+import type { ClassifierClient } from '@al-yo-bo/classifier';
+import type { EmbeddingClient } from '@al-yo-bo/embeddings';
+import {
+  ScrapeError,
+  createCore,
+  createVectorProvider,
+  type ScrapeFn,
+} from '@al-yo-bo/core';
 import type {
   RankedCandidate,
   VectorFilter,
@@ -10,8 +27,7 @@ import type {
 } from '@al-yo-bo/shared';
 
 import { createApp } from '../src/app.ts';
-import { loadConfig } from '../src/env.ts';
-import { ScrapeError } from '../src/scrape.ts';
+import { loadConfig, type ServerConfig } from '../src/env.ts';
 
 /** Deterministic VectorIndex stub: candidates come back in insertion order. */
 class StubVectorIndex implements VectorIndex {
@@ -41,7 +57,7 @@ class StubVectorIndex implements VectorIndex {
 }
 
 /** EmbeddingClient stub returning a fixed unit-ish vector. */
-const stubEmbeddings = {
+const stubEmbeddings: EmbeddingClient = {
   async embed(texts: string[]) {
     return {
       vectors: texts.map(() => Float32Array.from([1, 0, 0])),
@@ -51,12 +67,37 @@ const stubEmbeddings = {
   },
 };
 
-function makeApp(services?: Parameters<typeof createApp>[2]) {
+/** Optional capabilities a transport test can attach to a real core instance. */
+interface AppOptions {
+  vector?: VectorIndex;
+  embeddings?: EmbeddingClient;
+  scrape?: ScrapeFn;
+  classifier?: ClassifierClient;
+  reindex?: () => Promise<{ vectorBackend: 'qdrant' | 'memory' }>;
+}
+
+/** Builds a core (with the stub subsystems) over an already-seeded db, then the app. */
+function buildApp(db: Database, options: AppOptions = {}) {
+  const vector = options.vector ?? new StubVectorIndex([]);
+  const env = options.embeddings ? { EMBEDDING_MODEL: 'stub-model' } : {};
+  const config: ServerConfig = loadConfig(env);
+  const core = createCore({
+    db,
+    config,
+    vector: createVectorProvider(vector, 'memory'),
+    embeddings: options.embeddings,
+    classifier: options.classifier,
+    scrape: options.scrape,
+    reindex: options.reindex,
+  });
+  return { db, core, config, app: createApp(core, config) };
+}
+
+function makeApp(options: AppOptions = {}) {
   const db = openDatabase(':memory:');
   setupDatabase(db);
-  seedFromFile(db);
-  const env = services?.embeddings ? { EMBEDDING_MODEL: 'stub-model' } : {};
-  return { db, app: createApp(db, loadConfig(env), services) };
+  seedFromFile(db, resolveSeedDataset('grimoire'));
+  return buildApp(db, options);
 }
 
 /** First N seeded bookmark ids, in listing order. */
@@ -241,11 +282,10 @@ describe('fused search pagination', () => {
     const { db, app } = makeApp();
     const ids = await firstSeededIds(app, 5);
     // Same database, second app instance with the stub subsystems attached.
-    const fusedApp = createApp(db, loadConfig({ EMBEDDING_MODEL: 'stub-model' }), {
+    const fusedApp = buildApp(db, {
       vector: new StubVectorIndex(ids),
-      vectorBackend: 'memory',
       embeddings: stubEmbeddings,
-    });
+    }).app;
 
     // Page 1: limit 2 over 5 semantic candidates -> hasMore, total is the true count.
     const page1 = (await (
@@ -291,11 +331,10 @@ describe('fused search pagination', () => {
       status: 'invalid',
       scrapeAttempts: 3,
     });
-    const fusedApp = createApp(db, loadConfig({ EMBEDDING_MODEL: 'stub-model' }), {
+    const fusedApp = buildApp(db, {
       vector: new StubVectorIndex([invalid.id, ...ids]),
-      vectorBackend: 'memory',
       embeddings: stubEmbeddings,
-    });
+    }).app;
 
     const active = (await (
       await fusedApp.request('/api/bookmarks?q=zzzqqq&mode=semantic&limit=10&status=active')

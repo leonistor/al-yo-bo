@@ -1,0 +1,181 @@
+import type { Database } from 'bun:sqlite';
+
+import { getBookmarkById } from '@al-yo-bo/db';
+import type { ClassifierClient } from '@al-yo-bo/classifier';
+import type { EmbeddingClient } from '@al-yo-bo/embeddings';
+import type { BookmarkWithTags, VectorIndex } from '@al-yo-bo/shared';
+
+import { DomainError, NotFoundError } from '../errors.ts';
+import { ScrapeError, type ScrapeFn } from '../scrape.ts';
+import type { CoreConfig } from '../config.ts';
+import type { VectorProvider } from '../vector/provider.ts';
+import {
+  reconcileEnrichment,
+  scrapeAndStore,
+  startJobQueue,
+  type JobQueue,
+  type JobType,
+  type ReconcileReport,
+  type ScrapeOutcome,
+} from '../enrichment/jobs.ts';
+import { classifyBookmark, type ClassifyOutcome } from '../enrichment/classify.ts';
+import { bookmarkViewOrThrow } from './_views.ts';
+
+/**
+ * Minimal scheduling port other services depend on. It is deliberately tiny so
+ * they never reach for the full queue (waitForIdle/stop), and so tests can pass
+ * a recording stub. `EnrichmentService` is its production implementation.
+ */
+export interface JobScheduler {
+  enqueue(bookmarkId: string, type: JobType): void;
+}
+
+export interface EnrichmentServiceDeps {
+  db: Database;
+  config: CoreConfig;
+  vector: VectorProvider;
+  embeddings?: EmbeddingClient;
+  classifier?: ClassifierClient;
+  /** Absent = the manual scrape endpoint reports unavailable and scrape jobs fail. */
+  scrape?: ScrapeFn;
+  maxAttempts?: number;
+  baseDelayMs?: number;
+}
+
+export interface ScrapeResponse {
+  status: ScrapeOutcome;
+  bookmark: BookmarkWithTags;
+}
+
+export interface ClassifyResponse extends ClassifyOutcome {
+  bookmark: BookmarkWithTags;
+}
+
+export interface EnrichmentService extends JobScheduler {
+  pendingCount(): number;
+  /** Resolves when no job is queued or running (test/drain helper). */
+  waitForIdle(): Promise<void>;
+  stop(): void;
+  /** Capability probes so the app edge can decide whether an endpoint is served. */
+  readonly scrapeAvailable: boolean;
+  readonly classifierAvailable: boolean;
+  /** Manual scrape for one bookmark; maps scrape failures to domain errors. */
+  scrape(id: string): Promise<ScrapeResponse>;
+  /** Manual classification for one bookmark; maps failures to domain errors. */
+  classify(id: string): Promise<ClassifyResponse>;
+  reconcile(): ReconcileReport;
+}
+
+/**
+ * A stable `VectorIndex` that always delegates to the provider's current index.
+ * The queue is built once, but a `reindex` may replace the serving stack at any
+ * time — reading `current()` per operation keeps queued work on the live index.
+ */
+function routingVector(provider: VectorProvider): VectorIndex {
+  return {
+    get size() {
+      return provider.current().size;
+    },
+    upsert: (point) => provider.current().upsert(point),
+    updatePayload: (bookmarkId, patch) => provider.current().updatePayload(bookmarkId, patch),
+    delete: (bookmarkId) => provider.current().delete(bookmarkId),
+    search: (query, topK, filter) => provider.current().search(query, topK, filter),
+  };
+}
+
+/** Enabled only when deps are configured; workspace is optional (§1.5) */
+export function createEnrichmentService(deps: EnrichmentServiceDeps): EnrichmentService {
+  const { db, config, vector, embeddings, classifier, scrape } = deps;
+
+  // The queue chains scrape → embed → classify and is the JobScheduler other
+  // services receive. `queue` is referenced from the onEmbedded hook, which only
+  // fires after a job runs, by which point the assignment has happened.
+  let queue!: JobQueue;
+  queue = startJobQueue({
+    db,
+    vector: routingVector(vector),
+    embeddings,
+    // With no scrape capability the queue still exists (embed/classify work);
+    // scrape jobs fail as transient and are dropped after the retry cap.
+    scrape:
+      scrape ??
+      (async () => {
+        throw new ScrapeError('Scraping is not available');
+      }),
+    classifier,
+    config,
+    maxAttempts: deps.maxAttempts ?? config.scrape.maxAttempts,
+    baseDelayMs: deps.baseDelayMs,
+    // Content changes flow scrape → embed → classify (§6 re-run triggers).
+    onEmbedded: (bookmarkId) => queue.enqueue(bookmarkId, 'classify'),
+  });
+
+  return {
+    enqueue: (bookmarkId, type) => queue.enqueue(bookmarkId, type),
+    pendingCount: () => queue.pendingCount(),
+    waitForIdle: () => queue.waitForIdle(),
+    stop: () => queue.stop(),
+
+    get scrapeAvailable() {
+      return Boolean(scrape);
+    },
+    get classifierAvailable() {
+      return Boolean(classifier);
+    },
+
+    async scrape(id) {
+      if (!getBookmarkById(db, id)) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      if (!scrape) {
+        throw new DomainError('Scraping is not available', 'scrape_unavailable');
+      }
+      try {
+        const status = await scrapeAndStore(
+          {
+            db,
+            // Resolved at call time so a reindexed stack is used.
+            vector: vector.current(),
+            embeddings,
+            scrape,
+            config,
+            // Chains the embed job into the same queue the worker drains.
+            queue,
+          },
+          id,
+        );
+        return { status, bookmark: bookmarkViewOrThrow(db, id) };
+      } catch (error) {
+        if (error instanceof ScrapeError) {
+          throw new DomainError(error.message, 'scrape_failed');
+        }
+        throw error;
+      }
+    },
+
+    async classify(id) {
+      if (!getBookmarkById(db, id)) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      if (!classifier) {
+        throw new DomainError('Classification is not available', 'classify_unavailable');
+      }
+      try {
+        const outcome = await classifyBookmark(
+          { db, vector: vector.current(), classifier, config },
+          id,
+        );
+        return { ...outcome, bookmark: bookmarkViewOrThrow(db, id) };
+      } catch (error) {
+        throw new DomainError(
+          `Classification failed: ${error instanceof Error ? error.message : error}`,
+          'classify_failed',
+        );
+      }
+    },
+
+    reconcile() {
+      return reconcileEnrichment(queue, db, embeddings ? config.embeddings.model : undefined);
+    },
+  };
+}

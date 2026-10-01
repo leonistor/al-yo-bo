@@ -22,7 +22,8 @@ import {
 import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/classifier';
 import { hostFromUrl, type BookmarkWithTags, type Tag, type VectorIndex } from '@al-yo-bo/shared';
 
-import type { ServerConfig } from './env.ts';
+import type { CoreConfig } from '../config.ts';
+import { syncVectorPayload } from '../vector/sync.ts';
 
 /** One `noul` question per candidate tag, capped per decide call. */
 export const MAX_QUESTIONS_PER_CALL = 20;
@@ -34,7 +35,7 @@ export interface ClassifyDeps {
   db: Database;
   vector: VectorIndex;
   classifier?: ClassifierClient;
-  config: ServerConfig;
+  config: CoreConfig;
 }
 
 export interface ClassifyOutcome {
@@ -103,21 +104,6 @@ function candidatesForBookmark(db: Database, bookmark: BookmarkWithTags): Map<st
     }
   }
   return map;
-}
-
-/** Mirrors the (possibly changed) effective tags into the vector index payload. */
-async function syncPayload(deps: ClassifyDeps, bookmarkId: string): Promise<void> {
-  if (deps.vector.size === 0) {
-    return;
-  }
-  const [bookmark] = getBookmarksWithTagsByIds(deps.db, [bookmarkId]);
-  if (!bookmark) {
-    return;
-  }
-  await deps.vector.updatePayload(bookmarkId, {
-    categoryId: bookmark.categoryId,
-    tagIds: bookmark.tags.map((tag) => tag.tagId),
-  });
 }
 
 /**
@@ -231,7 +217,9 @@ export async function classifyBookmark(
   }
 
   if (outcome.assigned > 0) {
-    await syncPayload(deps, bookmarkId);
+    // Mirrors the (possibly changed) effective tags into the vector payload.
+    const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
+    await syncVectorPayload(deps.vector, bookmarkId, fresh);
   }
   return outcome;
 }

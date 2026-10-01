@@ -1,20 +1,23 @@
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OllayaClassifierClient } from '@al-yo-bo/classifier';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
+import { createCore, createVectorProvider, makeScraper } from '@al-yo-bo/core';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 
-import { createApp, type AppServices } from './app.ts';
+import { createApp } from './app.ts';
 import { loadConfig } from './env.ts';
-import { reconcileEnrichment, startJobQueue } from './jobs.ts';
-import { makeScraper } from './scrape.ts';
 import { initVectorIndex } from './vector.ts';
 
 const config = loadConfig();
 const db = openDatabase(config.dbPath);
 setupDatabase(db);
 
+// The serving stack is booted at the edge (Qdrant/vectordb never leaks into
+// core); the provider lets core services observe a hot-swapped index.
 const vector = await initVectorIndex(db, config);
+const provider = createVectorProvider(vector.index, vector.backend);
+
 const embeddings =
   config.embeddings.apiKey && config.embeddings.model
     ? new OpenRouterEmbeddings({
@@ -30,38 +33,28 @@ const classifier = new OllayaClassifierClient({
   baseUrl: config.ollaya.baseUrl,
   apiKey: config.ollaya.apiKey,
 });
-const jobs = startJobQueue({
+
+const core = createCore({
   db,
-  vector: vector.index,
-  embeddings,
-  scrape,
-  classifier,
   config,
+  vector: provider,
+  embeddings,
+  classifier,
+  scrape,
   // Same cap as dead-link invalidation: a job gives up on the same attempt that
   // marks the bookmark invalid.
   maxAttempts: config.scrape.maxAttempts,
-  // Content changes flow scrape → embed → classify (§6 re-run triggers).
-  onEmbedded: (bookmarkId) => jobs.enqueue(bookmarkId, 'classify'),
+  // The `reindex` job (§8): rebuild FTS + vector serving stack from SQLite and
+  // hot-swap it into the provider every service reads.
+  reindex: async () => {
+    const next = await initVectorIndex(db, config);
+    provider.replace(next.index, next.backend);
+    return { vectorBackend: next.backend };
+  },
 });
 
 const app = new Hono();
-const services: AppServices = {
-  vector: vector.index,
-  vectorBackend: vector.backend,
-  embeddings,
-  jobs,
-  scrape,
-  classifier,
-  // The `reindex` job (§8): rebuild FTS + vector serving stack from SQLite and
-  // hot-swap it into the same services object every request reads.
-  reindex: async () => {
-    const next = await initVectorIndex(db, config);
-    services.vector = next.index;
-    services.vectorBackend = next.backend;
-    return { vectorBackend: next.backend };
-  },
-};
-app.route('/', createApp(db, config, services));
+app.route('/', createApp(core, config));
 
 // In production the single Bun process also serves the built web app.
 if (process.env.NODE_ENV === 'production') {
@@ -70,7 +63,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 function shutdown(): void {
-  jobs.stop();
+  core.stop();
   checkpoint(db);
   db.close();
   process.exit(0);
@@ -81,11 +74,7 @@ process.on('SIGTERM', shutdown);
 
 // Startup reconciliation (ARCHITECTURE §8): recover enrichment a restart dropped.
 // Embedding reconciliation only runs when the embedding client is configured.
-const reconciliation = reconcileEnrichment(
-  jobs,
-  db,
-  embeddings ? config.embeddings.model : undefined,
-);
+const reconciliation = core.enrichment.reconcile();
 
 console.log(`al-yo-bo server listening on http://${config.host}:${config.port}`);
 console.log(

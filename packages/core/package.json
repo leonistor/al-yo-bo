@@ -1,5 +1,5 @@
 {
-  "name": "@al-yo-bo/server",
+  "name": "@al-yo-bo/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,22 +12,14 @@
     }
   },
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@al-yo-bo/classifier": "workspace:*",
-    "@al-yo-bo/core": "workspace:*",
     "@al-yo-bo/db": "workspace:*",
     "@al-yo-bo/embeddings": "workspace:*",
     "@al-yo-bo/importer": "workspace:*",
     "@al-yo-bo/search": "workspace:*",
-    "@al-yo-bo/shared": "workspace:*",
-    "@al-yo-bo/vectordb": "workspace:*",
-    "ai": "^7.0.123",
-    "hono": "^4.9.0",
-    "ollama-ai-provider-v2": "^4.0.1",
-    "zod": "^4.6.5"
+    "@al-yo-bo/shared": "workspace:*"
   }
 }
