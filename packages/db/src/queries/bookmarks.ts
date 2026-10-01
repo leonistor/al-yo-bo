@@ -8,7 +8,9 @@ import {
   toFtsMatch,
   uuidToBytes,
   type Bookmark,
+  type BookmarkListStatus,
   type BookmarkSort,
+  type BookmarkStatus,
   type BookmarkWithTags,
   type RankedCandidate,
 } from '@al-yo-bo/shared';
@@ -17,7 +19,7 @@ import { mapBookmark, type BookmarkRow } from '../row-mapping.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
 
 const COLUMNS =
-  'id, url, title, description, content, metadata, category_id, content_hash, scraped_at, created_at, updated_at';
+  'id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
 
 export interface BookmarkInput {
   url: string;
@@ -28,6 +30,8 @@ export interface BookmarkInput {
   categoryId?: string | null;
   contentHash?: string | null;
   scrapedAt?: number | null;
+  status?: BookmarkStatus;
+  scrapeAttempts?: number;
 }
 
 export interface ListBookmarksFilters {
@@ -35,6 +39,7 @@ export interface ListBookmarksFilters {
   tagId?: string;
   dateFrom?: number;
   dateTo?: number;
+  status?: BookmarkListStatus;
   sort?: BookmarkSort;
   direction?: 'asc' | 'desc';
   limit?: number;
@@ -47,6 +52,7 @@ export interface KeywordSearchParams {
   tagId?: string;
   dateFrom?: number;
   dateTo?: number;
+  status?: BookmarkListStatus;
   limit?: number;
   offset?: number;
 }
@@ -94,6 +100,10 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
     where.push('created_at <= ?');
     params.push(filters.dateTo);
   }
+  if (filters.status && filters.status !== 'all') {
+    where.push('status = ?');
+    params.push(filters.status);
+  }
 
   return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
@@ -115,8 +125,8 @@ export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
 export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
   const id = newIdBytes();
   db.query(
-    `INSERT INTO bookmarks (id, url, title, description, content, metadata, category_id, content_hash, scraped_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO bookmarks (id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     normalizeUrl(input.url),
@@ -127,6 +137,8 @@ export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
     input.categoryId ? uuidToBytes(input.categoryId) : null,
     input.contentHash ?? null,
     input.scrapedAt ?? null,
+    input.status ?? 'active',
+    input.scrapeAttempts ?? 0,
   );
   const created = getBookmarkById(db, bytesToUuid(id));
   if (!created) {
@@ -160,10 +172,13 @@ export function updateBookmark(
   const categoryId = patch.categoryId !== undefined ? patch.categoryId : current.categoryId;
   const contentHash = patch.contentHash !== undefined ? patch.contentHash : current.contentHash;
   const scrapedAt = patch.scrapedAt !== undefined ? patch.scrapedAt : current.scrapedAt;
+  const status = patch.status !== undefined ? patch.status : current.status;
+  const scrapeAttempts =
+    patch.scrapeAttempts !== undefined ? patch.scrapeAttempts : current.scrapeAttempts;
 
   db.query(
     `UPDATE bookmarks
-        SET url = ?, title = ?, description = ?, content = ?, metadata = ?, category_id = ?, content_hash = ?, scraped_at = ?
+        SET url = ?, title = ?, description = ?, content = ?, metadata = ?, category_id = ?, content_hash = ?, scraped_at = ?, status = ?, scrape_attempts = ?
       WHERE id = ?`,
   ).run(
     url,
@@ -174,6 +189,8 @@ export function updateBookmark(
     categoryId ? uuidToBytes(categoryId) : null,
     contentHash,
     scrapedAt,
+    status,
+    scrapeAttempts,
     uuidToBytes(id),
   );
 
@@ -212,7 +229,9 @@ export function countBookmarks(db: Database): number {
  */
 export function listBookmarkIdsMissingContent(db: Database): string[] {
   return db
-    .query<{ id: Uint8Array }, []>('SELECT id FROM bookmarks WHERE scraped_at IS NULL')
+    .query<{ id: Uint8Array }, []>(
+      `SELECT id FROM bookmarks WHERE scraped_at IS NULL AND status = 'active'`,
+    )
     .all()
     .map((row) => bytesToUuid(row.id));
 }
@@ -308,6 +327,10 @@ export function keywordSearch(db: Database, params: KeywordSearchParams): Ranked
     where.push('b.created_at <= ?');
     bind.push(params.dateTo);
   }
+  if (params.status && params.status !== 'all') {
+    where.push('b.status = ?');
+    bind.push(params.status);
+  }
 
   const rows = db
     .query<{ id: Uint8Array; score: number; snippet: string }, SQLQueryBindings[]>(
@@ -353,6 +376,10 @@ export function countKeywordMatches(db: Database, params: KeywordSearchParams): 
   if (params.dateTo !== undefined) {
     where.push('b.created_at <= ?');
     bind.push(params.dateTo);
+  }
+  if (params.status && params.status !== 'all') {
+    where.push('b.status = ?');
+    bind.push(params.status);
   }
 
   return (

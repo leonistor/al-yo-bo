@@ -15,7 +15,10 @@ import {
   getBookmarkTags,
   getCategoryById,
   keywordSearch,
+  listBookmarkIdsMissingContent,
+  listBookmarkIdsMissingEmbeddings,
   listBookmarks,
+  listEmbeddingModelMismatches,
   openDatabase,
   resetSeedData,
   resolveSeedDataset,
@@ -23,6 +26,7 @@ import {
   setupDatabase,
   UnknownSeedDatasetError,
   updateBookmark,
+  upsertEmbedding,
 } from '../src/index.ts';
 
 function freshDb(): Database {
@@ -62,6 +66,87 @@ describe('schema & triggers', () => {
     const bookmark = createBookmark(db, { url: 'https://example.com/b', categoryId: category.id });
     deleteCategory(db, category.id);
     expect(getBookmarkById(db, bookmark.id)?.categoryId).toBeNull();
+  });
+
+  test('applies the bookmark status migration with defaults', () => {
+    const versions = db
+      .query<{ version: string }, []>('SELECT version FROM schema_migrations')
+      .all()
+      .map((row) => row.version);
+    expect(versions).toContain('0002_bookmark_status.sql');
+
+    const bookmark = createBookmark(db, { url: 'https://example.com/status-defaults' });
+    expect(bookmark.status).toBe('active');
+    expect(bookmark.scrapeAttempts).toBe(0);
+  });
+});
+
+describe('bookmark status', () => {
+  let db: Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  function createStatusFixtures(): void {
+    createBookmark(db, { url: 'https://s-active.test', title: 'keep me' });
+    createBookmark(db, {
+      url: 'https://s-invalid.test',
+      title: 'keep me too',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+  }
+
+  test('listBookmarks treats undefined status as unfiltered and honors explicit statuses', () => {
+    createStatusFixtures();
+
+    expect(listBookmarks(db).total).toBe(2);
+    expect(listBookmarks(db, { status: 'active' }).total).toBe(1);
+    expect(listBookmarks(db, { status: 'active' }).items[0]?.url).toBe('https://s-active.test/');
+    expect(listBookmarks(db, { status: 'invalid' }).items[0]?.url).toBe('https://s-invalid.test/');
+    expect(listBookmarks(db, { status: 'all' }).total).toBe(2);
+  });
+
+  test('keywordSearch excludes invalid bookmarks when filtered to active', () => {
+    createStatusFixtures();
+
+    expect(keywordSearch(db, { q: 'keep', status: 'active' }).length).toBe(1);
+    expect(keywordSearch(db, { q: 'keep', status: 'all' }).length).toBe(2);
+  });
+
+  test('reconciliation queries exclude invalid bookmarks', () => {
+    const active = createBookmark(db, { url: 'https://r-active.test', content: 'body' });
+    const invalid = createBookmark(db, {
+      url: 'https://r-invalid.test',
+      content: 'body',
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+
+    expect(listBookmarkIdsMissingContent(db)).toEqual([active.id]);
+    expect(listBookmarkIdsMissingEmbeddings(db)).toEqual([active.id]);
+
+    upsertEmbedding(db, {
+      bookmarkId: active.id,
+      model: 'stale-model',
+      dims: 1,
+      embedding: new Uint8Array([0, 0, 0, 0]),
+    });
+    upsertEmbedding(db, {
+      bookmarkId: invalid.id,
+      model: 'stale-model',
+      dims: 1,
+      embedding: new Uint8Array([0, 0, 0, 0]),
+    });
+    expect(listEmbeddingModelMismatches(db, 'current-model')).toEqual([active.id]);
+  });
+
+  test('aggregates report the invalid bookmark count', () => {
+    createStatusFixtures();
+
+    const aggregates = getAggregates(db);
+    expect(aggregates.total).toBe(2);
+    expect(aggregates.invalidCount).toBe(1);
   });
 });
 

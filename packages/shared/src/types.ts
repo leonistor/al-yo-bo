@@ -1,5 +1,9 @@
 export type TagStatus = 'active' | 'proposed' | 'deprecated';
 
+export type BookmarkStatus = 'active' | 'invalid';
+
+export type BookmarkListStatus = BookmarkStatus | 'all';
+
 export type AssignmentSource = 'classifier' | 'user' | 'import';
 
 export type SearchMode = 'keyword' | 'semantic' | 'hybrid';
@@ -32,6 +36,8 @@ export interface Bookmark {
   categoryId: string | null;
   contentHash: string | null;
   scrapedAt: number | null;
+  status: BookmarkStatus;
+  scrapeAttempts: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -63,6 +69,7 @@ export interface TagAggregate {
 
 export interface Aggregates {
   total: number;
+  invalidCount: number;
   categories: CategoryAggregate[];
   tags: TagAggregate[];
 }
@@ -82,6 +89,7 @@ export interface SearchQuery {
   tagId?: string;
   dateFrom?: number;
   dateTo?: number;
+  status?: BookmarkListStatus;
   sort?: BookmarkSort;
   direction?: 'asc' | 'desc';
   limit?: number;

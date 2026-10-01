@@ -59,6 +59,7 @@ export function listBookmarkIdsMissingEmbeddings(db: Database): string[] {
     .query<{ id: Uint8Array }, []>(
       `SELECT b.id FROM bookmarks b
         WHERE b.content IS NOT NULL
+          AND b.status = 'active'
           AND NOT EXISTS (SELECT 1 FROM bookmark_embeddings e WHERE e.bookmark_id = b.id)`,
     )
     .all()
@@ -73,7 +74,9 @@ export function listBookmarkIdsMissingEmbeddings(db: Database): string[] {
 export function listEmbeddingModelMismatches(db: Database, model: string): string[] {
   return db
     .query<{ bookmark_id: Uint8Array }, [string]>(
-      'SELECT bookmark_id FROM bookmark_embeddings WHERE model != ?',
+      `SELECT e.bookmark_id FROM bookmark_embeddings e
+         JOIN bookmarks b ON b.id = e.bookmark_id
+        WHERE e.model != ? AND b.status = 'active'`,
     )
     .all(model)
     .map((row) => bytesToUuid(row.bookmark_id));

@@ -2,6 +2,7 @@ import {
   bytesToUuid,
   type AssignmentSource,
   type Bookmark,
+  type BookmarkStatus,
   type BookmarkTagView,
   type Category,
   type Tag,
@@ -34,6 +35,8 @@ export interface BookmarkRow {
   category_id: Uint8Array | null;
   content_hash: string | null;
   scraped_at: number | null;
+  status: string;
+  scrape_attempts: number;
   created_at: number;
   updated_at: number;
 }
@@ -88,6 +91,8 @@ export function mapBookmark(row: BookmarkRow): Bookmark {
     categoryId: row.category_id ? bytesToUuid(row.category_id) : null,
     contentHash: row.content_hash,
     scrapedAt: row.scraped_at,
+    status: row.status as BookmarkStatus,
+    scrapeAttempts: row.scrape_attempts,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

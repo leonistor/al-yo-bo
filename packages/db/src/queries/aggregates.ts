@@ -55,5 +55,12 @@ export function getAggregates(db: Database): Aggregates {
       count: row.count,
     }));
 
-  return { total: countBookmarks(db), categories, tags };
+  const invalidCount =
+    db
+      .query<{ count: number }, []>(
+        `SELECT COUNT(*) AS count FROM bookmarks WHERE status = 'invalid'`,
+      )
+      .get()?.count ?? 0;
+
+  return { total: countBookmarks(db), invalidCount, categories, tags };
 }
