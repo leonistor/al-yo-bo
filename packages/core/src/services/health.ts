@@ -100,7 +100,8 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
       const response = await fetch(config.ollaya.baseUrl.replace(/\/$/, '') + '/', {
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
-      reachable = response.status < 500;
+      // 4xx responses still prove the Ollaya daemon is up and answering.
+      reachable = response.ok;
     } catch {
       reachable = false;
     }
