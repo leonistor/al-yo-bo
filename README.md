@@ -50,6 +50,7 @@ export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
 bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: leo)
+bun run db:clear  # wipe one dataset's content (asks first; --yes to skip)
 bun run build     # build the web app into apps/web/dist
 bun run start     # production: one Bun process serves API + web
 bun run lint      # lint
@@ -127,6 +128,21 @@ bun run scripts/extract-leo-seed.ts
 ```
 
 Seeding is otherwise idempotent (bookmarks are upserted by URL).
+
+### Clearing a dataset
+
+To test imports from a clean slate, `bun run db:clear` wipes one dataset's bookmarks, vocabulary
+(sections, categories, tags) and staged import batches, keeping the dataset row itself so the name
+can be reused. It prompts for confirmation; pass `--yes` to skip it. The dataset defaults to
+`DEFAULT_DATASET`, then `default`:
+
+```sh
+bun run db:clear            # clear DEFAULT_DATASET (or "default")
+bun run db:clear leo --yes  # clear the "leo" dataset without prompting
+```
+
+Unlike `SEED_RESET=1` (which wipes every dataset before seeding), `db:clear` only touches the named
+dataset. Qdrant points for removed bookmarks are repaired from SQLite at the next server startup.
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
 target layout (`apps/server`, `apps/web`, `packages/core` + the subsystem packages `db`, `search`,

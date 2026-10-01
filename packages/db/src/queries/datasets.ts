@@ -46,3 +46,52 @@ export function deleteDataset(db: Database, id: string): boolean {
   const result = db.query('DELETE FROM datasets WHERE id = ?').run(uuidToBytes(id));
   return result.changes > 0;
 }
+
+export interface DatasetContentCounts {
+  bookmarks: number;
+  importBatches: number;
+  tags: number;
+  categories: number;
+  sections: number;
+}
+
+/** Counts the rows a `clearDatasetContent` call would remove for one dataset. */
+export function countDatasetContent(db: Database, datasetId: string): DatasetContentCounts {
+  const id = uuidToBytes(datasetId);
+  const count = (sql: string): number =>
+    db.query<{ n: number }, [Uint8Array]>(sql).get(id)?.n ?? 0;
+  return {
+    bookmarks: count('SELECT COUNT(*) AS n FROM bookmarks WHERE dataset_id = ?'),
+    importBatches: count('SELECT COUNT(*) AS n FROM import_batches WHERE dataset_id = ?'),
+    tags: count('SELECT COUNT(*) AS n FROM tags WHERE dataset_id = ?'),
+    categories: count('SELECT COUNT(*) AS n FROM categories WHERE dataset_id = ?'),
+    sections: count('SELECT COUNT(*) AS n FROM sections WHERE dataset_id = ?'),
+  };
+}
+
+/**
+ * Removes every bookmark, all vocabulary (sections, categories, tags) and any
+ * staged import batches belonging to one dataset, while keeping the dataset row
+ * itself so the same name can be reused. Strictly scoped by `dataset_id`; other
+ * datasets are untouched. Returns the number of rows removed per table.
+ *
+ * Deletes run parent-first and lean on the schema's cascade rules (MODEL.md
+ * "Deletion semantics"): removing bookmarks cascades classification evidence,
+ * assignments and embeddings, and the `bookmarks_fts_delete` triggers drop the
+ * keyword rows; removing tags then cascades the remaining assignment/result
+ * rows. The whole sweep is one immediate transaction. Counts are taken before
+ * the deletes because `run().changes` is not reliable once triggers fire.
+ */
+export function clearDatasetContent(db: Database, datasetId: string): DatasetContentCounts {
+  const id = uuidToBytes(datasetId);
+  const counts = countDatasetContent(db, datasetId);
+  const run = db.transaction(() => {
+    db.query('DELETE FROM bookmarks WHERE dataset_id = ?').run(id);
+    db.query('DELETE FROM import_batches WHERE dataset_id = ?').run(id);
+    db.query('DELETE FROM tags WHERE dataset_id = ?').run(id);
+    db.query('DELETE FROM categories WHERE dataset_id = ?').run(id);
+    db.query('DELETE FROM sections WHERE dataset_id = ?').run(id);
+  });
+  run.immediate();
+  return counts;
+}
