@@ -57,7 +57,16 @@ function resolvePayloads(db: Database): (bookmarkIds: string[]) => Map<string, F
 export async function initVectorIndex(db: Database, config: ServerConfig): Promise<VectorSearch> {
   const records = listEmbeddings(db);
   const knn = new KnnIndex();
-  knn.load(records);
+  try {
+    knn.load(records);
+  } catch (error) {
+    // Mixed dimensions can only come from an interrupted model change; start
+    // keyword-only and let startup reconciliation re-embed the stale rows.
+    console.warn(
+      '[vector] embedding matrix failed to load; semantic search is off until re-embedding finishes',
+      error,
+    );
+  }
 
   const url = config.qdrant.url;
   if (!url) {

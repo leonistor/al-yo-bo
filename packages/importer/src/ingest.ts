@@ -27,6 +27,7 @@ export function ingestBookmarks(
     categoriesCreated: 0,
     parsed: bookmarks.length,
     bookmarks,
+    addedIds: [],
   };
 
   const insideTransaction = db.transaction(() => {
@@ -48,7 +49,7 @@ export function ingestBookmarks(
         },
       };
 
-      const { created } = upsertBookmarkByUrl(db, {
+      const { bookmark, created } = upsertBookmarkByUrl(db, {
         url: entry.url,
         title: entry.title,
         description: entry.description,
@@ -58,6 +59,7 @@ export function ingestBookmarks(
 
       if (created) {
         report.added += 1;
+        report.addedIds.push(bookmark.id);
       } else {
         report.updated += 1;
       }

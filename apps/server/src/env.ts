@@ -23,6 +23,13 @@ export interface ServerConfig {
     model?: string;
     baseUrl?: string;
   };
+  /** Page enrichment; see apps/server/src/scrape.ts. */
+  scrape: {
+    timeoutMs: number;
+    maxContentChars: number;
+    /** html-to-markdown CLI binary (PATH-resolved; absolute paths allowed). */
+    binary: string;
+  };
 }
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
@@ -54,8 +61,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     embeddings: {
       apiKey: env.OPENROUTER_API_KEY,
-      model: env.EMBEDDING_MODEL,
+      // Pinned default (docs/ARCHITECTURE §6/§7): 1536 dims, cheap, matches the
+      // benchmarked fallback matrix. Changing the model triggers a re-embed pass.
+      model: env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
       baseUrl: env.OPENROUTER_BASE_URL,
+    },
+    scrape: {
+      timeoutMs: numberFromEnv(env.SCRAPE_TIMEOUT_MS, 15_000),
+      maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
+      binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
     },
   };
 }

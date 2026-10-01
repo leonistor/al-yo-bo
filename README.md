@@ -23,7 +23,17 @@ about them.
 
 ## Development
 
-Requires [Bun](https://bun.com).
+Requires [Bun](https://bun.com). For page scraping, also install the
+[html-to-markdown CLI](https://github.com/xberg-io/html-to-markdown) (e.g. `brew install html-to-markdown`)
+— without it bookmarks still save, but page content is never fetched.
+
+Enrichment and semantic search are optional and degrade gracefully:
+
+```sh
+export OPENROUTER_API_KEY=...   # embeddings; without it search stays keyword-only
+# EMBEDDING_MODEL defaults to openai/text-embedding-3-small (1536 dims)
+```
+
 
 ```sh
 bun install       # install dependencies
@@ -36,6 +46,10 @@ bun run format    # format
 bun run typecheck # typecheck every workspace
 bun test          # tests
 ```
+
+On startup the server reconciles enrichment: bookmarks without scraped content are scraped and
+embedded in a background job loop (`docs/ARCHITECTURE.md` §8), so seeded or imported bookmarks get
+their page content and vectors automatically when scraping and embeddings are available.
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
 target layout (`apps/server`, `apps/web`, `packages/*`).

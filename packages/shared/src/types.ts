@@ -133,4 +133,6 @@ export interface ImportReport {
   categoriesCreated: number;
   parsed: number;
   bookmarks: ImportedBookmark[];
+  /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §8). */
+  addedIds: string[];
 }

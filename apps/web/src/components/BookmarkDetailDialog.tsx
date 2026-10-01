@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { ExternalLinkIcon, Trash2Icon, XIcon } from 'lucide-react';
-import { toast } from 'sonner';
-
 import type { BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
+import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   AlertDialog,
@@ -40,9 +39,10 @@ import {
   assignTagToBookmark,
   deleteBookmark,
   removeTagFromBookmark,
+  scrapeBookmark,
   updateBookmark,
 } from '@/lib/client';
-import { hostOf } from '@/lib/format';
+import { formatDate, hostOf } from '@/lib/format';
 
 interface BookmarkDetailDialogProps {
   bookmark: BookmarkWithTags | null;
@@ -66,6 +66,7 @@ export function BookmarkDetailDialog({
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('none');
   const [saving, setSaving] = useState(false);
+  const [scraping, setScraping] = useState(false);
 
   useEffect(() => {
     setCurrent(bookmark);
@@ -131,6 +132,24 @@ export function BookmarkDetailDialog({
     }
   }
 
+  async function scrape() {
+    setScraping(true);
+    try {
+      const response = await scrapeBookmark(current!.id);
+      setCurrent(response.bookmark);
+      if (response.status === 'scraped') {
+        toast.success('Page scraped');
+      } else {
+        toast.info('Page content unchanged');
+      }
+      onChanged();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to scrape');
+    } finally {
+      setScraping(false);
+    }
+  }
+
   return (
     <Dialog open={bookmark !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -150,6 +169,15 @@ export function BookmarkDetailDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant={current.scrapedAt ? 'secondary' : 'outline'}>
+              {current.scrapedAt ? `Scraped ${formatDate(current.scrapedAt)}` : 'Not scraped'}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={scrape} disabled={scraping}>
+              <RefreshCwIcon data-icon="inline-start" className={scraping ? 'animate-spin' : ''} />
+              {scraping ? 'Scraping…' : current.scrapedAt ? 'Re-scrape' : 'Scrape page'}
+            </Button>
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="detail-title">Title</Label>
             <Input

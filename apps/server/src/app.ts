@@ -47,6 +47,8 @@ import {
 
 import type { ServerConfig } from './env.ts';
 import { AppError, NotFoundError, ValidationError } from './errors.ts';
+import { scrapeAndStore, type JobQueue, type JobType } from './jobs.ts';
+import { ScrapeError, type ScrapeFn } from './scrape.ts';
 
 /** Subsystems optional to request handling; absent entries degrade gracefully. */
 export interface AppServices {
@@ -54,6 +56,10 @@ export interface AppServices {
   /** Which implementation serves `vector` (reporting only, e.g. /api/health). */
   vectorBackend?: 'qdrant' | 'memory';
   embeddings?: EmbeddingClient;
+  /** Enrichment queue; absent when running without the worker (e.g. some tests). */
+  jobs?: JobQueue;
+  /** Manual scrape capability; absent when the scraper is not configured. */
+  scrape?: ScrapeFn;
 }
 
 // Declaring the JSON shape as a validator is what lets Hono RPC infer the request
@@ -314,6 +320,11 @@ async function readImportText(c: Context): Promise<string> {
   return await c.req.text();
 }
 
+/** Fire-and-forget enrichment trigger; a missing queue (workerless mode) is a no-op. */
+function enqueueJob(services: AppServices | undefined, bookmarkId: string, type: JobType): void {
+  services?.jobs?.enqueue(bookmarkId, type);
+}
+
 // All API routes are chained on one Hono instance so `ReturnType<typeof createApp>`
 // produces usable Hono RPC types for apps/web.
 export function createApp(db: Database, config: ServerConfig, services?: AppServices) {
@@ -329,6 +340,10 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
         embeddings: {
           enabled: Boolean(services?.embeddings),
           model: config.embeddings.model ?? null,
+        },
+        enrichment: {
+          scrapeAvailable: Boolean(services?.scrape),
+          jobsPending: services?.jobs?.pendingCount() ?? 0,
         },
       }),
     )
@@ -360,6 +375,7 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
         description: optionalString(body, 'description'),
         categoryId: optionalId(body, 'categoryId'),
       });
+      enqueueJob(services, bookmark.id, 'scrape');
       return c.json(bookmarkView(db, bookmark.id), 201);
     })
 
@@ -368,6 +384,10 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
     .patch('/api/bookmarks/:id', jsonBody, (c) => {
       const body = c.req.valid('json');
       const id = pathId(c, 'Bookmark not found');
+      const current = getBookmarkById(db, id);
+      if (!current) {
+        throw new NotFoundError('Bookmark not found');
+      }
       const patch: Partial<BookmarkInput> = {};
       if ('url' in body) {
         patch.url = requiredString(body, 'url');
@@ -385,7 +405,47 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       if (!updated) {
         throw new NotFoundError('Bookmark not found');
       }
+      // Content-bearing changes re-run the matching enrichment (§8 re-run triggers);
+      // a category move only shifts the vector payload filters.
+      if (updated.url !== current.url) {
+        enqueueJob(services, id, 'scrape');
+      } else if (updated.title !== current.title || updated.description !== current.description) {
+        enqueueJob(services, id, 'embed');
+      }
+      if (services && updated.categoryId !== current.categoryId) {
+        void syncVectorPayload(services, db, id);
+      }
       return c.json(bookmarkView(db, id));
+    })
+
+    .post('/api/bookmarks/:id/scrape', async (c) => {
+      const id = pathId(c, 'Bookmark not found');
+      if (!getBookmarkById(db, id)) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      if (!services?.scrape) {
+        throw new AppError('Scraping is not available', 503, 'scrape-unavailable');
+      }
+      try {
+        const outcome = await scrapeAndStore(
+          {
+            db,
+            vector: services.vector,
+            embeddings: services.embeddings,
+            scrape: services.scrape,
+            config,
+            // Chains the embed job into the same queue the worker drains.
+            queue: services.jobs,
+          },
+          id,
+        );
+        return c.json({ status: outcome, bookmark: bookmarkView(db, id) });
+      } catch (error) {
+        if (error instanceof ScrapeError) {
+          throw new AppError(error.message, 502, 'scrape-failed');
+        }
+        throw error;
+      }
     })
 
     .delete('/api/bookmarks/:id', async (c) => {
@@ -531,6 +591,10 @@ export function createApp(db: Database, config: ServerConfig, services?: AppServ
       const report = importMarkdown(db, await readImportText(c), {
         file: c.req.query('file') || undefined,
       });
+      // New bookmarks enter the enrichment pipeline; updated ones keep theirs.
+      for (const id of report.addedIds) {
+        enqueueJob(services, id, 'scrape');
+      }
       return c.json(report);
     });
 

@@ -124,6 +124,18 @@ export function deleteBookmark(id: string): Promise<void> {
     .then((response) => unwrap<void>(response));
 }
 
+export interface ScrapeResponse {
+  status: 'scraped' | 'unchanged' | 'missing';
+  bookmark: BookmarkWithTags;
+}
+
+/** Manual re-scrape; runs inline (bounded by the server's scrape timeout). */
+export function scrapeBookmark(id: string): Promise<ScrapeResponse> {
+  return api.api.bookmarks[':id'].scrape
+    .$post({ param: { id } })
+    .then((response) => unwrap<ScrapeResponse>(response));
+}
+
 export function assignTagToBookmark(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
   return api.api.bookmarks[':id'].tags
     .$post({ param: { id: bookmarkId }, json: { tagId } })

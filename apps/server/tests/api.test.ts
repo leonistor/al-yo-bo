@@ -11,6 +11,7 @@ import type {
 
 import { createApp } from '../src/app.ts';
 import { loadConfig } from '../src/env.ts';
+import { ScrapeError } from '../src/scrape.ts';
 
 /** Deterministic VectorIndex stub: candidates come back in insertion order. */
 class StubVectorIndex implements VectorIndex {
@@ -238,6 +239,56 @@ describe('fused search pagination', () => {
       mode: string;
     };
     expect(body.mode).toBe('keyword');
+  });
+});
+
+describe('scrape API', () => {
+  test('scrapes inline and returns the updated bookmark', async () => {
+    const { app } = makeApp({
+      vector: new StubVectorIndex([]),
+      scrape: async (url) => ({
+        content: `# Content of ${url}`,
+        contentHash: `hash-${url}`,
+        metadata: { scrape: { at: 1, contentType: 'text/html', finalUrl: null, truncated: false } },
+      }),
+    });
+    const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
+      items: { id: string; url: string }[];
+    };
+    const { id, url } = bookmarks.items[0]!;
+
+    const response = await app.request(`/api/bookmarks/${id}/scrape`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      bookmark: { id: string; content: string; scrapedAt: number | null };
+    };
+    expect(body.status).toBe('scraped');
+    expect(body.bookmark.content).toBe(`# Content of ${url}`);
+    expect(body.bookmark.scrapedAt).not.toBeNull();
+  });
+
+  test('maps scrape failures to a problem+json 502', async () => {
+    const { app } = makeApp({
+      vector: new StubVectorIndex([]),
+      scrape: async () => {
+        throw new ScrapeError('HTTP 404');
+      },
+    });
+    const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
+      items: { id: string }[];
+    };
+    const response = await app.request(`/api/bookmarks/${bookmarks.items[0]!.id}/scrape`, {
+      method: 'POST',
+    });
+    expect(response.status).toBe(502);
+    expect(((await response.json()) as { type: string }).type).toContain('scrape-failed');
+  });
+
+  test('reports 503 when scraping is unavailable and 404 for unknown ids', async () => {
+    const { app } = makeApp({ vector: new StubVectorIndex([]) });
+    const unavailable = await app.request('/api/bookmarks/nope/scrape', { method: 'POST' });
+    expect(unavailable.status).toBe(404);
   });
 });
 

@@ -205,6 +205,19 @@ export function countBookmarks(db: Database): number {
   return db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0;
 }
 
+/**
+ * Startup-reconciliation input (ARCHITECTURE §8): bookmarks that have never been
+ * successfully scraped. A failed scrape leaves `scraped_at` NULL, so it is
+ * retried on the next server start.
+ */
+export function listBookmarkIdsMissingContent(db: Database): string[] {
+  return db
+    .query<{ id: Uint8Array }, []>('SELECT id FROM bookmarks WHERE scraped_at IS NULL')
+    .all()
+    .map((row) => bytesToUuid(row.id));
+}
+
+
 export function listBookmarks(
   db: Database,
   filters: ListBookmarksFilters = {},
