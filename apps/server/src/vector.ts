@@ -3,9 +3,44 @@ import type { Database } from 'bun:sqlite';
 import { getBookmarksWithTagsByIds, listEmbeddings } from '@al-yo-bo/db';
 import { FallbackVectorIndex, KnnIndex, type FallbackPayload } from '@al-yo-bo/search';
 import type { VectorIndex } from '@al-yo-bo/shared';
-import { QdrantIndex, type SyncPayload } from '@al-yo-bo/vectordb';
+import { QdrantIndex, type SyncPayload, type SyncReport } from '@al-yo-bo/vectordb';
 
 import type { ServerConfig } from './env.ts';
+
+/**
+ * Qdrant boot-sync retry policy. `bun run dev` starts the sidecar in parallel
+ * with the server, so the first sync can race the sidecar binding :6333.
+ * 5 attempts × 1.25s ≈ 6s worst case before degrading to the in-memory index.
+ */
+const QDRANT_BOOT_SYNC_ATTEMPTS = 5;
+const QDRANT_BOOT_SYNC_DELAY_MS = 1_250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Bounded retry around the boot sync — startup recovery for the dev start
+ * race, not a general-purpose backoff. Re-throws the last error after the
+ * final attempt so the caller's existing degradation path handles it.
+ */
+async function bootSyncWithRetry(sync: () => Promise<SyncReport>): Promise<SyncReport> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= QDRANT_BOOT_SYNC_ATTEMPTS; attempt++) {
+    try {
+      return await sync();
+    } catch (error) {
+      lastError = error;
+      if (attempt < QDRANT_BOOT_SYNC_ATTEMPTS) {
+        console.warn(
+          `[vector] Qdrant not ready (attempt ${attempt}/${QDRANT_BOOT_SYNC_ATTEMPTS}); retrying in ${QDRANT_BOOT_SYNC_DELAY_MS}ms`,
+        );
+        await sleep(QDRANT_BOOT_SYNC_DELAY_MS);
+      }
+    }
+  }
+  throw lastError;
+}
 
 export interface VectorSearch {
   index: VectorIndex;
@@ -51,8 +86,10 @@ function resolvePayloads(db: Database): (bookmarkIds: string[]) => Map<string, F
  * 2. When a Qdrant URL is configured, `sync` replays the SQLite rows into the
  *    collection (Qdrant is a rebuildable serving index; SQLite is canonical)
  *    and the index is wrapped in `FallbackVectorIndex` for runtime degradation.
- * 3. If Qdrant is unreachable at boot, the in-memory index serves alone until
- *    the next server start.
+ * 3. If Qdrant is unreachable at boot, `sync` is retried briefly (the sidecar
+ *    may still be starting — `bun run dev` launches it in parallel); after the
+ *    retries are exhausted, the in-memory index serves alone until the next
+ *    server start or `reindex` call.
  *
  * Also used by the `reindex` endpoint to rebuild a fresh serving stack from
  * SQLite (the durable copy) and hot-swap it into the running server.
@@ -84,7 +121,7 @@ export async function initVectorIndex(db: Database, config: ServerConfig): Promi
   });
 
   try {
-    const report = await qdrant.sync(records, resolvePayload(db));
+    const report = await bootSyncWithRetry(() => qdrant.sync(records, resolvePayload(db)));
     const summary = report.skipped
       ? 'in sync'
       : `upserted ${report.upserted}, deleted ${report.deleted}${report.recreated ? ', collection recreated' : ''}`;

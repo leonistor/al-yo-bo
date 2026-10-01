@@ -238,6 +238,8 @@ raw speed at this size. The revisit conditions are in §11.
   (the fallback), and `FallbackVectorIndex` routes reads/writes to Qdrant with a 30 s failure
   cooldown before falling back. Filters are pushed into the Qdrant query; on the fallback path they
   are applied client-side after an 8× overfetch, with payloads resolved from SQLite in one query.
+  The boot-time `sync` is retried for a few seconds before that fallback engages, because
+  `bun run dev` starts the sidecar in parallel and it may still be binding :6333.
 
 ### Query path
 
@@ -474,7 +476,7 @@ variables (§7).
 | ------------------------- | -------------------------------------------------------------------------- |
 | OpenRouter unreachable    | Document embeddings not produced; query embedding fails → keyword-only search; classification still runs |
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
-| Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync |
+| Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync. A sidecar still starting at boot is retried for a few seconds before this kicks in |
 | Scrape fails              | Bookmark persists as URL + note; keyword search still matches it           |
 | html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
 | Embedding model changed   | Startup reconciliation re-embeds stale-model rows; until then keyword-only for those bookmarks |
