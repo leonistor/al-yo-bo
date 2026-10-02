@@ -90,7 +90,7 @@ export function recordingJobs(): JobScheduler & { calls: Array<{ id: string; typ
 /** Config with only the fields core consumes. */
 export function testConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
   return {
-    autoAssignThreshold: 0.5,
+    autoAssignThreshold: 0.7,
     defaultDataset: 'test',
     embeddings: { model: 'stub-model' },
     ollaya: { baseUrl: 'http://127.0.0.1:11435', model: 'laya' },

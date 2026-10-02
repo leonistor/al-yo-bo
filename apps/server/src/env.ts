@@ -63,7 +63,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dataDir,
     dbPath: env.DB_PATH ?? join(dataDir, 'bookmarks.db'),
     screenshotsDir: env.SCREENSHOTS_DIR ?? join(dataDir, 'screenshots'),
-    autoAssignThreshold: numberFromEnv(env.AUTO_ASSIGN_THRESHOLD, 0.5),
+    autoAssignThreshold: numberFromEnv(env.AUTO_ASSIGN_THRESHOLD, 0.7),
     defaultDataset: env.DEFAULT_DATASET ?? 'default',
     ollaya: {
       baseUrl: env.OLLAYA_URL ?? 'http://127.0.0.1:11435',

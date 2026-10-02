@@ -467,7 +467,7 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OLLAYA_URL`            | Ollaya daemon base URL                        | `http://127.0.0.1:11435` |
 | `OLLAYA_API_KEY`        | Bearer key when the daemon is exposed         | unset (loopback)         |
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
-| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | `0.5`                    |
+| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default raised to `0.7` after observing `laya`'s softly-calibrated probabilities: at `0.5` it cleared ~30 of 67 tags per bookmark | `0.7`                    |
 | `DEFAULT_DATASET`       | Fallback dataset name when the profile has no active-dataset pointer (the pointer — set by seeding or `PATCH /api/profile` — is the primary mechanism) | `default` |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
