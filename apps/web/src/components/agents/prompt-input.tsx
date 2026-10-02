@@ -14,18 +14,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/components/motion/button";
+import { Button } from "@/components/ui/button";
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverTrigger,
-} from "@/components/motion/popover-morph";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-} from "@/components/motion/select";
+} from "@/components/ui/select";
 import { SPRING_SWAP } from "@/lib/ease";
 import { cn } from "@/lib/utils";
 
@@ -195,31 +195,32 @@ export function PromptInput({
 
       <div className="mt-1 flex min-h-8 items-center gap-1">
         {actions.length ? (
-          <MorphPopover open={actionsOpen} onOpenChange={setActionsOpen}>
-            <MorphPopoverTrigger>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={disabled || loading}
-                aria-label="Add to prompt"
-                className="size-8 rounded-full"
+          <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={disabled || loading}
+                  aria-label="Add to prompt"
+                  className="size-8 rounded-full"
+                />
+              }
+            >
+              <motion.span
+                aria-hidden="true"
+                animate={{ rotate: actionsOpen ? 45 : 0 }}
+                transition={reduce ? { duration: 0 } : SPRING_SWAP}
               >
-                <motion.span
-                  aria-hidden="true"
-                  animate={{ rotate: actionsOpen ? 45 : 0 }}
-                  transition={reduce ? { duration: 0 } : SPRING_SWAP}
-                >
-                  <Plus className="size-4" />
-                </motion.span>
-              </Button>
-            </MorphPopoverTrigger>
+                <Plus className="size-4" />
+              </motion.span>
+            </PopoverTrigger>
 
-            <MorphPopoverContent
+            <PopoverContent
               side="top"
               align="start"
               sideOffset={8}
-              radius={12}
               className="w-56 p-1.5"
             >
               {actions.map((action) => (
@@ -250,16 +251,17 @@ export function PromptInput({
                   </span>
                 </button>
               ))}
-            </MorphPopoverContent>
-          </MorphPopover>
+            </PopoverContent>
+          </Popover>
         ) : null}
         {leadingAction}
         {models.length ? (
           <Select
             value={currentModelValue}
-            onValueChange={setModel}
+            onValueChange={(next) => {
+              if (next !== null && next !== undefined) setModel(next);
+            }}
             disabled={disabled || loading}
-            className="min-w-0"
           >
             <SelectTrigger className="h-8 w-auto max-w-52 rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2">
               <span className="flex min-w-0 items-center gap-1.5">
