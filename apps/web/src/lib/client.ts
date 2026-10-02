@@ -6,6 +6,7 @@ import type {
   Category,
   ImportedBookmark,
   ImportReport,
+  Profile,
   ReviewCandidate,
   SearchMode,
   SearchResponse,
@@ -70,6 +71,16 @@ export function fetchBookmarks(params: BookmarkSearchParams = {}): Promise<Searc
 
 export function fetchAggregates(): Promise<Aggregates> {
   return api.api.aggregates.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
+}
+
+/** The singleton profile row; null only when the schema was tampered with. */
+export function fetchProfile(): Promise<Profile | null> {
+  return api.api.profile.$get().then(async (response) => {
     if (!response.ok) {
       throw await toError(response);
     }

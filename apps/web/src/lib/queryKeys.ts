@@ -12,6 +12,7 @@ export const queryKeys = {
       [...queryKeys.bookmarks.all, 'list', params] as const,
   },
   aggregates: ['aggregates'] as const,
+  profile: ['profile'] as const,
   categories: ['categories'] as const,
   sections: ['sections'] as const,
   tags: ['tags'] as const,

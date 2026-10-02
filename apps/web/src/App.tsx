@@ -48,6 +48,7 @@ import {
   fetchAggregates,
   fetchBookmarks,
   fetchCategories,
+  fetchProfile,
   fetchReviewCandidates,
   fetchSections,
   fetchTags,
@@ -205,8 +206,13 @@ export function App() {
     queryKey: queryKeys.candidates,
     queryFn: fetchReviewCandidates,
   });
+  const profileQuery = useQuery({
+    queryKey: queryKeys.profile,
+    queryFn: fetchProfile,
+  });
 
   const aggregates = aggregatesQuery.data ?? null;
+  const profile = profileQuery.data ?? null;
   const categories = categoriesQuery.data ?? NO_CATEGORIES;
   const sections = sectionsQuery.data ?? NO_SECTIONS;
   const tags = tagsQuery.data ?? NO_TAGS;
@@ -370,6 +376,7 @@ export function App() {
 
   const sidebarProps = {
     aggregates,
+    profile,
     view,
     selectedCategoryId: categoryId,
     selectedTagId: tagId,
@@ -395,6 +402,7 @@ export function App() {
           query={query}
           mode={mode}
           theme={theme}
+          profile={profile}
           searchRef={searchRef}
           chatOpen={chatOpen}
           onQueryChange={setQuery}

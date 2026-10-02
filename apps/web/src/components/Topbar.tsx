@@ -11,8 +11,9 @@ import {
 import type { RefObject } from 'react';
 import { useCallback } from 'react';
 
-import type { SearchMode } from '@al-yo-bo/shared';
+import type { Profile, SearchMode } from '@al-yo-bo/shared';
 
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -34,6 +35,8 @@ interface TopbarProps {
   query: string;
   mode: SearchMode;
   theme: Theme;
+  /** The single user's profile; null while loading or on a fetch error. */
+  profile: Profile | null;
   searchRef: RefObject<HTMLInputElement | null>;
   chatOpen: boolean;
   onQueryChange: (value: string) => void;
@@ -50,6 +53,7 @@ export function Topbar({
   query,
   mode,
   theme,
+  profile,
   searchRef,
   chatOpen,
   onQueryChange,
@@ -177,6 +181,17 @@ export function Topbar({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* The single user's identity (avatar + name). Degrades to nothing on
+          fetch errors — the app must stay usable without it. */}
+      {profile && (
+        <div className="flex items-center gap-2">
+          <span className="hidden text-sm text-muted-foreground sm:inline">
+            {profile.name ?? profile.githubUsername}
+          </span>
+          <ProfileAvatar profile={profile} className="size-8" />
+        </div>
+      )}
     </header>
   );
 }

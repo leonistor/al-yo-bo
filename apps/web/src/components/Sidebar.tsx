@@ -1,4 +1,4 @@
-import type { Aggregates, CategoryAggregate, TagAggregate } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryAggregate, Profile, TagAggregate } from '@al-yo-bo/shared';
 import {
   FolderOpenIcon,
   HashIcon,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useCallback } from 'react';
 
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,6 +19,8 @@ import { cn } from '@/lib/utils';
 
 interface SidebarProps {
   aggregates: Aggregates | null;
+  /** The single user's profile; shown in the full variant's title block. */
+  profile?: Profile | null;
   view: 'library' | 'review';
   selectedCategoryId: string | null;
   selectedTagId: string | null;
@@ -295,6 +298,7 @@ function RailButton({
 
 export function Sidebar({
   aggregates,
+  profile,
   view,
   selectedCategoryId,
   selectedTagId,
@@ -373,6 +377,18 @@ export function Sidebar({
           {aggregates?.total ?? 0}
         </Badge>
       </div>
+
+      {/* Identity line under the app title: avatar + name + @github. Rendered
+          only when the profile carries something to show. */}
+      {(profile?.name || profile?.githubUsername) && (
+        <div className="flex min-w-0 items-center gap-2 px-4 pb-2 text-xs text-muted-foreground">
+          <ProfileAvatar profile={profile} className="size-6" />
+          {profile?.name && <span className="truncate">{profile.name}</span>}
+          {profile?.githubUsername && (
+            <span className="truncate font-mono">@{profile.githubUsername}</span>
+          )}
+        </div>
+      )}
 
       <ScrollArea className="flex-1">
         <SidebarNav
