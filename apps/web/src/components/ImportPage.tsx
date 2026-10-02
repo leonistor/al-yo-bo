@@ -8,6 +8,13 @@ import { ImportRow, type ImportRowPatch, type ImportRowState } from '@/component
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -333,10 +340,35 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
               </EmptyHeader>
             </Empty>
           ) : (
-            <div className="flex flex-col gap-2 p-3">
-              {rows.map((row) => (
-                <ImportRow key={row.key} row={row} onChange={patchRow} onRemove={removeRow} />
-              ))}
+            <div className="p-3">
+              <Table variant="card" className="min-w-[44rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-px">
+                      <span className="sr-only">Include</span>
+                    </TableHead>
+                    <TableHead scope="col">Bookmark</TableHead>
+                    <TableHead scope="col">Category</TableHead>
+                    <TableHead scope="col" className="w-12 text-center">
+                      Priority
+                    </TableHead>
+                    <TableHead scope="col">Tags</TableHead>
+                    <TableHead className="w-px">
+                      <span className="sr-only">Remove</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <ImportRow
+                      key={row.key}
+                      row={row}
+                      onChange={patchRow}
+                      onRemove={removeRow}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </ScrollArea>

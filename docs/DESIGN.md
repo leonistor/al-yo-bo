@@ -124,10 +124,11 @@ opened-count counters — unless they are separately requested and added to thes
     (`aria-live`) reports the provider from the preview response — "Extracted by LLM" or
     "Fallback: deterministic parser" — with parsed/skipped counts.
   - **Right — editable result.** The header shows an included/total count badge and a duplicate-URL
-    merge hint when the paste repeats a URL. Rows are editable in place with borderless-until-hover
-    inputs (title, description, category, priority, comma-separated tags), an include checkbox, and
-    a per-row remove; excluded rows dim to 50% opacity instead of disappearing, keeping the choice
-    reversible. Extraction shows skeleton rows; the empty state explains the flow.
+    merge hint when the paste repeats a URL. Rows render as a `@coss/table` (`variant="card"`) with
+    a sticky header and horizontal scroll on narrow viewports: Include, Bookmark (title, URL,
+    description stacked), Category, Priority, Tags, Remove. Each field is a borderless-until-hover
+    input inside its cell; excluded rows dim to 50% opacity instead of disappearing, keeping the
+    choice reversible. Extraction shows skeleton rows; the empty state explains the flow.
 - **Sticky commit bar** at the right pane's bottom: "Cancel" (clears the extraction, keeps the
   pasted text) and a primary "Import N bookmarks" whose count tracks the included rows live.
 - Edits stay client-side until commit — the server only ever receives the rows the user confirmed.

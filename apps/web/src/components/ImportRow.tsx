@@ -5,6 +5,7 @@ import { memo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
 /**
@@ -40,9 +41,9 @@ const fieldClass =
   'h-8 border-transparent bg-transparent px-1.5 shadow-none hover:border-input focus-visible:border-input';
 
 /**
- * A single editable extracted-bookmark row. Memoized so editing one field
- * doesn't re-render the whole list — the parent hands out stable callbacks
- * and rows only change identity when their own state changes.
+ * A single editable extracted-bookmark row rendered as a table row. Memoized so
+ * editing one field doesn't re-render the whole list — the parent hands out
+ * stable callbacks and rows only change identity when their own state changes.
  */
 export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: ImportRowProps) {
   // Per-field stable handlers: this component is memoized so editing one field
@@ -80,36 +81,77 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
   const handleRemove = useCallback(() => onRemove(row.key), [onRemove, row.key]);
 
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-1 rounded-lg border border-border bg-card py-2 pr-2 pl-3 transition-opacity',
-        !row.included && 'opacity-50',
-      )}
+    <TableRow
+      className={cn('transition-opacity', !row.included && 'opacity-50')}
       data-included={row.included}
     >
-      <div className="flex items-center gap-2">
+      <TableCell className="align-top">
         <Checkbox
           checked={row.included}
           onCheckedChange={toggleIncluded}
           aria-label={row.included ? 'Exclude from import' : 'Include in import'}
         />
+      </TableCell>
+
+      <TableCell className="min-w-[16rem] whitespace-normal align-top">
+        <div className="flex flex-col gap-1">
+          <Input
+            value={row.title}
+            onChange={handleTitleChange}
+            placeholder="Untitled"
+            aria-label="Title"
+            className={cn(fieldClass, 'font-medium')}
+            disabled={!row.included}
+          />
+          <span className="truncate font-mono text-xs text-muted-foreground" title={row.url}>
+            {row.url}
+          </span>
+          <Input
+            value={row.description}
+            onChange={handleDescriptionChange}
+            placeholder="Description"
+            aria-label="Description"
+            className={cn(fieldClass, 'text-muted-foreground')}
+            disabled={!row.included}
+          />
+        </div>
+      </TableCell>
+
+      <TableCell className="min-w-[8rem] align-top">
         <Input
-          value={row.title}
-          onChange={handleTitleChange}
-          placeholder="Untitled"
-          aria-label="Title"
-          className={cn(fieldClass, 'min-w-0 flex-1 font-medium')}
+          value={row.category}
+          onChange={handleCategoryChange}
+          placeholder="Category"
+          aria-label="Category"
+          className={fieldClass}
           disabled={!row.included}
         />
+      </TableCell>
+
+      <TableCell className="w-12 text-center align-top">
         <Input
           value={row.priority}
           onChange={handlePriorityChange}
           placeholder="—"
           aria-label="Priority"
           inputMode="numeric"
-          className={cn(fieldClass, 'w-12 text-center')}
+          className={cn(fieldClass, 'text-center')}
           disabled={!row.included}
         />
+      </TableCell>
+
+      <TableCell className="min-w-[12rem] w-full align-top">
+        <Input
+          value={row.tagsText}
+          onChange={handleTagsChange}
+          placeholder="tags, comma, separated"
+          aria-label="Tags"
+          className={fieldClass}
+          disabled={!row.included}
+        />
+      </TableCell>
+
+      <TableCell className="w-px align-top">
         <Button
           variant="ghost"
           size="icon"
@@ -119,39 +161,7 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
         >
           <XIcon />
         </Button>
-      </div>
-
-      <span className="truncate pl-8 font-mono text-xs text-muted-foreground" title={row.url}>
-        {row.url}
-      </span>
-
-      <Input
-        value={row.description}
-        onChange={handleDescriptionChange}
-        placeholder="Description"
-        aria-label="Description"
-        className={cn(fieldClass, 'ml-7 text-muted-foreground')}
-        disabled={!row.included}
-      />
-
-      <div className="flex flex-col gap-1 pl-7 sm:flex-row">
-        <Input
-          value={row.category}
-          onChange={handleCategoryChange}
-          placeholder="Category"
-          aria-label="Category"
-          className={cn(fieldClass, 'sm:w-40')}
-          disabled={!row.included}
-        />
-        <Input
-          value={row.tagsText}
-          onChange={handleTagsChange}
-          placeholder="tags, comma, separated"
-          aria-label="Tags"
-          className={cn(fieldClass, 'min-w-0 flex-1')}
-          disabled={!row.included}
-        />
-      </div>
-    </div>
+      </TableCell>
+    </TableRow>
   );
 });

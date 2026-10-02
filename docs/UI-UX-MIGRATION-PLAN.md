@@ -81,14 +81,15 @@ plus per-component migration reports in `.migration/`).
 - Audit first; commit per adopted component.
 - Pulled from the post-Phase-3 audit (see "Audit" below).
 
-**Status**: 🟡 partial (8 of 9 picks committed). Pending: `@coss/table`.
-Adopted so far: `@coss/empty`, `@coss/sheet` (pulled button/scroll-area/spinner
+**Status**: ✅ complete (9 of 9 picks committed).
+Adopted: `@coss/empty`, `@coss/sheet` (pulled button/scroll-area/spinner
 upgrade), `@coss/alert-dialog` (consolidated `Action`/`Cancel` → `Close`),
 `@coss/command` (replaced dead cmdk wrapper; `cmdk@^1.1.1` dropped),
 `@coss/select`, `@coss/dialog`, `@coss/card` (resurrected dead wrapper;
 `BookmarkCard` refactor still pending), `@coss/field` (+ `AddBookmarkDialog` /
 `BookmarkDetailDialog` / `VocabDialog` refactored onto it; see
-`.migration/coss-field.md`).
+`.migration/coss-field.md`), `@coss/table` (`ImportPage` right pane rewritten
+on table semantics; see `.migration/coss-table.md`).
 
 ### Phase 5 — Replace assistant-ui chat surface with beui.dev
 
@@ -181,8 +182,8 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - **Actual sequencing**: Phase 6's doc side (39ac863) landed mid-Phase-4, ahead
   of Phase 5 — intentional, since it was doc-only. Its "concrete pages"
   follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Phase 5 and
-  the final cleanup have since landed (1c4dace, 5210a4c). Remaining: the
-  `@coss/table` Phase 4 leftover.
+  the final cleanup have since landed (1c4dace, 5210a4c), and the last Phase 4
+  leftover (`@coss/table` + ImportPage) is done. All phases complete.
 
 ## Audit summary (drives Phase 4 picks)
 
@@ -219,11 +220,11 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 | `@coss/dialog` | ✅ | richer content sizing |
 | `@coss/card` | ✅ | wrapper only — `BookmarkCard` refactor pending |
 | `@coss/field` | ✅ | 3 dialog forms refactored onto it (`.migration/coss-field.md`) |
-| `@coss/table` | ⏳ | DESIGN.md canonical, missing; fits ImportPage |
+| `@coss/table` | ✅ | `ImportPage` right pane on table semantics (`.migration/coss-table.md`) |
 
 ## Status snapshot
 
-- 30 commits on `main` since the plan was approved (as of this update).
+- 34 commits on `main` since the plan was approved (as of this update).
 - All workspaces typecheck clean; lint green (warnings only — pre-existing
   `react-perf` hints plus 2 new ones on `ChatPanel.tsx`, same acceptable
   category); build green.
@@ -235,7 +236,7 @@ Captured in `docs/UI-UX-DIRECTION.md`.
   `apps/web/src/components/motion/` (+ small `lib/` helpers), excluded from
   lint via `.oxlintrc.json` `ignorePatterns`.
 - `components/assistant-ui/` and `hooks/use-attachment-src.ts` deleted.
-- 14 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
+- 15 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
   adoptions).
 
 ## Outstanding refactors (surfaced for follow-up)
@@ -243,7 +244,9 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 1. ~~**`@coss/field`** + refactor `AddBookmarkDialog`, `BookmarkDetailDialog`,
    `VocabDialog` (and 3-cluster triplication) to use it.~~ ✅ done (field
    adoption landed with the 3-dialog refactor; see `.migration/coss-field.md`).
-2. **`@coss/table`** + rewrite `ImportPage` editable rows on table semantics.
+2. ~~**`@coss/table`** + rewrite `ImportPage` editable rows on table
+   semantics.~~ ✅ done (`ImportPage` right pane on `variant="card"` table; see
+   `.migration/coss-table.md`).
 3. **`BookmarkCard` → coss Card anatomy** in `BookmarkList.tsx:143-203`.
 4. **List keyboard navigation** for `BookmarkList.tsx` (roving tabindex,
    `role="listbox"`, `↑`/`↓`/`Enter`/`Delete`).
@@ -266,7 +269,7 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 - `docs/ARCHITECTURE.md` — system architecture (precedence: ARCHITECTURE > MODEL >
   DESIGN > README).
 - `apps/web/components.json` — `base-nova` style + `@coss` / `@beui` registries.
-- `apps/web/src/components/ui/*` — 27 base-ui + coss wrappers (was 22 stock).
+- `apps/web/src/components/ui/*` — 28 base-ui + coss wrappers (was 22 stock).
 - `apps/web/src/components/agents/*` + `components/motion/*` — vendored beui
   primitives (Phase 5 chat surface).
-- `.migration/*.md` — per-component migration reports (13 files).
+- `.migration/*.md` — per-component migration reports (15 files).
