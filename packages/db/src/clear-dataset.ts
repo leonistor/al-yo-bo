@@ -7,7 +7,7 @@ import { clearDatasetContent, countDatasetContent, getDatasetByName } from './qu
 /** Runs when neither the CLI argument nor `DEFAULT_DATASET` sets a dataset. */
 const FALLBACK_DATASET = 'default';
 
-const USAGE = `Clear all content in one dataset (bookmarks, vocabulary, staged imports).
+const USAGE = `Clear all content in one dataset (bookmarks, tags, categories, sections).
 
 Usage:
   bun run db:clear [dataset] [--yes]

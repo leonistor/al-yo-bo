@@ -12,6 +12,7 @@ import {
   createBookmark,
   createCategory,
   createClassificationRun,
+  createSection,
   createTag,
   createUnknownClassificationLabel,
   deleteBookmark,
@@ -23,10 +24,12 @@ import {
   getBookmarkTags,
   getCategoryById,
   getDatasetByName,
+  getTagByName,
   keywordSearch,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
   listBookmarks,
+  listSections,
   listUnknownClassificationLabels,
   DEFAULT_SEED_PATH,
   listEmbeddingModelMismatches,
@@ -425,7 +428,7 @@ describe('seed fixture', () => {
     expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: leo, grimoire/);
   });
 
-  test('reset wipes content so a re-seed starts clean', () => {
+  test('reset wipes only the target dataset so a re-seed starts clean', () => {
     const db = freshDb();
     const grimoire = resolveSeedDataset('grimoire');
 
@@ -433,21 +436,25 @@ describe('seed fixture', () => {
     const grimoireId = getDatasetByName(db, 'grimoire')!.id;
     expect(getAggregates(db, grimoireId).total).toBe(23);
 
-    // A stale bookmark outside the dataset proves the reset, not the upsert,
-    // produced the post-reset state.
+    // Regression: `resetSeedData` once deleted bookmarks/tags/categories
+    // globally. Content in other datasets must survive a dataset-scoped reset.
     const stray = createBookmark(db, {
       datasetId: db.datasetId,
       url: 'https://stray.example/only',
       title: 'Stray',
     });
-    expect(getAggregates(db, grimoireId).total).toBe(23);
-    expect(getAggregates(db, db.datasetId).total).toBe(1);
+    createTag(db, { datasetId: db.datasetId, name: 'stray-tag' });
+    createSection(db, { datasetId: grimoireId, name: 'Legacy section' });
 
-    resetSeedData(db);
+    const counts = resetSeedData(db, 'grimoire');
+    expect(counts).toEqual({ bookmarks: 23, tags: 51, categories: 8, sections: 1 });
     expect(getAggregates(db, grimoireId).total).toBe(0);
-    expect(getBookmarkById(db, stray.id)).toBeNull();
-    // The FTS delete trigger must have fired for the wiped rows too.
-    expect(keywordSearch(db, { q: 'Stray' })).toHaveLength(0);
+    expect(listSections(db, grimoireId)).toEqual([]);
+    // The FTS delete trigger fired for the wiped rows, and only for those.
+    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId })).toHaveLength(0);
+    expect(keywordSearch(db, { q: 'Stray', datasetId: db.datasetId })).toHaveLength(1);
+    expect(getBookmarkById(db, stray.id)).not.toBeNull();
+    expect(getTagByName(db, db.datasetId, 'stray-tag', null)).not.toBeNull();
 
     const report = seedFromFile(db, grimoire);
     expect(report.bookmarksAdded).toBe(23);

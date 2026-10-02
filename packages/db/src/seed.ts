@@ -9,7 +9,12 @@ import { setupDatabase } from './migrations.ts';
 import { assignTag } from './queries/bookmark-tags.ts';
 import { upsertBookmarkByUrl } from './queries/bookmarks.ts';
 import { createCategory, getCategoryByName } from './queries/categories.ts';
-import { createDataset, getDatasetByName } from './queries/datasets.ts';
+import {
+  clearDatasetContent,
+  createDataset,
+  getDatasetByName,
+  type DatasetContentCounts,
+} from './queries/datasets.ts';
 import { createTag, getTagByName } from './queries/tags.ts';
 
 /** Seed datasets live in `packages/db/seeds/datasets/<name>.seed.json`. */
@@ -101,17 +106,18 @@ export interface SeedReport {
 }
 
 /**
- * Empties all seed-able content so a dataset load starts from a clean slate.
- * Bookmarks, tags, and categories are the root tables; child rows (assignments,
- * scraped content, embeddings, classification evidence) cascade via foreign
- * keys (connection PRAGMAs keep FKs on), and the `bookmarks_fts_delete` trigger
- * removes FTS rows as bookmarks go, so no reindex pass is needed. Datasets are
- * kept: the fixture's dataset is reused by name, and the wipe is scoped to it.
+ * Empties one dataset's content so a fixture load starts from a clean slate.
+ * Delegates to `clearDatasetContent`, which owns the deletion semantics: child
+ * rows (assignments, scraped content, embeddings, classification evidence)
+ * cascade via foreign keys (connection PRAGMAs keep FKs on), and the
+ * `bookmarks_fts_delete` trigger removes FTS rows as bookmarks go, so no
+ * reindex pass is needed. Strictly scoped to the named dataset — other
+ * datasets are never touched. The dataset row itself is kept (created on
+ * demand) so the fixture load can reuse the name.
  */
-export function resetSeedData(db: Database): void {
-  db.transaction(() => {
-    db.exec('DELETE FROM bookmarks; DELETE FROM tags; DELETE FROM categories;');
-  }).immediate();
+export function resetSeedData(db: Database, datasetName: string): DatasetContentCounts {
+  const dataset = getDatasetByName(db, datasetName) ?? createDataset(db, datasetName);
+  return clearDatasetContent(db, dataset.id);
 }
 
 /**
@@ -202,8 +208,9 @@ if (import.meta.main) {
   const datasetName = process.env.SEED_DATASET || DEFAULT_DATASET;
   const filePath = resolveSeedDataset(datasetName);
   if (process.env.SEED_RESET === '1') {
-    resetSeedData(db);
-    console.log(`Reset existing content (SEED_RESET=1)`);
+    const counts = resetSeedData(db, datasetName);
+    console.log(`Reset existing content in dataset "${datasetName}" (SEED_RESET=1)`);
+    console.log(JSON.stringify(counts, null, 2));
   }
 
   const report = seedFromFile(db, filePath);
