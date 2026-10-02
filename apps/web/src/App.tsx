@@ -9,13 +9,14 @@ import type {
   Section,
   Tag,
 } from '@al-yo-bo/shared';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
 import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
 import { BookmarkList } from '@/components/BookmarkList';
 import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
+import { CommandPalette } from '@/components/CommandPalette';
 import { ImportPage } from '@/components/ImportPage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
@@ -56,7 +57,9 @@ import { navigate, useRoute } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
 import { useLayout } from '@/lib/useLayout';
+import type { Layout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
+import { addRecentQuery, getRecentQueries } from '@/lib/recent-queries';
 
 const PAGE_SIZE = 20;
 type View = 'library' | 'review';
@@ -68,6 +71,138 @@ const NO_CATEGORIES: Category[] = [];
 const NO_SECTIONS: Section[] = [];
 const NO_TAGS: Tag[] = [];
 const NO_CANDIDATES: ReviewCandidate[] = [];
+
+interface BookmarkListCrossfadeProps {
+  page: number;
+  listKey: string;
+  isPlaceholderData: boolean;
+  loading: boolean;
+  layout: Layout;
+  filtered: boolean;
+  items: BookmarkWithTags[];
+  onOpen: (bookmark: BookmarkWithTags) => void;
+  onDelete: (bookmark: BookmarkWithTags) => void;
+  onAdd: () => void;
+  onImport: () => void;
+  onClearFilters: () => void;
+}
+
+/**
+ * Crossfade the library list on page changes (150 ms, opacity only).
+ *
+ * Two stable slots are swapped instead of keying on `page`, so a parallel lane's
+ * mount-only card entrance stagger inside BookmarkList is not re-triggered on
+ * every pagination event. Items are cached per page so the outgoing slot keeps
+ * its content while the incoming slot waits for fresh data.
+ */
+function BookmarkListCrossfade({
+  page,
+  listKey,
+  isPlaceholderData,
+  loading,
+  layout,
+  filtered,
+  items,
+  onOpen,
+  onDelete,
+  onAdd,
+  onImport,
+  onClearFilters,
+}: BookmarkListCrossfadeProps) {
+  const [activeSlot, setActiveSlot] = useState(0);
+  const [slots, setSlots] = useState<
+    { page: number; items: BookmarkWithTags[] | undefined }[]
+  >([
+    { page, items },
+    { page, items },
+  ]);
+  const cacheRef = useRef<Record<number, BookmarkWithTags[]>>({ [page]: items });
+  const lastListKeyRef = useRef(listKey);
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+
+  // When filters change the page number is reset, and page-cache entries from
+  // the old filter set would be misleading. Reset to a single slot showing the
+  // current filter results.
+  useEffect(() => {
+    if (listKey === lastListKeyRef.current) {
+      return;
+    }
+    lastListKeyRef.current = listKey;
+    cacheRef.current = items.length > 0 ? { [page]: items } : {};
+    setSlots([
+      { page, items },
+      { page, items },
+    ]);
+    setActiveSlot(0);
+  }, [listKey, page, items]);
+
+  // Keep the cache and the active slot in sync with live query data.
+  useEffect(() => {
+    if (!isPlaceholderData) {
+      cacheRef.current[page] = items;
+    }
+    setSlots((prev) =>
+      prev.map((slot) =>
+        slot.page === page
+          ? { ...slot, items: isPlaceholderData ? slot.items : items }
+          : slot,
+      ),
+    );
+  }, [items, page, isPlaceholderData]);
+
+  // Start the crossfade when the user moves to a different page.
+  useEffect(() => {
+    const currentSlot = slots[activeSlot];
+    if (!currentSlot || page === currentSlot.page) {
+      return;
+    }
+    const nextSlot = activeSlot === 0 ? 1 : 0;
+    setSlots((prev) => {
+      const next = [...prev];
+      next[nextSlot] = { page, items: cacheRef.current[page] };
+      return next;
+    });
+    if (prefersReducedMotion) {
+      setActiveSlot(nextSlot);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setActiveSlot(nextSlot);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [page, activeSlot, prefersReducedMotion]);
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      {slots.map((slot, index) => {
+        const isActive = activeSlot === index;
+        const slotLoading = slot.items === undefined || (isActive && loading);
+        return (
+          <div
+            key={index === 0 ? 'crossfade-a' : 'crossfade-b'}
+            className={cn(
+              'absolute inset-0 transition-opacity duration-150 ease-out motion-reduce:transition-none',
+              isActive ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+            aria-hidden={!isActive}
+          >
+            <BookmarkList
+              items={slot.items ?? NO_ITEMS}
+              loading={slotLoading}
+              layout={layout}
+              filtered={filtered}
+              onOpen={onOpen}
+              onDelete={onDelete}
+              onAdd={onAdd}
+              onImport={onImport}
+              onClearFilters={onClearFilters}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Chat pulls the AI SDK + beui + motion; keep all of it out of the initial bundle. */
 const ChatPanel = lazy(() =>
@@ -121,6 +256,8 @@ export function App() {
   const [vocabOpen, setVocabOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>(getRecentQueries);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -144,6 +281,15 @@ export function App() {
       const typing =
         target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // Cmd/Ctrl+K toggles the command palette even while the user is typing
+      // in an input, so it must be checked before the typing guard.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+        return;
+      }
+
       if (event.key === '/' && !typing) {
         event.preventDefault();
         searchRef.current?.focus();
@@ -152,13 +298,19 @@ export function App() {
         event.preventDefault();
         setChatOpen((open) => !open);
       }
-      if (event.key === 'Escape' && chatOpen) {
-        setChatOpen(false);
+      if (event.key === 'Escape') {
+        if (commandOpen) {
+          setCommandOpen(false);
+          return;
+        }
+        if (chatOpen) {
+          setChatOpen(false);
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [chatOpen]);
+  }, [chatOpen, commandOpen]);
 
   // A page change renders a fresh batch; don't leave the user scrolled mid-list.
   useEffect(() => {
@@ -176,6 +328,22 @@ export function App() {
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   };
+
+  // Stable key for the crossfade cache. Any change that resets pagination also
+  // invalidates the cached page items.
+  const listKey = useMemo(
+    () =>
+      JSON.stringify({
+        mode,
+        categoryId,
+        tagId,
+        status,
+        sort,
+        direction,
+        q: searchQuery,
+      }),
+    [mode, categoryId, tagId, status, sort, direction, searchQuery],
+  );
 
   // keepPreviousData shows the outgoing page while the next one loads, so
   // pagination doesn't flash a skeleton list; stale responses can never
@@ -224,10 +392,12 @@ export function App() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
   }, [queryClient]);
 
-  // Detail dialog edits (tag add/remove, save, scrape) touch the list and counts.
+  // Detail dialog edits (tag add/remove, save, scrape) touch the list and
+  // counts; inline tag creation adds vocabulary, so the tags query joins in.
   const onDetailChanged = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
     void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
   }, [queryClient]);
 
   // Deletes also remove a bookmark's review candidates and its tag aggregates.
@@ -319,6 +489,37 @@ export function App() {
     setCategoryId(null);
     setTagId(null);
     setStatus('active');
+    setPage(0);
+  }, []);
+
+  const handlePaletteSearch = useCallback((query: string) => {
+    setView('library');
+    navigate('library');
+    setQuery(query);
+    setSearchQuery(query);
+    setCategoryId(null);
+    setTagId(null);
+    setPage(0);
+    setRecentQueries(addRecentQuery(query));
+  }, []);
+
+  const handleJumpToCategory = useCallback((id: string) => {
+    setView('library');
+    navigate('library');
+    setQuery('');
+    setSearchQuery('');
+    setCategoryId(id);
+    setTagId(null);
+    setPage(0);
+  }, []);
+
+  const handleJumpToTag = useCallback((id: string) => {
+    setView('library');
+    navigate('library');
+    setQuery('');
+    setSearchQuery('');
+    setTagId(id);
+    setCategoryId(null);
     setPage(0);
   }, []);
 
@@ -438,7 +639,10 @@ export function App() {
                     />
 
                     <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
-                      <BookmarkList
+                      <BookmarkListCrossfade
+                        page={page}
+                        listKey={listKey}
+                        isPlaceholderData={bookmarksQuery.isPlaceholderData}
                         items={bookmarksQuery.data?.items ?? NO_ITEMS}
                         // Skeleton only until the first page arrives; keepPreviousData
                         // keeps the outgoing page visible during pagination/refetch.
@@ -573,6 +777,17 @@ export function App() {
         onOpenChange={closeDetail}
         onChanged={onDetailChanged}
         onDeleted={onDetailDeleted}
+      />
+
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        categories={categories}
+        tags={tags}
+        recentQueries={recentQueries}
+        onSearch={handlePaletteSearch}
+        onJumpToCategory={handleJumpToCategory}
+        onJumpToTag={handleJumpToTag}
       />
     </div>
   );
