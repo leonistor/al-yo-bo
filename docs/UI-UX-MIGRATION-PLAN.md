@@ -27,7 +27,8 @@ User-stated preferences baked into the plan:
 ### Phase 0 — Foundational setup (gating)
 
 - **0.1** `bunx --bun shadcn@latest mcp init --client opencode` →
-  `opencode.json` `mcp.shadcn` block.
+  `.opencode/opencode.jsonc` `mcp.shadcn` block. (Repo opencode config lives at
+  `.opencode/opencode.jsonc` — references to a root `opencode.json` were wrong.)
 - **0.2** `bunx --bun skills add shadcn/ui --agent opencode -y` →
   `.agents/skills/shadcn/` and `.agents/skills/migrate-radix-to-base/`.
 - **0.3** `bunx --bun skills add Lombiq/Tailwind-Agent-Skills --agent opencode -y`
@@ -69,7 +70,7 @@ User-stated preferences baked into the plan:
   nested `asChild`/`render`.
 - Add missing DESIGN.md canonicals: `command`, `popover` (base-ui ports).
 
-**Status**: ✅ complete (10 commits: 8916a5a, aa71346, 265cd0a, 844cf02, ffeb0d1,
+**Status**: ✅ complete (14 commits: 8916a5a, aa71346, 265cd0a, 844cf02, ffeb0d1,
 95f83ab, 243b344, c8b69d1, cfaf566, 239c482, 3b8420a, 8000e99, 01dab0a, 416dde3 —
 plus per-component migration reports in `.migration/`).
 
@@ -90,13 +91,20 @@ button/scroll-area/spinner upgrade), `@coss/alert-dialog` (consolidated
 ### Phase 5 — Replace assistant-ui chat surface with beui.dev
 
 - **Scope**: replace, not layer.
+- **The chat surface is a stub** — `ChatPanel.tsx` (~83 lines) plus the
+  disposable `components/assistant-ui/elements/*` scaffolding (9 files).
+  Nothing there is worth preserving; this is a wholesale rebuild, not a
+  refactor.
 - Install beui primitives: `message-bubble`, `prompt-input`,
   `streaming-response`, `message-scroller`, `agent-activity` (+ others as
   needed).
-- Refactor `apps/web/src/components/ChatPanel.tsx` to use beui instead of
-  assistant-ui.
-- After refactor: decide whether to drop `@assistant-ui/react` + `react-markdown`
-  + `ai` deps (likely yes) or keep them for any non-chat use.
+- Rebuild `ChatPanel.tsx` on beui against the **unchanged server contract**:
+  `POST /api/chat` (AI SDK UI message stream) + `searchBookmarks` tool-result
+  cards.
+- After rebuild: drop `@assistant-ui/react`, `@assistant-ui/ai-sdk`,
+  `@assistant-ui/react-markdown`, `react-markdown`, and `ai` from apps/web —
+  `ChatPanel` is their only consumer — and delete
+  `components/assistant-ui/`.
 - Adds `motion` dep.
 
 **Status**: ⏳ pending.
@@ -115,7 +123,8 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 ### Final cleanup — drop `radix-ui` dep after Phase 5
 
 - `@radix-ui/*` is gone from apps/web source code today (Phase 3 cleared it);
-  the dep stays because `@assistant-ui/react` transitively pulls it.
+  the direct `radix-ui` dep stays until Phase 5 — after assistant-ui (its last
+  transitive consumer) is dropped, `bun remove radix-ui` finishes the job.
 - After Phase 5, `bun remove radix-ui` from `apps/web`; verify `bun run typecheck`
   + `bun run build`.
 
@@ -150,6 +159,10 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - Phase 0 → 1 → 2 → 3 → 4 → 5 → 6 (sequential).
 - Phase 1 minimal, can overlap with 3 prep.
 - Phase 4 / 5 can run in parallel after Phase 3 if scope allows.
+- **Actual sequencing**: Phase 6's doc side (39ac863) landed mid-Phase-4, ahead
+  of Phase 5 — intentional, since it was doc-only. Its "concrete pages"
+  follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Remaining
+  order: Phase 4 leftovers → Phase 5 → final cleanup.
 
 ## Audit summary (drives Phase 4 picks)
 
@@ -195,10 +208,12 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 - Lint clean (pre-existing warnings + 2 new `react-perf(jsx-no-jsx-as-prop)` hints
   on `render={<X/>}` polymorphic usage — acceptable; memoize later if it shows
   in profiling).
-- 8 migration reports in `.migration/`.
+- 13 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
+  adoptions).
 - `cmdk` dep removed from `apps/web/package.json`.
 - `@radix-ui/*` deps gone from source; the unified `radix-ui@^1.6.7` stays
-  transitively until Phase 5.
+  (declared directly in apps/web, also pulled transitively by assistant-ui)
+  until Phase 5.
 
 ## Outstanding refactors (surfaced for follow-up)
 
@@ -226,5 +241,5 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 - `docs/ARCHITECTURE.md` — system architecture (precedence: ARCHITECTURE > MODEL >
   DESIGN > README).
 - `apps/web/components.json` — `base-nova` style + `@coss` / `@beui` registries.
-- `apps/web/src/components/ui/*` — 23 base-ui + coss wrappers (was 22 stock).
+- `apps/web/src/components/ui/*` — 26 base-ui + coss wrappers (was 22 stock).
 - `.migration/*.md` — per-component migration reports (8 files).
