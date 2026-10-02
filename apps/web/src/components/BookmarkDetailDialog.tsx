@@ -413,11 +413,9 @@ export function BookmarkDetailDialog({
 
         <DialogFooter className="sm:justify-between">
           <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive">
-                <Trash2Icon data-icon="inline-start" />
-                Delete
-              </Button>
+            <AlertDialogTrigger render={<Button variant="destructive" />}>
+              <Trash2Icon data-icon="inline-start" />
+              Delete
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
