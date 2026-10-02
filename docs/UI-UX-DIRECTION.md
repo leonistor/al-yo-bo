@@ -106,6 +106,7 @@ Easing: `ease-out` for entrances, `ease-in-out` for layout resizes.
 - **Command palette** — `Cmd/Ctrl+K` opens a modal combining search, category/tag
   jumps, and recent queries. The existing `ui/command.tsx` (cmdk) wrapper is the
   starting point; the `@coss/command` primitive is the longer-term replacement.
+  (Landed on `@coss/command` + `Cmd/Ctrl+K`.)
 - **Tag assignment** — replace the `<select>` in `BookmarkDetailDialog.tsx:382`
   with a searchable combobox that supports inline creation.
 - **Import page bento summary** — parsed count, skipped count, duplicates,
@@ -150,11 +151,12 @@ DESIGN.md to reflect the base-ui + coss/beui + beui-chat reality.
 3. **Phase 5** — done (commit 1c4dace). Chat surface rebuilt on beui
    primitives (`message`, `prompt-input`, `streaming-response`,
    `agent-activity`); `@assistant-ui/*` and `radix-ui` dropped.
-4. **List keyboard navigation** — `BookmarkList.tsx` roving tabindex + arrows.
-5. **Top bar redesign** — search-hero layout with consolidated Create + account
-   menus.
-6. **Library entrance + pagination crossfade** motion.
-7. **Tag assignment combobox** in `BookmarkDetailDialog`.
+4. ~~**List keyboard navigation** — `BookmarkList.tsx` roving tabindex + arrows.~~ done.
+5. ~~**Top bar redesign** — search-hero layout with consolidated Create + account
+   menus.~~ done.
+6. ~~**Library entrance + pagination crossfade** motion.~~ done.
+7. ~~**Tag assignment combobox** in `BookmarkDetailDialog`.~~ done (with inline
+   tag creation routed through the existing add-tag path).
 
 ## 4. What NOT to do
 

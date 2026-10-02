@@ -163,8 +163,8 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 ## Risks & open questions (revised — post-Phase-5 state)
 
 1. **assistant-ui / Base UI compat** — moot: assistant-ui is dropped (1c4dace).
-2. **Sonner → Base UI toast** — coss.com/ui drops Sonner; intentional or keep?
-   **Still open.**
+2. **Sonner → Base UI toast** — resolved: **keeping Sonner** intentionally
+   (user decision, 2026-10-02).
 3. **`cn` package compat with Base UI** — resolved during Phase 3 (typecheck +
    lint clean).
 4. **`shadcn/tailwind.css` runtime dep** — resolved in Phase 3 (base-nova
@@ -182,8 +182,10 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - **Actual sequencing**: Phase 6's doc side (39ac863) landed mid-Phase-4, ahead
   of Phase 5 — intentional, since it was doc-only. Its "concrete pages"
   follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Phase 5 and
-  the final cleanup have since landed (1c4dace, 5210a4c), and the last Phase 4
-  leftover (`@coss/table` + ImportPage) is done. All phases complete.
+  the final cleanup have since landed (1c4dace, 5210a4c), the last Phase 4
+  leftover (`@coss/table` + ImportPage) is done (bf6d73c), and the
+  outstanding-refactors batch (items 3–10) landed immediately after. All
+  phases and follow-ups complete.
 
 ## Audit summary (drives Phase 4 picks)
 
@@ -224,14 +226,15 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 
 ## Status snapshot
 
-- 34 commits on `main` since the plan was approved (as of this update).
+- 40 commits on `main` since the plan was approved (as of this update).
 - All workspaces typecheck clean; lint green (warnings only — pre-existing
   `react-perf` hints plus 2 new ones on `ChatPanel.tsx`, same acceptable
   category); build green.
-- Deps now: `@assistant-ui/*`, `remark-gfm`, `cmdk`, and `radix-ui` all
-  removed (`react-markdown` was only transitive); `@ai-sdk/react@^4.0.130`
-  and `motion@^13.5.0` added; `ai@^7.0.127` stays (transport, `UIMessage`
-  types, `sendAutomaticallyWhen`).
+- Deps now: `@assistant-ui/*`, `cmdk`, and `radix-ui` all removed;
+  `@ai-sdk/react@^4.0.130`, `motion@^13.5.0`, `react-markdown@^10.1.0` and
+  `remark-gfm@^4.0.1` added; `ai@^7.0.127` stays (transport, `UIMessage`
+  types, `sendAutomaticallyWhen`); **Sonner stays** as the toast system
+  (resolved decision).
 - beui primitives vendored under `apps/web/src/components/agents/` +
   `apps/web/src/components/motion/` (+ small `lib/` helpers), excluded from
   lint via `.oxlintrc.json` `ignorePatterns`.
@@ -247,20 +250,22 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 2. ~~**`@coss/table`** + rewrite `ImportPage` editable rows on table
    semantics.~~ ✅ done (`ImportPage` right pane on `variant="card"` table; see
    `.migration/coss-table.md`).
-3. **`BookmarkCard` → coss Card anatomy** in `BookmarkList.tsx:143-203`.
-4. **List keyboard navigation** for `BookmarkList.tsx` (roving tabindex,
-   `role="listbox"`, `↑`/`↓`/`Enter`/`Delete`).
-5. **Topbar redesign** for hierarchy (consolidated Create + account menus;
-   search-hero layout).
-6. **Library entrance + pagination crossfade** motion.
-7. **Tag assignment combobox** in `BookmarkDetailDialog.tsx` (replaces the
-   `<Select>`-as-action-trigger anti-pattern).
-8. **Command palette wiring** (`Cmd/Ctrl+K` → coss command modal — search +
-   category/tag jumps + recent queries).
-9. **Markdown rendering for assistant chat text** — plain text today; decide
-   whether to add a lightweight renderer (model answers are markdown-ish).
-10. **Chat "cite" action** — DESIGN.md §Chat lists copy/cite/open as always
-    available; beui `citations.tsx` is installed but not wired.
+3. ~~**`BookmarkCard` → coss Card anatomy** in `BookmarkList.tsx:143-203`.~~
+   ✅ done (coss `Card` root, hover/focus-within actions, new skeleton).
+4. ~~**List keyboard navigation** for `BookmarkList.tsx`~~ ✅ done (roving
+   tabindex over semantic `<ul>`/`<li>`, arrows/Home/End/Enter/Delete, grid-aware).
+5. ~~**Topbar redesign**~~ ✅ done (search hero + attached mode segmented
+   control, Create split-button, account menu).
+6. ~~**Library entrance + pagination crossfade** motion.~~ ✅ done (mount-only
+   10-card stagger; slot-based 150 ms crossfade; reduced-motion safe).
+7. ~~**Tag assignment combobox** in `BookmarkDetailDialog.tsx`~~ ✅ done
+   (searchable combobox with inline creation through the existing add-tag path).
+8. ~~**Command palette wiring** (`Cmd/Ctrl+K`)~~ ✅ done (search + category/tag
+   jumps + localStorage recent queries; works while typing).
+9. ~~**Markdown rendering for assistant chat text**~~ ✅ done — `react-markdown`
+   + `remark-gfm` (user-approved deps); user messages stay plain text.
+10. ~~**Chat "cite" action**~~ ✅ done (copies a markdown list of the assistant
+    message's `searchBookmarks` sources, with a most-recent-result fallback).
 
 ## Source files referenced
 
@@ -273,3 +278,13 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 - `apps/web/src/components/agents/*` + `components/motion/*` — vendored beui
   primitives (Phase 5 chat surface).
 - `.migration/*.md` — per-component migration reports (15 files).
+
+## Known limitation (environmental)
+
+- Chat markdown/cite are code-complete and gated (typecheck/lint/build/tests
+  green) but could not be end-to-end smoked in this environment: the local
+  Ollaya sidecar serves only routing/ONNX models and refuses `/api/chat`
+  ("decision models do not generate text"). Setting `OLLAMA_CHAT_MODEL` (and
+  `OLLAMA_URL=http://127.0.0.1:11435`) to a text model enables the full path.
+  The unconfigured/error path was smoke-verified calm (alert renders, transcript
+  and composer intact).

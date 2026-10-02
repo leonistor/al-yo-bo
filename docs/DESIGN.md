@@ -83,8 +83,10 @@ different product: borrow the information architecture, not the feature set.
 
 - Left rail: `All` (with total), a flat list of categories with counts, a tag list with counts; a
   collapse control below `lg`.
-- Top bar: a single search input (with a keyword/semantic/hybrid mode control), plus add/import/theme
-  actions.
+- Top bar: a centered, flexed search input with an attached keyword/semantic/hybrid segmented
+  control; a chat toggle; a Create split-button (Add primary, Import in its dropdown); and an
+  account menu (theme + profile) at the far right. Below `md` the menu button opens the off-canvas
+  rail.
 - Main area: result count, a "refine" filters popover, list/grid toggle, sort control, and pagination
   (default 20/page).
 - Bookmark row: title, host, tag chips, and a short description; row actions on the right.
@@ -106,9 +108,13 @@ opened-count counters — unless they are separately requested and added to thes
 - One well-timed entrance animation beats scattered micro-interactions. Page-load entrance stagger
   for the library view (`200 ms`, `translate-y-1 → 0`, opacity `0 → 1`); pagination crossfade
   (`150 ms`); filter change pulse on the result count.
+- **Command palette** (`Cmd/Ctrl+K`) combines bookmark search, category/tag jumps, and recent
+  queries. It uses the `command` primitive, autofocuses the input on open, supports full arrow
+  navigation, restores focus on close, and routes selections into the library search/filter state.
 - Optimistic mutations must show pending affordance and a recovery path on failure.
-- Keyboard: `/` focuses search, `c` opens chat, `Esc` closes overlays, **arrows move list
-  selection** (see accessibility checklist — this is the missing piece).
+- Keyboard: `/` focuses search, `c` opens chat, `Cmd/Ctrl+K` toggles the command palette (works
+  while typing in inputs), `Esc` closes overlays, **arrows move list selection** (see accessibility
+  checklist — this is the missing piece).
 - Focus states use the `ring` token and must remain visible on every interactive element.
 
 ## Import page
@@ -151,10 +157,13 @@ opened-count counters — unless they are separately requested and added to thes
 - Streaming, tool-call, and error states each get a distinct, calm presentation; never block the
   transcript on a failed tool call.
 - Message actions (copy, cite, "open bookmark") are always available, not hover-only.
+- Assistant text renders as GitHub-Flavored Markdown (`react-markdown` + `remark-gfm`, memoized
+  per message for streaming); user messages stay plain text.
+- **Cite** copies a markdown list of source bookmarks (`[title](url)`) from the current assistant
+  message's `searchBookmarks` tool results, falling back to the most recent `searchBookmarks`
+  result in the conversation; standard Sonner toast feedback.
 - The chat tool-result surface (bookmark hits) reuses `BookmarkCard` from the library for visual
   consistency between chat and main view.
-- Once the chat panel is fully on beui, drop `@assistant-ui/react` from `apps/web` deps; this
-  transitively retires `radix-ui` from the project.
 
 ## Accessibility checklist
 
@@ -164,8 +173,10 @@ opened-count counters — unless they are separately requested and added to thes
 - [ ] Live regions for streaming/async updates (search results, chat).
 - [ ] No meaning conveyed by color alone (pair with icon/text).
 - [ ] **List keyboard navigation.** `BookmarkList` and the import result grid support `↑`/`↓` to
-      move selection, `Enter` to open, `Delete`/backspace to remove. Roving tabindex pattern; the
-      list has `role="listbox"` semantics for screen readers.
+      move selection, `Enter` to open, `Delete`/backspace to remove (grid layout: `←`/`→` and
+      column-aware `↑`/`↓`, plus Home/End). Roving tabindex pattern; the list uses
+      `role="list"`/`role="listitem"` semantics — not `listbox`, whose options cannot contain the
+      interactive children (open/delete buttons) that cards need.
 - [ ] "Skip to results" link for screen-reader/keyboard users.
 - [ ] Focus trap verified on every dialog (`BookmarkDetailDialog`, `VocabDialog`, `AddBookmarkDialog`,
       the `AlertDialog` nested in `BookmarkDetailDialog`).
