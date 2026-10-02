@@ -93,7 +93,11 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 
 - Keep agent runtime state out of git: `.omo/` is gitignored except `omo.jsonc`. Use
   `.omo/session-work/` for scratch files and `.omo/evidence/` for generated evidence.
-- `.omo/omo.jsonc` disables skills irrelevant to this repo (astro, python, uv, zig) — repo-scoped.
+- **`~/.omo` (and `.omo/omo.jsonc`) is leftover config from another opencode plugin
+  (oh-my-openagent / "OMO") and is not in use.** Never read it for current model/agent settings —
+  the active agent plugin is
+  [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim), configured at
+  `~/.config/opencode/oh-my-opencode-slim.json`.
 - `asm` manages global skills; it stores nothing in this repo. Project-shared skills belong under
   `.opencode/skills/<name>/SKILL.md`.
 - Semantic commit prefixes. Commit autonomously when work is complete and verified; pushes require explicit approval; PRs only on request.
