@@ -39,6 +39,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 interface OllayaDecideBody {
   model?: string;
+  /** Current 0.9 shape: one answer object per label, `noul` = P(true). */
+  answers?: Record<string, { type?: string; noul?: number }>;
   probabilities?: Record<string, number>;
   results?: Array<{ question?: string; label?: string; probability?: number }>;
 }
@@ -78,6 +80,11 @@ function normalizeDecideResponse(body: OllayaDecideBody): DecideResult {
   const result: DecideResult = { probabilities: {}, model: body.model };
   if (body.probabilities) {
     result.probabilities = body.probabilities;
+  } else if (body.answers) {
+    // Ollaya 0.9: answers.<label>.noul holds the P(true) for each noul question.
+    result.probabilities = Object.fromEntries(
+      Object.entries(body.answers).map(([label, answer]) => [label, answer.noul ?? 0]),
+    );
   } else if (body.results) {
     result.probabilities = Object.fromEntries(
       body.results

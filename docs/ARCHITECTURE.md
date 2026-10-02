@@ -576,7 +576,10 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
    `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
    `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`; loopback
    only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it automatically
-   when the binary is installed and skips it (in-memory vectors) when it is not.
+   when the binary is installed and skips it (in-memory vectors) when it is not. Likewise, `dev`
+   runs the Ollaya sidecar via `scripts/ollaya/start.sh` when the `ollaya` binary is on PATH (the
+   installer default is `~/.local/bin`): loopback only, `ollaya serve` if not already running, and
+   a clear skip message when it is absent — classification degrades to manual tagging (§1.5).
 
 The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API
