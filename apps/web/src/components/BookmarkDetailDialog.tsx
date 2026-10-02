@@ -1,8 +1,10 @@
 import type { BookmarkImage, BookmarkTagView, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
 import {
+  ChevronsUpDownIcon,
   CircleAlertIcon,
   ExternalLinkIcon,
   GlobeIcon,
+  PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
   XIcon,
@@ -23,6 +25,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -32,6 +41,11 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -43,6 +57,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import {
   assignTagToBookmark,
+  createTag,
   deleteBookmark,
   removeTagFromBookmark,
   scrapeBookmark,
@@ -156,6 +171,103 @@ function AssignedTagBadge({ tag, onRemove }: AssignedTagBadgeProps) {
         <XIcon className="size-3" />
       </button>
     </Badge>
+  );
+}
+
+interface TagComboboxProps {
+  availableTags: Tag[];
+  allTags: Tag[];
+  onAssign: (tagId: string) => void;
+}
+
+/**
+ * Searchable tag combobox with inline creation.
+ *
+ * The popup anchors to a button trigger and composes the coss command primitives
+ * on top of base-ui Autocomplete (manual filtering via `mode="none"`). Selecting
+ * an existing tag routes through the parent `addTag` handler; creating a tag uses
+ * the shared `createTag` client path, then assigns the newly created tag through
+ * the same `addTag` handler so validation, toast, and mutation paths stay unified.
+ */
+function TagCombobox({ availableTags, allTags, onAssign }: TagComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const trimmed = search.trim();
+  const normalized = trimmed.toLowerCase();
+
+  const filtered = availableTags.filter((tag) =>
+    tag.name.toLowerCase().includes(normalized),
+  );
+  const exactMatch = allTags.find((tag) => tag.name.toLowerCase() === normalized);
+  const canCreate = trimmed.length > 0 && !exactMatch;
+
+  const handleAssign = useCallback(
+    (tagId: string) => {
+      setOpen(false);
+      setSearch('');
+      onAssign(tagId);
+    },
+    [onAssign],
+  );
+
+  const handleCreate = useCallback(
+    async (name: string) => {
+      setOpen(false);
+      setSearch('');
+      try {
+        const created = await createTag({ name: name.trim() });
+        onAssign(created.id);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to create tag');
+      }
+    },
+    [onAssign],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            id="detail-add-tag"
+            variant="outline"
+            size="sm"
+            className="w-48 justify-between"
+          />
+        }
+      >
+        <span className="text-muted-foreground">Add a tag…</span>
+        <ChevronsUpDownIcon className="size-4 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="start">
+        <Command value={search} onValueChange={setSearch} mode="none">
+          <CommandInput placeholder="Search tags…" aria-label="Search tags" />
+          <CommandList className="max-h-60">
+            {filtered.map((tag) => (
+              <CommandItem key={tag.id} value={tag.id} onClick={() => handleAssign(tag.id)}>
+                {tag.name}
+              </CommandItem>
+            ))}
+            {canCreate && (
+              <CommandItem
+                key="create"
+                value={`create:${trimmed}`}
+                onClick={() => handleCreate(trimmed)}
+              >
+                <PlusIcon className="mr-2 size-4" />
+                Create &quot;{trimmed}&quot;
+              </CommandItem>
+            )}
+            {filtered.length === 0 && !canCreate && (
+              <CommandEmpty className="py-4 text-center text-xs">
+                {normalized.length > 0 ? 'No matching tags.' : 'Type to create a new tag.'}
+              </CommandEmpty>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -384,9 +496,7 @@ export function BookmarkDetailDialog({
           <Separator />
 
           <Field>
-            <FieldLabel htmlFor={availableTags.length > 0 ? 'detail-add-tag' : undefined}>
-              Tags
-            </FieldLabel>
+            <FieldLabel htmlFor="detail-add-tag">Tags</FieldLabel>
             <div className="flex w-full flex-col gap-2">
               <div className="flex flex-wrap gap-1">
                 {current.tags.length === 0 && (
@@ -396,25 +506,7 @@ export function BookmarkDetailDialog({
                   <AssignedTagBadge key={tag.tagId} tag={tag} onRemove={removeTag} />
                 ))}
               </div>
-              {availableTags.length > 0 && (
-                <Select
-                  value=""
-                  onValueChange={(v) => {
-                    if (v !== null) void addTag(v);
-                  }}
-                >
-                  <SelectTrigger id="detail-add-tag" className="w-48">
-                    <SelectValue placeholder="Add a tag…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableTags.map((tag) => (
-                      <SelectItem key={tag.id} value={tag.id}>
-                        {tag.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <TagCombobox availableTags={availableTags} allTags={tags} onAssign={addTag} />
             </div>
           </Field>
         </div>
