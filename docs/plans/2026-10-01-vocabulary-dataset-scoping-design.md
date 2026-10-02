@@ -1,6 +1,15 @@
 # Design — Dataset-scoped vocabulary with review-before-activation
 
-> Date: 2026-10-01 · Status: proposal · Related docs: [MODEL.md](../MODEL.md), [ARCHITECTURE.md](../ARCHITECTURE.md)
+> Date: 2026-10-01 · Status: superseded (2026-10-01) · Related docs: [MODEL.md](../MODEL.md), [ARCHITECTURE.md](../ARCHITECTURE.md)
+
+**Outcome (2026-10-01):** implemented as migration `0003_dataset_vocabulary.sql` (datasets table,
+dataset-scoped vocabulary/bookmarks, sections + flat categories, propose→review→activate), then the
+review-before-activation lifecycle (§3, §5) was **deliberately reversed** the same day by decision #4
+of the [import-simplification plan](./2026-10-01-import-simplification-implementation.md):
+migration `0004_simplify_vocabulary.sql` auto-creates vocabulary as `active` on import, drops
+`proposed`/`rejected` statuses and `merged_into_id`, and the classifier never auto-creates tags.
+Dataset scoping (§1, §4, §7) and the sections schema (§2) remain in force. Category-explosion
+mitigation is manual (VocabDialog rename/delete), not review-gated.
 
 ## Problem
 
