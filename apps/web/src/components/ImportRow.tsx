@@ -2,6 +2,7 @@ import { XIcon } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { memo, useCallback } from 'react';
 
+import { TagPill } from '@/components/TagPill';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -80,6 +81,17 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
 
   const handleRemove = useCallback(() => onRemove(row.key), [onRemove, row.key]);
 
+  // Read-only preview of what the comma-separated field will become on commit,
+  // deduped so identical tags (and React keys) stay stable.
+  const parsedTags = Array.from(
+    new Set(
+      row.tagsText
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag !== ''),
+    ),
+  );
+
   return (
     <TableRow
       className={cn('transition-opacity', !row.included && 'opacity-50')}
@@ -149,6 +161,15 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
           className={fieldClass}
           disabled={!row.included}
         />
+        {parsedTags.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {parsedTags.map((tag) => (
+              <TagPill key={tag} variant="static">
+                {tag}
+              </TagPill>
+            ))}
+          </div>
+        )}
       </TableCell>
 
       <TableCell className="w-px align-top">

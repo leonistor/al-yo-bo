@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
+import { TagPill } from '@/components/TagPill';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -247,9 +248,9 @@ export const BookmarkCard = memo(function BookmarkCard({
         {bookmark.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {bookmark.tags.map((tag) => (
-              <Badge key={tag.tagId} variant="outline">
+              <TagPill key={tag.tagId} variant="outline">
                 {tag.name}
-              </Badge>
+              </TagPill>
             ))}
           </div>
         )}
