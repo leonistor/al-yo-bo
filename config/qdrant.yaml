@@ -1,6 +1,8 @@
 # Qdrant sidecar config (ARCHITECTURE §9). Loopback only: the single-user app
-# is the only client, so no TLS/auth is needed. Storage lives under the same
-# `data/` tree as the SQLite file, which is gitignored and backed up as a copy.
+# is the only client, so no TLS/auth is needed. The storage paths below are the
+# defaults; scripts/qdrant/start.sh overrides them with QDRANT__STORAGE__* env
+# vars derived from DATA_DIR, so the sidecar follows the app's data root without
+# templating this file.
 service:
   host: 127.0.0.1
   http_port: 6333

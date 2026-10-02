@@ -1,18 +1,23 @@
 import { join } from 'node:path';
 
+import { resolveDataDir } from '@al-yo-bo/db';
 import type { CoreConfig } from '@al-yo-bo/core';
 
 /**
  * Server-only configuration layered on top of the core config the service layer
  * consumes. `autoAssignThreshold`, `ollaya`, and `scrape` are inherited from
  * `CoreConfig`; `embeddings` widens the core shape with the adapter credentials
- * (OpenRouter), and `qdrant`/`chat`/`extract`/`screenshot` are transport/serving
- * concerns that never reach core.
+ * (OpenRouter), and `qdrant`/`chat`/`extract`/`screenshot`/the data-root paths
+ * are transport/serving concerns that never reach core.
  */
 export interface ServerConfig extends CoreConfig {
   port: number;
   host: string;
+  /** Resolved data root (env `DATA_DIR`; ARCHITECTURE §5). */
+  dataDir: string;
   dbPath: string;
+  /** Screenshot artifact directory, served under `/data/screenshots/`. */
+  screenshotsDir: string;
   /** Vector-serving sidecar (ARCHITECTURE §6); disabled when `url` is undefined. */
   qdrant: {
     url?: string;
@@ -45,16 +50,19 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-// Anchored to the repo root so `bun run dev` (which runs with the package as cwd)
-// and `bun run db:seed` point at the same SQLite file.
-const DEFAULT_DB_PATH = join(import.meta.dir, '../../../data/bookmarks.db');
-const DEFAULT_SCREENSHOTS_DIR = join(import.meta.dir, '../../../data/screenshots');
-
 export function loadConfig(env: Record<string, string | undefined> = process.env): ServerConfig {
+  // Single data root (ARCHITECTURE §5): every file artifact — SQLite,
+  // screenshots, avatars, Qdrant storage — lives under one directory, so one
+  // env knob relocates the whole tree. resolveDataDir (packages/db) anchors
+  // relative values to the repo root so `bun run dev` and the CLI scripts
+  // agree regardless of cwd.
+  const dataDir = resolveDataDir(env.DATA_DIR);
   return {
     port: numberFromEnv(env.PORT, 3000),
     host: env.HOST ?? '127.0.0.1',
-    dbPath: env.DB_PATH ?? DEFAULT_DB_PATH,
+    dataDir,
+    dbPath: env.DB_PATH ?? join(dataDir, 'bookmarks.db'),
+    screenshotsDir: env.SCREENSHOTS_DIR ?? join(dataDir, 'screenshots'),
     autoAssignThreshold: numberFromEnv(env.AUTO_ASSIGN_THRESHOLD, 0.5),
     defaultDataset: env.DEFAULT_DATASET ?? 'default',
     ollaya: {
@@ -95,5 +103,3 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
   };
 }
-
-export const SCREENSHOTS_DIR = DEFAULT_SCREENSHOTS_DIR;

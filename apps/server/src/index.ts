@@ -13,7 +13,7 @@ import { Hono, type Context } from 'hono';
 import { serveStatic } from 'hono/bun';
 
 import { createApp } from './app.ts';
-import { loadConfig, SCREENSHOTS_DIR } from './env.ts';
+import { loadConfig } from './env.ts';
 import { buildExtractionClient } from './extract.ts';
 import {
   bunWebViewScreenshotClient,
@@ -84,7 +84,7 @@ const core = createCore({
   scrape,
   extract: extractClient,
   screenshot: screenshotClient,
-  screenshotsDir: SCREENSHOTS_DIR,
+  screenshotsDir: config.screenshotsDir,
   // Same cap as dead-link invalidation: a job gives up on the same attempt that
   // marks the bookmark invalid.
   maxAttempts: config.scrape.maxAttempts,
@@ -99,9 +99,9 @@ const core = createCore({
 
 const app = new Hono();
 
-// Serves screenshot artifacts from the local `data/screenshots/` directory.
-// Guarded by a UUIDv7 + `.jpg` regex so the route cannot escape the directory.
-app.get('/data/screenshots/:filename', (c) => serveScreenshot(c, SCREENSHOTS_DIR));
+// Serves screenshot artifacts from the configured screenshots dir (under the
+// data root). Guarded by a UUIDv7 + `.jpg` regex so the route cannot escape it.
+app.get('/data/screenshots/:filename', (c) => serveScreenshot(c, config.screenshotsDir));
 
 app.route('/', createApp(core, config));
 

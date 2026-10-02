@@ -54,8 +54,9 @@ export interface JobDeps {
   embeddings?: EmbeddingClient;
   scrape: ScrapeFn;
   /**
-   * Absolute path the screenshot job writes image bytes to. Created on demand.
-   * Defaults to `<cwd>/data/screenshots/`.
+   * Absolute path the screenshot job writes image bytes to. Injected by the
+   * app edge (server env, derived from `DATA_DIR`); the job skips when absent
+   * rather than guessing a cwd-relative path.
    */
   screenshotsDir?: string;
   /** Screenshot capture port; absent = screenshot job is a no-op. */
@@ -243,6 +244,11 @@ export async function screenshotAndStore(
   if (!deps.screenshot) {
     return 'skipped';
   }
+  if (!deps.screenshotsDir) {
+    // Nowhere to persist the bytes — the app edge always injects the dir
+    // (server env), so an absent dir means the job is disabled.
+    return 'skipped';
+  }
 
   const existing = parseBookmarkImage(bookmark.metadata);
   if (existing.screenshotPath && existing.ogImageUrl) {
@@ -261,7 +267,7 @@ export async function screenshotAndStore(
     return 'failed';
   }
 
-  const dir = deps.screenshotsDir ?? join(process.cwd(), 'data', 'screenshots');
+  const dir = deps.screenshotsDir;
   await mkdir(dir, { recursive: true });
   const filename = `${bookmarkId}.jpg`;
   const absolutePath = join(dir, filename);

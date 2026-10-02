@@ -456,6 +456,7 @@ describe('screenshotAndStore', () => {
       url: 'https://example.com/broken',
     });
     const deps = makeDeps(db, {
+      screenshotsDir: '.screenshots-fixture',
       screenshot: {
         async capture() {
           throw new Error('webview exploded');
@@ -477,6 +478,7 @@ describe('screenshotAndStore', () => {
       url: 'https://example.com/null-shot',
     });
     const deps = makeDeps(db, {
+      screenshotsDir: '.screenshots-fixture',
       screenshot: {
         async capture() {
           return null;
@@ -496,6 +498,26 @@ describe('screenshotAndStore', () => {
     });
 
     expect(await screenshotAndStore(makeDeps(db), id)).toBe('skipped');
+    expect(getBookmarkById(db, id)!.metadata?.image).toBeUndefined();
+  });
+
+  // The dir is injected by the app edge; without it there is nowhere to
+  // persist, and the job must skip instead of guessing a cwd-relative path.
+  test('is a no-op without a screenshots dir', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/skip-dir',
+    });
+    const deps = makeDeps(db, {
+      screenshot: {
+        async capture() {
+          throw new Error('must not capture without a dir');
+        },
+      },
+    });
+
+    expect(await screenshotAndStore(deps, id)).toBe('skipped');
     expect(getBookmarkById(db, id)!.metadata?.image).toBeUndefined();
   });
 });

@@ -178,6 +178,12 @@ fixes the storage posture:
 - **Single durable file.** All tables, the FTS5 index, and the embedding vectors live in one SQLite
   database (constraint §1.2). Backups are a file copy. The Qdrant collection is a derived serving
   structure (§6) and never needs backing up.
+- **One data root.** Every file artifact — the SQLite database, screenshots, the profile avatar, and
+  the Qdrant storage tree — lives under one data root (`DATA_DIR`, default repo `./data`; resolved by
+  `packages/db` `resolveDataDir` and shared by the server and the CLI scripts). One env knob
+  relocates the whole tree for deployment; `DB_PATH`/`SCREENSHOTS_DIR` override the individual paths.
+  Per-user subfolders are a rejected shape: the app is single-user (§1.3) and the schema has no user
+  axis — a second user, if ever requested, is a second instance with its own `DATA_DIR` (§11).
 - **Migrations.** Numbered, forward-only SQL files under `packages/db`, applied at startup in a
   transaction. The server-set timestamp triggers (`created_at`/`updated_at`) belong here.
 - **PRAGMAs.** `foreign_keys = ON`, WAL journaling, and a sensible `busy_timeout` are set on every
@@ -464,8 +470,9 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
 | `QDRANT_TIMEOUT_MS`     | Client fetch timeout for Qdrant requests      | `5000`                   |
+| `DATA_DIR`               | Data root for every file artifact (§5); `DB_PATH`/`SCREENSHOTS_DIR` override individual paths | `data` (repo-relative) |
 | `SEED_DATASET`          | Dataset `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `leo` |
-| `SEED_RESET`            | When `1`, `db:seed` wipes bookmarks/tags/categories before loading (seed-script only) | unset |
+| `SEED_RESET`            | When `1`, `db:seed` wipes the target dataset's content before loading (seed-script only) | unset |
 
 ## 8. Background jobs
 
@@ -559,9 +566,9 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
    (`ollaya pull laya`),
 3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the gitignored
    `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
-   `config/qdrant.yaml`; loopback only, storage under `data/qdrant/`). In development,
-   `bun run dev` starts it automatically when the binary is installed and skips it (in-memory
-   vectors) when it is not.
+   `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`; loopback
+   only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it automatically
+   when the binary is installed and skips it (in-memory vectors) when it is not.
 
 The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API

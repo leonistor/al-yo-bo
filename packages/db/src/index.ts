@@ -1,5 +1,6 @@
 export * from './connection.ts';
 export * from './migrations.ts';
+export * from './paths.ts';
 export * from './row-mapping.ts';
 export * from './seed.ts';
 

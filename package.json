@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "bun run --filter '@al-yo-bo/server' dev",
     "dev:web": "bun run --filter '@al-yo-bo/web' dev",
-    "dev:qdrant": "if [ -x .tools/qdrant/qdrant ]; then exec .tools/qdrant/qdrant --config-path config/qdrant.yaml; else echo '[qdrant] not installed — run: bun run qdrant:install (continuing with in-memory vectors)'; fi",
+    "dev:qdrant": "if [ -x .tools/qdrant/qdrant ]; then exec bash scripts/qdrant/start.sh; else echo '[qdrant] not installed — run: bun run qdrant:install (continuing with in-memory vectors)'; fi",
     "dev": "bun run --parallel dev:server dev:web dev:qdrant",
     "build": "bun run --filter '@al-yo-bo/web' build",
     "start": "NODE_ENV=production bun run apps/server/src/index.ts",
@@ -17,7 +17,7 @@
     "db:seed": "bun run packages/db/src/seed.ts",
     "db:clear": "bun run packages/db/src/clear-dataset.ts",
     "qdrant:install": "bash scripts/qdrant/install.sh",
-    "qdrant:start": ".tools/qdrant/qdrant --config-path config/qdrant.yaml",
+    "qdrant:start": "bash scripts/qdrant/start.sh",
     "chrome:install": "bash scripts/chrome/install.sh",
     "browser:install": "bunx playwriter@latest browser install",
     "browser:start": "bunx playwriter@latest browser start --user-data-dir ./.playwriter-profile --headed"

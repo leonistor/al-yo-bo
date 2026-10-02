@@ -2,13 +2,17 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { defaultDbPath } from './paths.ts';
+
 /**
  * Opens the single SQLite file and applies the connection-level PRAGMAs required
- * by MODEL.md. WAL persistence differs per platform; on macOS Apple's system
- * SQLite keeps `-wal`/`-shm` files after close, so a truncating checkpoint is
- * offered via `checkpoint(db)` for callers that need a single-file snapshot.
+ * by MODEL.md. The default path is `<DATA_DIR>/bookmarks.db` anchored to the
+ * repo root (see paths.ts); `DB_PATH` overrides it. WAL persistence differs
+ * per platform; on macOS Apple's system SQLite keeps `-wal`/`-shm` files after
+ * close, so a truncating checkpoint is offered via `checkpoint(db)` for callers
+ * that need a single-file snapshot.
  */
-export function openDatabase(path = process.env.DB_PATH ?? './data/bookmarks.db'): Database {
+export function openDatabase(path = process.env.DB_PATH ?? defaultDbPath()): Database {
   if (path !== ':memory:') {
     mkdirSync(dirname(path), { recursive: true });
   }
