@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Field, FieldControl, FieldItem, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -109,31 +109,39 @@ export function VocabDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-section">New section</Label>
-            <div className="flex gap-2">
-              <Input
-                id="new-section"
-                value={sectionName}
-                onChange={handleSectionNameChange}
-                placeholder="e.g. AI"
+          <Field>
+            <FieldLabel htmlFor="new-section">New section</FieldLabel>
+            <FieldItem className="w-full gap-2">
+              <FieldControl
+                render={
+                  <Input
+                    id="new-section"
+                    value={sectionName}
+                    onChange={handleSectionNameChange}
+                    placeholder="e.g. AI"
+                  />
+                }
               />
               <Button onClick={addSection} disabled={sectionName.trim() === ''}>
                 Create
               </Button>
-            </div>
-          </div>
+            </FieldItem>
+          </Field>
 
           <Separator />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-category">New category</Label>
-            <div className="flex gap-2">
-              <Input
-                id="new-category"
-                value={categoryName}
-                onChange={handleCategoryNameChange}
-                placeholder="e.g. dev"
+          <Field>
+            <FieldLabel htmlFor="new-category">New category</FieldLabel>
+            <FieldItem className="w-full gap-2">
+              <FieldControl
+                render={
+                  <Input
+                    id="new-category"
+                    value={categoryName}
+                    onChange={handleCategoryNameChange}
+                    placeholder="e.g. dev"
+                  />
+                }
               />
               <Select
                 value={categorySectionId}
@@ -154,19 +162,23 @@ export function VocabDialog({
               <Button onClick={addCategory} disabled={categoryName.trim() === ''}>
                 Create
               </Button>
-            </div>
-          </div>
+            </FieldItem>
+          </Field>
 
           <Separator />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-tag">New tag</Label>
-            <div className="flex gap-2">
-              <Input
-                id="new-tag"
-                value={tagName}
-                onChange={handleTagNameChange}
-                placeholder="e.g. accessibility"
+          <Field>
+            <FieldLabel htmlFor="new-tag">New tag</FieldLabel>
+            <FieldItem className="w-full gap-2">
+              <FieldControl
+                render={
+                  <Input
+                    id="new-tag"
+                    value={tagName}
+                    onChange={handleTagNameChange}
+                    placeholder="e.g. accessibility"
+                  />
+                }
               />
               <Select
                 value={tagCategoryId}
@@ -187,8 +199,8 @@ export function VocabDialog({
               <Button onClick={addTag} disabled={tagName.trim() === ''}>
                 Create
               </Button>
-            </div>
-          </div>
+            </FieldItem>
+          </Field>
         </div>
       </DialogContent>
     </Dialog>

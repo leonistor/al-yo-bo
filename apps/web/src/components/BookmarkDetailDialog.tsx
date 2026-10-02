@@ -30,8 +30,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -341,29 +341,33 @@ export function BookmarkDetailDialog({
               </p>
             </div>
           )}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="detail-title">Title</Label>
-            <Input
-              id="detail-title"
-              value={title}
-              onChange={handleTitleChange}
+          <Field>
+            <FieldLabel>Title</FieldLabel>
+            <FieldControl
+              render={<Input id="detail-title" value={title} onChange={handleTitleChange} />}
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="detail-description">Note</Label>
-            <Textarea
-              id="detail-description"
-              value={description}
-              onChange={handleDescriptionChange}
+          </Field>
+          <Field>
+            {/* htmlFor is explicit: base-ui's generated id loses to our stable
+                DOM id on a plain-textarea render, leaving a dangling for. */}
+            <FieldLabel htmlFor="detail-description">Note</FieldLabel>
+            <FieldControl
+              render={
+                <Textarea
+                  id="detail-description"
+                  value={description}
+                  onChange={handleDescriptionChange}
+                />
+              }
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Category</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="detail-category">Category</FieldLabel>
             <Select
               value={categoryId}
               onValueChange={(v) => setCategoryId(v ?? 'none')}
             >
-              <SelectTrigger>
+              <SelectTrigger id="detail-category">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -375,40 +379,44 @@ export function BookmarkDetailDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
 
           <Separator />
 
-          <div className="flex flex-col gap-2">
-            <Label>Tags</Label>
-            <div className="flex flex-wrap gap-1">
-              {current.tags.length === 0 && (
-                <span className="text-xs text-muted-foreground">No tags yet.</span>
+          <Field>
+            <FieldLabel htmlFor={availableTags.length > 0 ? 'detail-add-tag' : undefined}>
+              Tags
+            </FieldLabel>
+            <div className="flex w-full flex-col gap-2">
+              <div className="flex flex-wrap gap-1">
+                {current.tags.length === 0 && (
+                  <span className="text-xs text-muted-foreground">No tags yet.</span>
+                )}
+                {current.tags.map((tag) => (
+                  <AssignedTagBadge key={tag.tagId} tag={tag} onRemove={removeTag} />
+                ))}
+              </div>
+              {availableTags.length > 0 && (
+                <Select
+                  value=""
+                  onValueChange={(v) => {
+                    if (v !== null) void addTag(v);
+                  }}
+                >
+                  <SelectTrigger id="detail-add-tag" className="w-48">
+                    <SelectValue placeholder="Add a tag…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTags.map((tag) => (
+                      <SelectItem key={tag.id} value={tag.id}>
+                        {tag.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
-              {current.tags.map((tag) => (
-                <AssignedTagBadge key={tag.tagId} tag={tag} onRemove={removeTag} />
-              ))}
             </div>
-            {availableTags.length > 0 && (
-              <Select
-                value=""
-                onValueChange={(v) => {
-                  if (v !== null) void addTag(v);
-                }}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Add a tag…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableTags.map((tag) => (
-                    <SelectItem key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+          </Field>
         </div>
 
         <DialogFooter className="sm:justify-between">

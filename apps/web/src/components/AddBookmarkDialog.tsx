@@ -12,8 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -92,29 +92,41 @@ export function AddBookmarkDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-url">URL</Label>
-            <Input
-              id="add-url"
-              value={url}
-              onChange={handleUrlChange}
-              placeholder="https://"
+          <Field>
+            <FieldLabel>URL</FieldLabel>
+            <FieldControl
+              render={
+                <Input
+                  id="add-url"
+                  value={url}
+                  onChange={handleUrlChange}
+                  placeholder="https://"
+                />
+              }
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-title">Title</Label>
-            <Input id="add-title" value={title} onChange={handleTitleChange} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-description">Note</Label>
-            <Textarea
-              id="add-description"
-              value={description}
-              onChange={handleDescriptionChange}
+          </Field>
+          <Field>
+            <FieldLabel>Title</FieldLabel>
+            <FieldControl
+              render={<Input id="add-title" value={title} onChange={handleTitleChange} />}
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-category">Category</Label>
+          </Field>
+          <Field>
+            {/* htmlFor is explicit: base-ui's generated id loses to our stable
+                DOM id on a plain-textarea render, leaving a dangling for. */}
+            <FieldLabel htmlFor="add-description">Note</FieldLabel>
+            <FieldControl
+              render={
+                <Textarea
+                  id="add-description"
+                  value={description}
+                  onChange={handleDescriptionChange}
+                />
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="add-category">Category</FieldLabel>
             <Select
               value={categoryId}
               onValueChange={(v) => setCategoryId(v ?? 'none')}
@@ -131,7 +143,7 @@ export function AddBookmarkDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
         </div>
 
         <DialogFooter>

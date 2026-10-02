@@ -81,12 +81,14 @@ plus per-component migration reports in `.migration/`).
 - Audit first; commit per adopted component.
 - Pulled from the post-Phase-3 audit (see "Audit" below).
 
-**Status**: 🟡 partial (7 of 9 picks committed). Pending: `@coss/field`,
-`@coss/table`. Adopted so far: `@coss/empty`, `@coss/sheet` (pulled
-button/scroll-area/spinner upgrade), `@coss/alert-dialog` (consolidated
-`Action`/`Cancel` → `Close`), `@coss/command` (replaced dead cmdk wrapper;
-`cmdk@^1.1.1` dropped), `@coss/select`, `@coss/dialog`, `@coss/card`
-(resurrected dead wrapper; `BookmarkCard` refactor still pending).
+**Status**: 🟡 partial (8 of 9 picks committed). Pending: `@coss/table`.
+Adopted so far: `@coss/empty`, `@coss/sheet` (pulled button/scroll-area/spinner
+upgrade), `@coss/alert-dialog` (consolidated `Action`/`Cancel` → `Close`),
+`@coss/command` (replaced dead cmdk wrapper; `cmdk@^1.1.1` dropped),
+`@coss/select`, `@coss/dialog`, `@coss/card` (resurrected dead wrapper;
+`BookmarkCard` refactor still pending), `@coss/field` (+ `AddBookmarkDialog` /
+`BookmarkDetailDialog` / `VocabDialog` refactored onto it; see
+`.migration/coss-field.md`).
 
 ### Phase 5 — Replace assistant-ui chat surface with beui.dev
 
@@ -180,7 +182,7 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
   of Phase 5 — intentional, since it was doc-only. Its "concrete pages"
   follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Phase 5 and
   the final cleanup have since landed (1c4dace, 5210a4c). Remaining: the
-  Phase 4 leftovers (`@coss/field`, `@coss/table`).
+  `@coss/table` Phase 4 leftover.
 
 ## Audit summary (drives Phase 4 picks)
 
@@ -216,7 +218,7 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 | `@coss/select` | ✅ | `SelectButton`, `SelectGroup` extras |
 | `@coss/dialog` | ✅ | richer content sizing |
 | `@coss/card` | ✅ | wrapper only — `BookmarkCard` refactor pending |
-| `@coss/field` | ⏳ | greenfield: refactor 5 forms |
+| `@coss/field` | ✅ | 3 dialog forms refactored onto it (`.migration/coss-field.md`) |
 | `@coss/table` | ⏳ | DESIGN.md canonical, missing; fits ImportPage |
 
 ## Status snapshot
@@ -233,13 +235,14 @@ Captured in `docs/UI-UX-DIRECTION.md`.
   `apps/web/src/components/motion/` (+ small `lib/` helpers), excluded from
   lint via `.oxlintrc.json` `ignorePatterns`.
 - `components/assistant-ui/` and `hooks/use-attachment-src.ts` deleted.
-- 13 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
+- 14 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
   adoptions).
 
 ## Outstanding refactors (surfaced for follow-up)
 
-1. **`@coss/field`** + refactor `AddBookmarkDialog`, `BookmarkDetailDialog`,
-   `VocabDialog` (and 3-cluster triplication) to use it.
+1. ~~**`@coss/field`** + refactor `AddBookmarkDialog`, `BookmarkDetailDialog`,
+   `VocabDialog` (and 3-cluster triplication) to use it.~~ ✅ done (field
+   adoption landed with the 3-dialog refactor; see `.migration/coss-field.md`).
 2. **`@coss/table`** + rewrite `ImportPage` editable rows on table semantics.
 3. **`BookmarkCard` → coss Card anatomy** in `BookmarkList.tsx:143-203`.
 4. **List keyboard navigation** for `BookmarkList.tsx` (roving tabindex,
@@ -263,7 +266,7 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 - `docs/ARCHITECTURE.md` — system architecture (precedence: ARCHITECTURE > MODEL >
   DESIGN > README).
 - `apps/web/components.json` — `base-nova` style + `@coss` / `@beui` registries.
-- `apps/web/src/components/ui/*` — 26 base-ui + coss wrappers (was 22 stock).
+- `apps/web/src/components/ui/*` — 27 base-ui + coss wrappers (was 22 stock).
 - `apps/web/src/components/agents/*` + `components/motion/*` — vendored beui
   primitives (Phase 5 chat surface).
 - `.migration/*.md` — per-component migration reports (13 files).
