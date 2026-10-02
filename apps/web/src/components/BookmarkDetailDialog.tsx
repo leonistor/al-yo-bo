@@ -211,7 +211,8 @@ export function BookmarkDetailDialog({
   }, [current, title, description, categoryId, onChanged]);
 
   const addTag = useCallback(
-    async (tagId: string) => {
+    async (tagId: string | null) => {
+      if (tagId === null) return;
       try {
         const updated = await assignTagToBookmark(current!.id, tagId);
         setCurrent(updated);
@@ -358,7 +359,10 @@ export function BookmarkDetailDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Category</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
+            <Select
+              value={categoryId}
+              onValueChange={(v) => setCategoryId(v ?? 'none')}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -386,7 +390,12 @@ export function BookmarkDetailDialog({
               ))}
             </div>
             {availableTags.length > 0 && (
-              <Select value="" onValueChange={addTag}>
+              <Select
+                value=""
+                onValueChange={(v) => {
+                  if (v !== null) void addTag(v);
+                }}
+              >
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Add a tag…" />
                 </SelectTrigger>

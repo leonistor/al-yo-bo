@@ -135,7 +135,10 @@ export function VocabDialog({
                 onChange={handleCategoryNameChange}
                 placeholder="e.g. dev"
               />
-              <Select value={categorySectionId} onValueChange={setCategorySectionId}>
+              <Select
+                value={categorySectionId}
+                onValueChange={(v) => setCategorySectionId(v ?? 'none')}
+              >
                 <SelectTrigger className="w-36">
                   <SelectValue />
                 </SelectTrigger>
@@ -165,7 +168,10 @@ export function VocabDialog({
                 onChange={handleTagNameChange}
                 placeholder="e.g. accessibility"
               />
-              <Select value={tagCategoryId} onValueChange={setTagCategoryId}>
+              <Select
+                value={tagCategoryId}
+                onValueChange={(v) => setTagCategoryId(v ?? 'none')}
+              >
                 <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>

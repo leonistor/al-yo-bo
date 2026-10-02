@@ -48,12 +48,16 @@ export function ResultsToolbar({
   const selectInvalid = useCallback(() => onStatusChange('invalid'), [onStatusChange]);
 
   const handleSortChange = useCallback(
-    (value: string) => onSortChange(value as BookmarkSort),
+    (value: string | null) => {
+      if (value !== null) onSortChange(value as BookmarkSort);
+    },
     [onSortChange],
   );
 
   const handleDirectionChange = useCallback(
-    (value: string) => onDirectionChange(value as 'asc' | 'desc'),
+    (value: string | null) => {
+      if (value !== null) onDirectionChange(value as 'asc' | 'desc');
+    },
     [onDirectionChange],
   );
 

@@ -70,7 +70,9 @@ export function Topbar({
   );
 
   const handleModeChange = useCallback(
-    (value: string) => onModeChange(value as SearchMode),
+    (value: string | null) => {
+      if (value !== null) onModeChange(value as SearchMode);
+    },
     [onModeChange],
   );
 

@@ -174,7 +174,9 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
   }, [handleImport]);
 
   const selectSourceTab = useCallback(
-    (value: string) => setSourceTab(value as 'paste' | 'upload'),
+    (value: string | null) => {
+      if (value !== null) setSourceTab(value as 'paste' | 'upload');
+    },
     [],
   );
 
