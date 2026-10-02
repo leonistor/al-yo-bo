@@ -25,10 +25,13 @@ export const SEED_DATASETS_DIR = join(import.meta.dir, '../seeds/datasets');
  * Seed fixture `bun run db:seed` loads when `SEED_DATASET` is unset. Distinct
  * from the server's `DEFAULT_DATASET` (which dataset the app scopes to): this
  * one picks which fixture to load. The two env names must never merge again.
+ *
+ * The dev default is the synthetic `octocat` demo (profile + curated samples);
+ * `leo` (the real collection) loads via `SEED_DATASET=leo`.
  */
-export const DEFAULT_SEED_DATASET = 'leo';
+export const DEFAULT_SEED_DATASET = 'octocat';
 
-export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'leo.seed.json');
+export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'octocat.seed.json');
 
 export interface SeedDataset {
   /** Dataset name used in `SEED_DATASET`. */
@@ -40,13 +43,17 @@ export interface SeedDataset {
 }
 
 /**
- * Known seed datasets. `leo` (the default) is Leo's real collections imported
- * from `docs/examples-mds/`; its fixture is regenerated with
- * `bun run scripts/extract-leo-seed.ts`. `grimoire` is the synthetic Grimoire
- * demo fixture the tests use. Datasets must be registered here — dropping a file
- * in the directory does not make it selectable.
+ * Known seed datasets. `octocat` (the default) is the synthetic dev/demo
+ * fixture — curated well-known URLs under the octocat profile
+ * (https://github.com/octocat), safe to vendor. `leo` is Leo's real
+ * collections imported from `docs/examples-mds/`; its fixture is regenerated
+ * with `bun run scripts/extract-leo-seed.ts` and selected via
+ * `SEED_DATASET=leo`. `grimoire` is the synthetic Grimoire demo fixture the
+ * tests use. Datasets must be registered here — dropping a file in the
+ * directory does not make it selectable.
  */
 const DATASETS: SeedDataset[] = [
+  { name: 'octocat', file: 'octocat.seed.json', implemented: true },
   { name: 'leo', file: 'leo.seed.json', implemented: true },
   { name: 'grimoire', file: 'grimoire.seed.json', implemented: true },
 ];
@@ -97,11 +104,14 @@ interface SeedFile {
   /** Dataset name the fixture loads into (created on demand). */
   dataset: string;
   /**
-   * Optional identity for the singleton profile (e.g. "leo"). Set when the
+   * Optional identity for the singleton profile (e.g. "octocat"). Set when the
    * fixture represents the single user's own collection; synthetic demo
-   * fixtures (grimoire) omit it and leave the profile name untouched.
+   * fixtures that don't own the identity (grimoire) omit it and leave the
+   * profile untouched.
    */
   profileName?: string;
+  /** Optional GitHub username for the profile (companion to `profileName`). */
+  githubUsername?: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
@@ -154,7 +164,10 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
     if (seed.profileName) {
       // The fixture names the user (identity), not just the dataset (content
       // workspace) — MODEL.md keeps the two orthogonal, so seed both.
-      updateProfile(db, { name: seed.profileName });
+      updateProfile(db, {
+        name: seed.profileName,
+        ...(seed.githubUsername ? { githubUsername: seed.githubUsername } : {}),
+      });
     }
     const existing = getDatasetByName(db, seed.dataset);
     const dataset = existing ?? createDataset(db, seed.dataset);

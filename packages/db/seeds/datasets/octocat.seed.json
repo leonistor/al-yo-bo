@@ -1,0 +1,249 @@
+{
+  "$comment": "Synthetic dev/demo fixture for the octocat profile (https://github.com/octocat). All bookmarks are real, well-known URLs but the collection itself is curated sample content — safe to vendor, unlike docs/examples-mds/*.",
+  "source": "curated",
+  "extractedAt": "2026-10-02T00:00:00.000Z",
+  "dataset": "octocat",
+  "profileName": "octocat",
+  "githubUsername": "octocat",
+  "categories": ["AI tools", "Design", "Dev tools", "GitHub", "Learning"],
+  "tags": [
+    "ai", "annual", "api", "articles", "assistant", "book", "career", "chat",
+    "collaboration", "color", "community", "components", "curated", "database",
+    "deep-dive", "design", "design-system", "docs", "editor", "embedded",
+    "exercises", "fast", "fonts", "framework", "free", "generator", "guides",
+    "github", "hosting", "hub", "interactive", "javascript", "learning",
+    "library", "local", "low-level", "llm", "magazine", "models", "open-source",
+    "papers", "palette", "practical", "practice", "pricing", "productivity",
+    "programming", "prototyping", "reading", "reference", "report", "roadmap",
+    "runtime", "sql", "standards", "statistics", "systems", "tailwind",
+    "terminal", "tool", "tooling", "tutorials", "typography", "ui",
+    "vector-search", "vim", "web"
+  ],
+  "bookmarks": [
+    {
+      "url": "https://github.com",
+      "title": "GitHub: Let's build from here",
+      "description": "The home of collaborative software development — repositories, pull requests, issues, and CI.",
+      "category": "GitHub",
+      "tags": ["github", "hosting", "collaboration", "docs"],
+      "createdAt": 1760000000000,
+      "metadata": { "import": { "file": "octocat.md", "category": "GitHub", "priority": null } }
+    },
+    {
+      "url": "https://docs.github.com",
+      "title": "GitHub Documentation",
+      "description": "Official reference for GitHub features, REST/GraphQL APIs, Actions, and administration.",
+      "category": "GitHub",
+      "tags": ["github", "docs", "reference"],
+      "createdAt": 1760000100000,
+      "metadata": { "import": { "file": "octocat.md", "category": "GitHub", "priority": null } }
+    },
+    {
+      "url": "https://skills.github.com",
+      "title": "GitHub Skills",
+      "description": "Interactive, browser-based courses for Git, GitHub Actions, and the GitHub flow.",
+      "category": "GitHub",
+      "tags": ["github", "learning", "interactive", "tutorials"],
+      "createdAt": 1760000200000,
+      "metadata": { "import": { "file": "octocat.md", "category": "GitHub", "priority": null } }
+    },
+    {
+      "url": "https://github.com/readme",
+      "title": "GitHub ReadME Project",
+      "description": "GitHub's magazine-style publication on open source culture, maintainer stories, and project deep dives.",
+      "category": "GitHub",
+      "tags": ["github", "magazine", "articles", "community", "reading"],
+      "createdAt": 1760000300000,
+      "metadata": { "import": { "file": "octocat.md", "category": "GitHub", "priority": null } }
+    },
+    {
+      "url": "https://octoverview.github.com",
+      "title": "The State of the Octoverse",
+      "description": "GitHub's annual report on global developer activity, trends, and ecosystem data.",
+      "category": "GitHub",
+      "tags": ["github", "statistics", "report", "annual"],
+      "createdAt": 1760000400000,
+      "metadata": { "import": { "file": "octocat.md", "category": "GitHub", "priority": null } }
+    },
+    {
+      "url": "https://openrouter.ai",
+      "title": "OpenRouter",
+      "description": "Unified API gateway to dozens of LLM providers with a single key and transparent pricing.",
+      "category": "AI tools",
+      "tags": ["ai", "api", "models", "pricing", "hub"],
+      "createdAt": 1760000500000,
+      "metadata": { "import": { "file": "octocat.md", "category": "AI tools", "priority": null } }
+    },
+    {
+      "url": "https://huggingface.co",
+      "title": "Hugging Face",
+      "description": "The hub for open-source models, datasets, and demo spaces.",
+      "category": "AI tools",
+      "tags": ["ai", "models", "hub", "open-source", "community"],
+      "createdAt": 1760000600000,
+      "metadata": { "import": { "file": "octocat.md", "category": "AI tools", "priority": null } }
+    },
+    {
+      "url": "https://ollama.com",
+      "title": "Ollama",
+      "description": "Run open large language models locally with a one-command CLI.",
+      "category": "AI tools",
+      "tags": ["ai", "local", "llm", "open-source", "tool"],
+      "createdAt": 1760000700000,
+      "metadata": { "import": { "file": "octocat.md", "category": "AI tools", "priority": null } }
+    },
+    {
+      "url": "https://qdrant.tech",
+      "title": "Qdrant",
+      "description": "Open-source vector database and search engine for semantic similarity.",
+      "category": "AI tools",
+      "tags": ["ai", "vector-search", "database", "open-source"],
+      "createdAt": 1760000800000,
+      "metadata": { "import": { "file": "octocat.md", "category": "AI tools", "priority": null } }
+    },
+    {
+      "url": "https://chatgpt.com",
+      "title": "ChatGPT",
+      "description": "Conversational AI assistant for drafting, coding help, and research.",
+      "category": "AI tools",
+      "tags": ["ai", "assistant", "chat", "productivity"],
+      "createdAt": 1760000900000,
+      "metadata": { "import": { "file": "octocat.md", "category": "AI tools", "priority": null } }
+    },
+    {
+      "url": "https://bun.sh",
+      "title": "Bun",
+      "description": "Fast all-in-one JavaScript runtime, bundler, test runner, and package manager.",
+      "category": "Dev tools",
+      "tags": ["runtime", "javascript", "tooling", "fast", "docs"],
+      "createdAt": 1760001000000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://hono.dev",
+      "title": "Hono",
+      "description": "Ultrafast, lightweight web framework for edges and runtimes, with end-to-end typed RPC.",
+      "category": "Dev tools",
+      "tags": ["framework", "api", "javascript", "tooling"],
+      "createdAt": 1760001100000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://react.dev",
+      "title": "React",
+      "description": "The library for web and native user interfaces — official docs and tutorials.",
+      "category": "Dev tools",
+      "tags": ["library", "javascript", "docs", "ui", "learning"],
+      "createdAt": 1760001200000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://ui.shadcn.com",
+      "title": "shadcn/ui",
+      "description": "Accessible, themeable component collection built on Radix and Tailwind CSS.",
+      "category": "Dev tools",
+      "tags": ["components", "design-system", "tailwind", "ui", "open-source"],
+      "createdAt": 1760001300000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://www.sqlite.org",
+      "title": "SQLite",
+      "description": "The most widely deployed embedded SQL database engine — docs and internals.",
+      "category": "Dev tools",
+      "tags": ["database", "embedded", "sql", "reference", "docs"],
+      "createdAt": 1760001400000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://neovim.io",
+      "title": "Neovim",
+      "description": "Hyperextensible Vim-based terminal editor with a first-class Lua API.",
+      "category": "Dev tools",
+      "tags": ["editor", "terminal", "vim", "tooling"],
+      "createdAt": 1760001500000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Dev tools", "priority": null } }
+    },
+    {
+      "url": "https://developer.mozilla.org",
+      "title": "MDN Web Docs",
+      "description": "The definitive reference for web platform APIs, HTML, CSS, and JavaScript.",
+      "category": "Learning",
+      "tags": ["docs", "reference", "web", "standards", "learning"],
+      "createdAt": 1760001600000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Learning", "priority": null } }
+    },
+    {
+      "url": "https://roadmap.sh",
+      "title": "roadmap.sh",
+      "description": "Community-driven roadmaps, guides, and learning paths for developer roles.",
+      "category": "Learning",
+      "tags": ["learning", "career", "guides", "roadmap", "community"],
+      "createdAt": 1760001700000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Learning", "priority": null } }
+    },
+    {
+      "url": "https://exercism.org",
+      "title": "Exercism",
+      "description": "Free coding exercises with mentorship across 70+ programming languages.",
+      "category": "Learning",
+      "tags": ["practice", "exercises", "programming", "community", "free"],
+      "createdAt": 1760001800000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Learning", "priority": null } }
+    },
+    {
+      "url": "https://cpu.land",
+      "title": "How to make a CPU",
+      "description": "A deep-dive into what a CPU actually does, from instructions to virtual memory.",
+      "category": "Learning",
+      "tags": ["deep-dive", "systems", "low-level", "reading"],
+      "createdAt": 1760001900000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Learning", "priority": null } }
+    },
+    {
+      "url": "https://paperswelove.org",
+      "title": "Papers We Love",
+      "description": "Curated community collection and meetup series around academic computer-science papers.",
+      "category": "Learning",
+      "tags": ["papers", "curated", "community", "reading"],
+      "createdAt": 1760002000000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Learning", "priority": null } }
+    },
+    {
+      "url": "https://refactoringui.com",
+      "title": "Refactoring UI",
+      "description": "Practical visual-design tactics for developers who weren't born with design sense.",
+      "category": "Design",
+      "tags": ["design", "ui", "practical", "book"],
+      "createdAt": 1760002100000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Design", "priority": null } }
+    },
+    {
+      "url": "https://www.figma.com",
+      "title": "Figma",
+      "description": "Collaborative interface design tool for teams — wireframes, prototypes, and design systems.",
+      "category": "Design",
+      "tags": ["design", "tool", "prototyping", "collaboration"],
+      "createdAt": 1760002200000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Design", "priority": null } }
+    },
+    {
+      "url": "https://coolors.co",
+      "title": "Coolors",
+      "description": "Fast color-palette generator for building consistent schemes.",
+      "category": "Design",
+      "tags": ["color", "palette", "generator", "design", "tool"],
+      "createdAt": 1760002300000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Design", "priority": null } }
+    },
+    {
+      "url": "https://fonts.google.com",
+      "title": "Google Fonts",
+      "description": "Free, open-source typography library with pairing hints and variable fonts.",
+      "category": "Design",
+      "tags": ["typography", "fonts", "free", "design"],
+      "createdAt": 1760002400000,
+      "metadata": { "import": { "file": "octocat.md", "category": "Design", "priority": null } }
+    }
+  ]
+}

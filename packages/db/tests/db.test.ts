@@ -409,10 +409,24 @@ describe('seed fixture', () => {
     expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
   });
 
-  test('loads the leo dataset from the default path', () => {
+  test('loads the octocat dev fixture from the default path', () => {
     const db = freshDb();
 
     const report = seedFromFile(db);
+    expect(report.bookmarksAdded).toBe(25);
+    expect(report.categoriesCreated).toBe(5);
+    expect(report.assignments).toBeGreaterThan(0);
+    expect(getAggregates(db, getDatasetByName(db, 'octocat')!.id).total).toBe(25);
+    // The dev fixture owns the profile identity: name + GitHub username.
+    const profile = getProfile(db);
+    expect(profile?.name).toBe('octocat');
+    expect(profile?.githubUsername).toBe('octocat');
+  });
+
+  test('loads the leo dataset from its fixture by explicit path', () => {
+    const db = freshDb();
+
+    const report = seedFromFile(db, resolveSeedDataset('leo'));
     expect(report.bookmarksAdded).toBe(217);
     expect(report.categoriesCreated).toBe(40);
     expect(report.tagsCreated).toBe(1);
@@ -422,9 +436,10 @@ describe('seed fixture', () => {
     expect(getProfile(db)?.name).toBe('leo');
   });
 
-  test('resolves the leo dataset by default and both datasets by name', () => {
-    expect(DEFAULT_SEED_PATH).toContain('seeds/datasets/leo.seed.json');
-    expect(resolveSeedDataset('leo')).toBe(DEFAULT_SEED_PATH);
+  test('resolves the octocat dataset by default and the others by name', () => {
+    expect(DEFAULT_SEED_PATH).toContain('seeds/datasets/octocat.seed.json');
+    expect(resolveSeedDataset('octocat')).toBe(DEFAULT_SEED_PATH);
+    expect(resolveSeedDataset('leo')).toContain('seeds/datasets/leo.seed.json');
     expect(resolveSeedDataset('grimoire')).toContain('seeds/datasets/grimoire.seed.json');
   });
 
@@ -445,7 +460,7 @@ describe('seed fixture', () => {
 
   test('rejects unknown dataset names with the available list', () => {
     expect(() => resolveSeedDataset('nope')).toThrow(UnknownSeedDatasetError);
-    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: leo, grimoire/);
+    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: octocat, leo, grimoire/);
   });
 
   test('reset wipes only the target dataset so a re-seed starts clean', () => {
