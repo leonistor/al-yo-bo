@@ -8,8 +8,10 @@ import {
 } from 'ai';
 import { Check, Copy, MessageSquareIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { AgentActivity, type AgentActivityItem } from '@/components/agents/agent-activity';
+import { MarkdownContent } from '@/components/agents/markdown-content';
 import {
   Message,
   MessageBubble,
@@ -94,6 +96,45 @@ function toBookmarkWithTags(hit: SearchBookmarkHit): BookmarkWithTags {
       confidence: null,
     })),
   };
+}
+
+/**
+ * Converts search hits into a compact markdown citation list. The title is
+ * preferred; raw URL is used as fallback for untitled bookmarks.
+ */
+function toCitationMarkdown(hits: SearchBookmarkHit[]): string {
+  return hits.map((hit) => `- [${hit.title ?? hit.url}](${hit.url})`).join('\n');
+}
+
+/**
+ * Collects bookmark hits from the `searchBookmarks` tool parts inside a single
+ * assistant message. Tool errors or in-flight calls contribute nothing.
+ */
+function searchBookmarksHits(message: ChatMessage): SearchBookmarkHit[] {
+  const hits: SearchBookmarkHit[] = [];
+  for (const part of message.parts) {
+    if (part.type === 'tool-searchBookmarks' && part.state === 'output-available') {
+      hits.push(...(part.output.bookmarks ?? []));
+    }
+  }
+  return hits;
+}
+
+/**
+ * Fallback when an assistant message carries no tool results of its own:
+ * walk backward through the conversation and return the most recent
+ * `searchBookmarks` hits. This is the closest client-side approximation to
+ * per-answer citations because the AI SDK stream does not explicitly link an
+ * answer to the sources it used.
+ */
+function latestSearchBookmarksHits(messages: ChatMessage[]): SearchBookmarkHit[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!message) continue;
+    const hits = searchBookmarksHits(message);
+    if (hits.length > 0) return hits;
+  }
+  return [];
 }
 
 /** Icon-only copy control; state is exposed to screen readers via aria-label. */
@@ -190,7 +231,15 @@ function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-s
   );
 }
 
-function AssistantParts({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+function AssistantParts({
+  message,
+  messages,
+  streaming,
+}: {
+  message: ChatMessage;
+  messages: ChatMessage[];
+  streaming: boolean;
+}) {
   // The assistant answers only after running the search tool, so tool rows
   // render above the response; the streamed answer itself goes through
   // streaming-response with the completion actions.
@@ -199,6 +248,22 @@ function AssistantParts({ message, streaming }: { message: ChatMessage; streamin
       part.type === 'tool-searchBookmarks',
   );
   const text = messageText(message);
+
+  const citeHits = useMemo(() => {
+    const hits = searchBookmarksHits(message);
+    if (hits.length > 0) return hits;
+    return latestSearchBookmarksHits(messages);
+  }, [message, messages]);
+
+  const citeText = useMemo(() => toCitationMarkdown(citeHits), [citeHits]);
+
+  const handleCite = useCallback(() => {
+    if (!citeText || !navigator.clipboard) return;
+    navigator.clipboard.writeText(citeText).then(
+      () => toast.success('Citations copied'),
+      () => toast.error('Couldn’t copy citations'),
+    );
+  }, [citeText]);
 
   return (
     <>
@@ -209,17 +274,26 @@ function AssistantParts({ message, streaming }: { message: ChatMessage; streamin
         <StreamingResponse
           status={streaming ? 'streaming' : 'complete'}
           copyText={text}
+          onCite={citeText ? handleCite : undefined}
           // The scroller's `role="log"` live region announces streamed text.
           announce={false}
         >
-          <p className="whitespace-pre-wrap break-words">{text}</p>
+          <MarkdownContent key={message.id}>{text}</MarkdownContent>
         </StreamingResponse>
       ) : null}
     </>
   );
 }
 
-function ChatMessageRow({ message, streaming }: { message: ChatMessage; streaming: boolean }) {
+function ChatMessageRow({
+  message,
+  messages,
+  streaming,
+}: {
+  message: ChatMessage;
+  messages: ChatMessage[];
+  streaming: boolean;
+}) {
   const text = useMemo(() => messageText(message), [message]);
 
   if (message.role === 'user') {
@@ -244,7 +318,7 @@ function ChatMessageRow({ message, streaming }: { message: ChatMessage; streamin
       <MessageContent>
         <MessageBubble variant="ghost">
           <MessageBubbleContent>
-            <AssistantParts message={message} streaming={streaming} />
+            <AssistantParts message={message} messages={messages} streaming={streaming} />
           </MessageBubbleContent>
         </MessageBubble>
       </MessageContent>
@@ -327,6 +401,7 @@ export function ChatPanel() {
               <ChatMessageRow
                 key={message.id}
                 message={message}
+                messages={messages}
                 streaming={message.id === streamingMessageId}
               />
             ))}

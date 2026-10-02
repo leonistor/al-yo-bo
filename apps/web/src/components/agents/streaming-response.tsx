@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Quote,
   RotateCcw,
   ThumbsDown,
   ThumbsUp,
@@ -38,6 +39,10 @@ export interface StreamingResponseProps {
   copyText?: string;
   /** Overrides the built-in clipboard action. */
   onCopy?: () => void | Promise<void>;
+  /** Markdown/plain-text citation value copied by the built-in cite action. */
+  citeText?: string;
+  /** Overrides the built-in cite clipboard action. */
+  onCite?: () => void | Promise<void>;
   onRetry?: () => void;
   /** Optional sources shown as a compact footer disclosure after streaming. */
   sources?: CitationItem[];
@@ -94,6 +99,8 @@ export function StreamingResponse({
   status = "streaming",
   copyText,
   onCopy,
+  citeText,
+  onCite,
   onRetry,
   sources = [],
   sourcesOpen,
@@ -112,19 +119,22 @@ export function StreamingResponse({
   const reduce = useReducedMotion() ?? false;
   const baseId = useId();
   const [copied, setCopied] = useState(false);
+  const [cited, setCited] = useState(false);
   const [internalFeedback, setInternalFeedback] =
     useState<StreamingResponseFeedback>(defaultFeedback);
   const [internalSourcesOpen, setInternalSourcesOpen] =
     useState(defaultSourcesOpen);
   const copyTimer = useRef<number | undefined>(undefined);
+  const citeTimer = useRef<number | undefined>(undefined);
   const currentFeedback = feedback ?? internalFeedback;
   const currentSourcesOpen = sourcesOpen ?? internalSourcesOpen;
   const streaming = status === "streaming";
   const complete = status === "complete";
   const canCopy = Boolean(copyText || onCopy);
+  const canCite = Boolean(citeText || onCite);
   const hasSources = sources.length > 0;
   const shouldShowActions =
-    showActions && !streaming && (canCopy || onRetry || complete || hasSources);
+    showActions && !streaming && (canCopy || canCite || onRetry || complete || hasSources);
   const sourcesContentId = `${baseId}-sources`;
   const resolvedSourcePrefix =
     sourceIdPrefix ?? `response-source-${baseId.replace(/:/g, "")}`;
@@ -132,6 +142,7 @@ export function StreamingResponse({
   useEffect(
     () => () => {
       if (copyTimer.current) window.clearTimeout(copyTimer.current);
+      if (citeTimer.current) window.clearTimeout(citeTimer.current);
     },
     [],
   );
@@ -144,6 +155,15 @@ export function StreamingResponse({
     if (copyTimer.current) window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
   }, [copyText, onCopy]);
+
+  const handleCite = useCallback(async () => {
+    if (onCite) await onCite();
+    else if (citeText) await navigator.clipboard?.writeText(citeText);
+
+    setCited(true);
+    if (citeTimer.current) window.clearTimeout(citeTimer.current);
+    citeTimer.current = window.setTimeout(() => setCited(false), 1600);
+  }, [citeText, onCite]);
 
   const setFeedback = (next: Exclude<StreamingResponseFeedback, null>) => {
     const value = currentFeedback === next ? null : next;
@@ -194,6 +214,18 @@ export function StreamingResponse({
                     <Check className="size-3.5" />
                   ) : (
                     <Copy className="size-3.5" />
+                  )}
+                </ResponseAction>
+              ) : null}
+              {canCite ? (
+                <ResponseAction
+                  label={cited ? "Cited" : "Cite sources"}
+                  onClick={handleCite}
+                >
+                  {cited ? (
+                    <Check className="size-3.5" />
+                  ) : (
+                    <Quote className="size-3.5" />
                   )}
                 </ResponseAction>
               ) : null}
