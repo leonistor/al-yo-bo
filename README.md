@@ -116,15 +116,19 @@ proposal queue.
 ### Seed datasets
 
 Seed fixtures live in `packages/db/seeds/datasets/` and `bun run db:seed` loads the dataset named
-by `SEED_DATASET` (default `leo`, Leo's real collections; unset or empty falls back to the default).
-Datasets are registered explicitly in `packages/db/src/seed.ts` — dropping a file in the directory
-doesn't make it selectable:
+by `SEED_DATASET` (default `leo`, Leo's real collections). Datasets are registered explicitly in
+`packages/db/src/seed.ts` — dropping a file in the directory doesn't make it selectable:
 
 ```sh
-SEED_DATASET=leo        # which dataset db:seed loads (set in .env or via export)
+SEED_DATASET=leo        # which seed fixture db:seed loads (set in .env or via export)
 # SEED_DATASET=grimoire # the synthetic Grimoire demo fixture the tests use
-# SEED_RESET=1          # uncomment to wipe existing bookmarks/tags/categories first
+# SEED_RESET=1          # uncomment to wipe the target dataset's content first
+# SEED_ACTIVATE=0       # uncomment to load WITHOUT making it the active dataset
 ```
+
+Seeding **activates** the dataset it loads: the profile's active-dataset pointer is set to it, so
+the server scopes to whatever was loaded on its next boot — seeding is the dataset-switch
+mechanism. `SEED_ACTIVATE=0` loads without switching.
 
 `leo` is generated from the five-file representative sample in `docs/examples-mds/`; regenerate it
 after editing those collections with:
@@ -138,16 +142,19 @@ Seeding is otherwise idempotent (bookmarks are upserted by URL).
 ### Clearing a dataset
 
 To test imports from a clean slate, `bun run db:clear` wipes one dataset's bookmarks and vocabulary
-(sections, categories, tags), keeping the dataset row itself so the name can be reused. It prompts for confirmation; pass `--yes` to skip it. The dataset defaults to
-`DEFAULT_DATASET`, then `default`:
+(sections, categories, tags), keeping the dataset row itself so the name can be reused. It prompts
+for confirmation; pass `--yes` to skip it. Without an argument it clears the **active dataset**
+(the profile's pointer, then `DEFAULT_DATASET`, then `default` — the same precedence the server
+boot uses):
 
 ```sh
-bun run db:clear            # clear DEFAULT_DATASET (or "default")
+bun run db:clear            # clear the active dataset
 bun run db:clear leo --yes  # clear the "leo" dataset without prompting
 ```
 
-Unlike `SEED_RESET=1` (which wipes every dataset before seeding), `db:clear` only touches the named
-dataset. Qdrant points for removed bookmarks are repaired from SQLite at the next server startup.
+`SEED_RESET=1` runs the same dataset-scoped wipe before seeding (other datasets are never
+touched); `db:clear` is the standalone form. Qdrant points for removed bookmarks are repaired from
+SQLite at the next server startup.
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
 target layout (`apps/server`, `apps/web`, `packages/core` + the subsystem packages `db`, `search`,

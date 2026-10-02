@@ -15,13 +15,18 @@ import {
   getDatasetByName,
   type DatasetContentCounts,
 } from './queries/datasets.ts';
+import { updateProfile } from './queries/profile.ts';
 import { createTag, getTagByName } from './queries/tags.ts';
 
 /** Seed datasets live in `packages/db/seeds/datasets/<name>.seed.json`. */
 export const SEED_DATASETS_DIR = join(import.meta.dir, '../seeds/datasets');
 
-/** Dataset `bun run db:seed` loads when `SEED_DATASET` is unset. */
-export const DEFAULT_DATASET = 'leo';
+/**
+ * Seed fixture `bun run db:seed` loads when `SEED_DATASET` is unset. Distinct
+ * from the server's `DEFAULT_DATASET` (which dataset the app scopes to): this
+ * one picks which fixture to load. The two env names must never merge again.
+ */
+export const DEFAULT_SEED_DATASET = 'leo';
 
 export const DEFAULT_SEED_PATH = join(SEED_DATASETS_DIR, 'leo.seed.json');
 
@@ -97,6 +102,8 @@ interface SeedFile {
 }
 
 export interface SeedReport {
+  /** Id of the dataset the fixture landed in — the activation pointer target. */
+  datasetId: string;
   datasetCreated: boolean;
   categoriesCreated: number;
   tagsCreated: number;
@@ -128,6 +135,7 @@ export function resetSeedData(db: Database, datasetName: string): DatasetContent
 export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedReport {
   const seed = JSON.parse(readFileSync(filePath, 'utf8')) as SeedFile;
   const report: SeedReport = {
+    datasetId: '',
     datasetCreated: false,
     categoriesCreated: 0,
     tagsCreated: 0,
@@ -139,6 +147,7 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
   const insideTransaction = db.transaction(() => {
     const existing = getDatasetByName(db, seed.dataset);
     const dataset = existing ?? createDataset(db, seed.dataset);
+    report.datasetId = dataset.id;
     report.datasetCreated = !existing;
 
     for (const name of seed.categories) {
@@ -198,23 +207,66 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
   return report;
 }
 
+export interface SeedOptions {
+  /** Wipe the target dataset's content before loading (env `SEED_RESET`). */
+  reset?: boolean;
+  /**
+   * Set the profile's active-dataset pointer to the seeded dataset (env
+   * `SEED_ACTIVATE`, on by default). Seeding is the user's dataset-switch
+   * mechanism: loading a dataset means starting to use it.
+   */
+  activate?: boolean;
+}
+
+export interface SeedRun {
+  report: SeedReport;
+  /** True when the profile's active-dataset pointer was set to the target. */
+  activated: boolean;
+  /** Fixture path that was loaded (already validated by `resolveSeedDataset`). */
+  filePath: string;
+  /** Rows removed by the pre-load reset, when `options.reset` was set. */
+  resetCounts?: DatasetContentCounts;
+}
+
+/**
+ * Loads a registered seed fixture into its dataset — the compose step the
+ * `db:seed` CLI runs. Reset (when asked) and activation (by default) are part
+ * of the same run so a seed always leaves the database in a coherent state.
+ */
+export function seedDataset(db: Database, name: string, options: SeedOptions = {}): SeedRun {
+  const filePath = resolveSeedDataset(name);
+  const resetCounts = options.reset ? resetSeedData(db, name) : undefined;
+  const report = seedFromFile(db, filePath);
+  let activated = false;
+  if (options.activate !== false) {
+    updateProfile(db, { activeDatasetId: report.datasetId });
+    activated = true;
+  }
+  return { report, activated, filePath, resetCounts };
+}
+
 if (import.meta.main) {
   const db = openDatabase();
   setupDatabase(db);
 
-  // Bun auto-loads the repo-root .env, so SEED_DATASET/SEED_RESET work via
-  // `bun run db:seed` with no extra wiring (.env.example documents both; the
-  // README covers them in the same change set).
-  const datasetName = process.env.SEED_DATASET || DEFAULT_DATASET;
-  const filePath = resolveSeedDataset(datasetName);
-  if (process.env.SEED_RESET === '1') {
-    const counts = resetSeedData(db, datasetName);
-    console.log(`Reset existing content in dataset "${datasetName}" (SEED_RESET=1)`);
-    console.log(JSON.stringify(counts, null, 2));
-  }
-
-  const report = seedFromFile(db, filePath);
+  // Bun auto-loads the repo-root .env, so SEED_DATASET/SEED_RESET/SEED_ACTIVATE
+  // work via `bun run db:seed` with no extra wiring (.env.example documents
+  // all three; ARCHITECTURE §7 covers them in the same change set).
+  const datasetName = process.env.SEED_DATASET || DEFAULT_SEED_DATASET;
+  const { report, activated, filePath, resetCounts } = seedDataset(db, datasetName, {
+    reset: process.env.SEED_RESET === '1',
+    activate: process.env.SEED_ACTIVATE !== '0',
+  });
   checkpoint(db);
+  if (resetCounts) {
+    console.log(`Reset existing content in dataset "${datasetName}" (SEED_RESET=1)`);
+    console.log(JSON.stringify(resetCounts, null, 2));
+  }
   console.log(`Seeded database from dataset "${datasetName}" (${filePath})`);
   console.log(JSON.stringify(report, null, 2));
+  if (activated) {
+    console.log(
+      `Active dataset is now "${datasetName}" (profile.active_dataset_id) — the server scopes to it on the next boot. Set SEED_ACTIVATE=0 to load without switching.`,
+    );
+  }
 }

@@ -16,9 +16,11 @@ These constrain every later decision. A change that violates one needs an explic
    live in one SQLite file. Nothing else ever holds the only copy of durable data. Rebuildable
    *serving* structures may live outside the file (FTS5 inside it; a local Qdrant collection outside
    it): losing one is repaired from SQLite without re-embedding (§6).
-3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted or
-   cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every feature
-   must degrade gracefully when a sidecar is down.
+ 3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted or
+    cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every feature
+    must degrade gracefully when a sidecar is down. The single user has a profile (a person — MODEL.md
+    principle 8); it is not an account system, and datasets are that person's content workspaces, not
+    users or tenants.
 4. **Docs-first.** Architecture, data model, and design are decided in `docs/` before code. Prefer
    well-documented, open-source components over bespoke infrastructure.
 5. **Classifier is optional.** Search, tagging, and browsing must all work with the classifier
@@ -462,7 +464,7 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OLLAYA_API_KEY`        | Bearer key when the daemon is exposed         | unset (loopback)         |
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag      | `0.5`                    |
-| `DEFAULT_DATASET`       | Dataset new bookmarks/imports land in when none is specified | `default` |
+| `DEFAULT_DATASET`       | Fallback dataset name when the profile has no active-dataset pointer (the pointer — set by seeding or `PATCH /api/profile` — is the primary mechanism) | `default` |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
@@ -472,8 +474,9 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
 | `QDRANT_TIMEOUT_MS`     | Client fetch timeout for Qdrant requests      | `5000`                   |
 | `DATA_DIR`               | Data root for every file artifact (§5); `DB_PATH`/`SCREENSHOTS_DIR` override individual paths | `data` (repo-relative) |
-| `SEED_DATASET`          | Dataset `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `leo` |
+| `SEED_DATASET`          | Seed fixture `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `leo` |
 | `SEED_RESET`            | When `1`, `db:seed` wipes the target dataset's content before loading (seed-script only) | unset |
+| `SEED_ACTIVATE`          | When `0`, `db:seed` loads without setting the profile's active-dataset pointer; by default seeding switches the app to what it loaded (seed-script only) | unset (on) |
 
 ## 8. Background jobs
 
@@ -608,4 +611,6 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
 | `Bun.WebView` screenshots (§8)   | The experimental `Bun.WebView` API changes or is removed; then pin/replace the capture client — the `ScreenshotClient` boundary keeps the `og:image` fallback path intact.            |
 | In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then re-evaluate the job architecture.                                                                                                              |
+| Active dataset resolved at boot (§5/MODEL.md 8) | A dataset-switch UI (or any per-request dataset selection) is built; then the boot-time `resolveActiveDataset` moves to per-request resolution and the route surface grows a `datasetId` param. |
+| Single-user profile (§1.3)        | A second human actually needs to use the deployment; then run a second instance with its own `DATA_DIR` — tenancy, `users` tables, and per-user data folders remain rejected shapes. |
 | Web bundler (§2)                 | Bun's bundler applies plugins (Tailwind/shadcn) in its production CLI build and the fullstack API stabilizes; then re-evaluate dropping Vite for a fully Bun-native build.            |

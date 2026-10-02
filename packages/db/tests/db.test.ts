@@ -24,6 +24,7 @@ import {
   getBookmarkTags,
   getCategoryById,
   getDatasetByName,
+  getProfile,
   getTagByName,
   keywordSearch,
   listBookmarkIdsMissingContent,
@@ -37,6 +38,7 @@ import {
   openDatabase,
   resetSeedData,
   resolveSeedDataset,
+  seedDataset,
   seedFromFile,
   setupDatabase,
   UnknownSeedDatasetError,
@@ -421,6 +423,21 @@ describe('seed fixture', () => {
     expect(DEFAULT_SEED_PATH).toContain('seeds/datasets/leo.seed.json');
     expect(resolveSeedDataset('leo')).toBe(DEFAULT_SEED_PATH);
     expect(resolveSeedDataset('grimoire')).toContain('seeds/datasets/grimoire.seed.json');
+  });
+
+  test('seedDataset activates the target dataset by default', () => {
+    const db = freshDb();
+
+    const run = seedDataset(db, 'grimoire');
+    expect(run.activated).toBe(true);
+    expect(run.report.datasetId).toBe(getDatasetByName(db, 'grimoire')!.id);
+    expect(getProfile(db)!.activeDatasetId).toBe(run.report.datasetId);
+
+    // Opt-out leaves the pointer untouched while still loading the fixture.
+    const explicit = seedDataset(db, 'leo', { activate: false });
+    expect(explicit.activated).toBe(false);
+    expect(explicit.report.bookmarksAdded).toBeGreaterThan(0);
+    expect(getProfile(db)!.activeDatasetId).toBe(run.report.datasetId);
   });
 
   test('rejects unknown dataset names with the available list', () => {

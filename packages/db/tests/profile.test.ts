@@ -8,6 +8,7 @@ import {
   getProfile,
   openDatabase,
   PROFILE_ID,
+  resolveActiveDataset,
   setupDatabase,
   updateProfile,
 } from '../src/index.ts';
@@ -79,5 +80,35 @@ describe('profile', () => {
     const profile = getProfile(db)!;
     expect(profile.activeDatasetId).toBeNull();
     expect(profile.id).toBe(PROFILE_ID);
+  });
+
+  test('resolver: the profile pointer wins over the config fallback name', () => {
+    const grimoire = createDataset(db, 'grimoire');
+    updateProfile(db, { activeDatasetId: grimoire.id });
+
+    const resolved = resolveActiveDataset(db, 'default');
+    expect(resolved.source).toBe('profile');
+    expect(resolved.created).toBe(false);
+    expect(resolved.dataset.id).toBe(grimoire.id);
+  });
+
+  test('resolver: a dangling pointer falls through to the config name', () => {
+    const stale = createDataset(db, 'gone');
+    updateProfile(db, { activeDatasetId: stale.id });
+    deleteDataset(db, stale.id);
+
+    const resolved = resolveActiveDataset(db, 'fallback');
+    expect(resolved.source).toBe('config');
+    expect(resolved.dataset.name).toBe('fallback');
+  });
+
+  test('resolver: without a pointer, the config name is used and created on demand', () => {
+    const resolved = resolveActiveDataset(db, 'fresh');
+    expect(resolved.source).toBe('config');
+    expect(resolved.created).toBe(true);
+    expect(resolved.dataset.name).toBe('fresh');
+
+    const again = resolveActiveDataset(db, 'fresh');
+    expect(again.created).toBe(false);
   });
 });

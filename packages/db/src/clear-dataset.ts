@@ -1,8 +1,13 @@
 import { createInterface } from 'node:readline/promises';
 
+import { resolveActiveDataset } from './active-dataset.ts';
 import { checkpoint, openDatabase } from './connection.ts';
 import { setupDatabase } from './migrations.ts';
-import { clearDatasetContent, countDatasetContent, getDatasetByName } from './queries/datasets.ts';
+import {
+  clearDatasetContent,
+  countDatasetContent,
+  getDatasetByName,
+} from './queries/datasets.ts';
 
 /** Runs when neither the CLI argument nor `DEFAULT_DATASET` sets a dataset. */
 const FALLBACK_DATASET = 'default';
@@ -13,7 +18,9 @@ Usage:
   bun run db:clear [dataset] [--yes]
 
 Arguments:
-  dataset     Dataset name to clear. Defaults to DEFAULT_DATASET, then "${FALLBACK_DATASET}".
+  dataset     Dataset name to clear. Defaults to the active dataset — the
+              profile's active-dataset pointer, then DEFAULT_DATASET, then
+              "${FALLBACK_DATASET}" — the same precedence the server boot uses.
 
 Options:
   -y, --yes   Skip the interactive confirmation prompt.
@@ -24,7 +31,8 @@ Other datasets are never touched. Qdrant points for removed bookmarks are
 repaired from SQLite at the next server startup.`;
 
 interface ClearOptions {
-  dataset: string;
+  /** Explicit dataset name from argv; undefined = use the active-dataset precedence. */
+  dataset?: string;
   yes: boolean;
   help: boolean;
 }
@@ -49,7 +57,7 @@ function parseArgs(argv: string[]): ClearOptions {
   }
 
   return {
-    dataset: dataset ?? process.env.DEFAULT_DATASET ?? FALLBACK_DATASET,
+    dataset,
     yes,
     help,
   };
@@ -75,10 +83,23 @@ if (import.meta.main) {
   const db = openDatabase();
   setupDatabase(db);
 
-  const dataset = getDatasetByName(db, options.dataset);
-  if (!dataset) {
-    console.log(`Dataset "${options.dataset}" does not exist — nothing to clear.`);
-    process.exit(0);
+  // An explicit argv name wins; the default follows the active-dataset
+  // precedence the server boot uses, so `db:clear` clears what the app is
+  // actually scoped to.
+  let dataset;
+  if (options.dataset !== undefined) {
+    dataset = getDatasetByName(db, options.dataset);
+    if (!dataset) {
+      console.log(`Dataset "${options.dataset}" does not exist — nothing to clear.`);
+      process.exit(0);
+    }
+  } else {
+    const resolved = resolveActiveDataset(db, process.env.DEFAULT_DATASET ?? FALLBACK_DATASET);
+    if (resolved.created) {
+      console.log(`Dataset "${resolved.dataset.name}" does not exist yet — nothing to clear.`);
+      process.exit(0);
+    }
+    dataset = resolved.dataset;
   }
 
   if (!options.yes) {

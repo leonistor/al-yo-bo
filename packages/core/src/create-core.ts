@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import type { ClassifierClient } from '@al-yo-bo/classifier';
-import { createDataset, getDatasetByName, rebuildFts } from '@al-yo-bo/db';
+import { rebuildFts, resolveActiveDataset } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import type { ExtractionClient } from '@al-yo-bo/importer';
 
@@ -70,10 +70,11 @@ export interface Core {
 export function createCore(deps: CoreDeps): Core {
   const { db, config, vector, embeddings, classifier, scrape, extract, screenshot } = deps;
 
-  // The default dataset is the scoping boundary for everything that does not
+  // The active dataset is the scoping boundary for everything that does not
   // name one explicitly (bookmark CRUD, searches, review queues, imports).
-  const dataset =
-    getDatasetByName(db, config.defaultDataset) ?? createDataset(db, config.defaultDataset);
+  // Precedence (MODEL.md principle 8): the profile's active_dataset_id
+  // pointer, then the configured fallback name — resolved once at boot.
+  const { dataset } = resolveActiveDataset(db, config.defaultDataset);
 
   const enrichment = createEnrichmentService({
     db,

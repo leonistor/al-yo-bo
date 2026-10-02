@@ -8,7 +8,10 @@
 export interface CoreConfig {
   /** Probability at/above which the classifier may auto-assign an active tag. */
   autoAssignThreshold: number;
-  /** Dataset new bookmarks/imports land in when none is specified. */
+  /**
+   * Fallback dataset name used when the profile has no active-dataset
+   * pointer (the pointer is the primary mechanism — MODEL.md principle 8).
+   */
   defaultDataset: string;
   /** Query-embedding identity; semantic search is off without a model. */
   embeddings: {

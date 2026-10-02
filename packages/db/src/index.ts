@@ -1,3 +1,4 @@
+export * from './active-dataset.ts';
 export * from './connection.ts';
 export * from './migrations.ts';
 export * from './paths.ts';
