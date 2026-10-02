@@ -331,11 +331,13 @@ any SQLite connection (no extension needed). Kept in sync with `bookmarks` by tr
 
 Vectors are stored as little-endian `Float32` BLOBs in a normal `STRICT` table. This table is the
 **durable** copy and the rebuild source for the Qdrant collection (one point per row: point id =
-bookmark UUID string, cosine space, payload `{ model, dims, categoryId, tagIds }`, collection
-metadata `{ model }`). `packages/search` also loads all rows into one in-memory matrix at startup as
-the offline fallback; cosine similarity reduces to a dot product on pre-normalized vectors there.
-The dimension is fixed by the embedding model, and all rows must share it
-(see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
+bookmark UUID string, cosine space, payload `{ model, dims, datasetId, categoryId, tagIds }` with
+keyword payload indexes on the filter fields, collection metadata `{ model }`). The `datasetId` in
+the payload makes the dataset boundary hold inside the vector engine too: semantic queries filter
+by dataset server-side, exactly like keyword queries (principle 1). `packages/search` also loads
+all rows into one in-memory matrix at startup as the offline fallback; cosine similarity reduces to
+a dot product on pre-normalized vectors there. The dimension is fixed by the embedding model, and
+all rows must share it (see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
 
 ```sql
 CREATE TABLE bookmark_embeddings (
@@ -351,12 +353,14 @@ CREATE TABLE bookmark_embeddings (
 ## Invariants & rules
 
 - **Dataset scoping.** Every bookmark, category, tag, and section belongs to exactly one dataset.
-  The classifier candidate set, the importer's vocabulary resolution, and the review queues are all
-  dataset-scoped. Cross-dataset vocabulary is structurally impossible.
-- **Uniqueness.** `bookmarks.url` is unique; tag names are unique per (dataset, category) and per
-  dataset when unscoped; category names are unique per dataset; section names are unique per dataset;
-  `(bookmark_id, tag_id)` in `bookmark_tags` and `(run_id, tag_id)` in `classification_results` are
-  unique via `UNIQUE` constraints (not composite primary keys).
+  The classifier candidate set, the importer's vocabulary resolution, the review queues, and both
+  search paths (keyword and semantic) are all dataset-scoped. Cross-dataset vocabulary is
+  structurally impossible.
+- **Uniqueness.** `bookmarks.url` is unique **per dataset** (`(dataset_id, url)`); tag names are
+  unique per (dataset, category) and per dataset when unscoped; category names are unique per
+  dataset; section names are unique per dataset; `(bookmark_id, tag_id)` in `bookmark_tags` and
+  `(run_id, tag_id)` in `classification_results` are unique via `UNIQUE` constraints (not composite
+  primary keys).
 - **Assignment policy.** A classifier result becomes an effective `bookmark_tags` row only when its
   probability clears the configured `auto_assign` threshold _and_ the tag is `active` _and_ the tag
   belongs to the bookmark's dataset. Otherwise it is retained as evidence, and the tag is surfaced

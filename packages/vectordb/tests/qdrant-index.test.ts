@@ -28,7 +28,11 @@ const syncRecord = (bookmarkId: string, model: string, values: number[]): SyncRe
   embedding: packFloat32(Float32Array.from(values)),
 });
 
-const payload = (categoryId: string | null, tagIds: string[] = []) => ({ categoryId, tagIds });
+const payload = (categoryId: string | null, tagIds: string[] = []) => ({
+  datasetId: 'ds-1',
+  categoryId,
+  tagIds,
+});
 /** `resolvePayload` stub for syncs that carry no filterable payload. */
 const nullPayload = () => payload(null);
 
@@ -36,7 +40,10 @@ const nullPayload = () => payload(null);
 // the bookmarks' UUIDv7s, so the tests use UUID-shaped ids too.
 const id = (n: number): string => `00000000-0000-0000-0000-${n.toString().padStart(12, '0')}`;
 
-const idsOf = async (query: Float32Array, filter?: { categoryId?: string; tagId?: string }) => {
+const idsOf = async (
+  query: Float32Array,
+  filter?: { datasetId?: string; categoryId?: string; tagId?: string },
+) => {
   const hits = await index.search(query, 10, filter);
   return hits.map((hit) => hit.bookmarkId);
 };
@@ -56,12 +63,12 @@ maybeDescribe('QdrantIndex', () => {
     await index.upsert({
       bookmarkId: id(1),
       vector: new Float32Array([1, 0]),
-      payload: { model: 'test-model', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-1', categoryId: null, tagIds: [] },
     });
     await index.upsert({
       bookmarkId: id(2),
       vector: new Float32Array([0, 1]),
-      payload: { model: 'test-model', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-1', categoryId: null, tagIds: [] },
     });
 
     const hits = await index.search(new Float32Array([1, 0]), 5);
@@ -74,24 +81,30 @@ maybeDescribe('QdrantIndex', () => {
     await index.upsert({
       bookmarkId: id(3),
       vector: new Float32Array([1, 0]),
-      payload: { model: 'test-model', dims: 2, categoryId: 'catA', tagIds: ['tag1'] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-1', categoryId: 'catA', tagIds: ['tag1'] },
     });
     await index.upsert({
       bookmarkId: id(4),
       vector: new Float32Array([0.9, 0.1]),
-      payload: { model: 'test-model', dims: 2, categoryId: 'catB', tagIds: ['tag2'] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-2', categoryId: 'catB', tagIds: ['tag2'] },
     });
 
     expect(await idsOf(new Float32Array([1, 0]), { categoryId: 'catA' })).toEqual([id(3)]);
     expect(await idsOf(new Float32Array([1, 0]), { tagId: 'tag2' })).toEqual([id(4)]);
     expect(await idsOf(new Float32Array([1, 0]), { categoryId: 'catA', tagId: 'tag2' })).toEqual([]);
+    // The dataset boundary holds inside the vector engine (MODEL.md principle 1).
+    expect(await idsOf(new Float32Array([1, 0]), { datasetId: 'ds-1' })).toEqual([id(3)]);
+    expect(await idsOf(new Float32Array([1, 0]), { datasetId: 'ds-2' })).toEqual([id(4)]);
+    expect(
+      await idsOf(new Float32Array([1, 0]), { datasetId: 'ds-2', categoryId: 'catA' }),
+    ).toEqual([]);
   });
 
   test('updatePayload changes filter results', async () => {
     await index.upsert({
       bookmarkId: id(5),
       vector: new Float32Array([1, 0]),
-      payload: { model: 'test-model', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-1', categoryId: null, tagIds: [] },
     });
     expect(await idsOf(new Float32Array([1, 0]), { categoryId: 'catX' })).not.toContain(id(5));
 
@@ -104,7 +117,7 @@ maybeDescribe('QdrantIndex', () => {
     await index.upsert({
       bookmarkId: id(6),
       vector: new Float32Array([1, 0]),
-      payload: { model: 'test-model', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'test-model', dims: 2, datasetId: 'ds-1', categoryId: null, tagIds: [] },
     });
     expect(await idsOf(new Float32Array([1, 0]))).toContain(id(6));
 
@@ -126,7 +139,7 @@ maybeDescribe('QdrantIndex', () => {
     await index.upsert({
       bookmarkId: id(9),
       vector: new Float32Array([1, 0]),
-      payload: { model: 'sync-model', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'sync-model', dims: 2, datasetId: 'ds-1', categoryId: null, tagIds: [] },
     });
 
     // Every sync wipes and re-upserts the whole SQLite set, so the stray point

@@ -19,7 +19,7 @@ const rank = (id: string, position: number, score: number): RankedCandidate => (
 const point = (bookmarkId: string): VectorUpsert => ({
   bookmarkId,
   vector: new Float32Array([1, 0]),
-  payload: { model: 'test', dims: 2, categoryId: null, tagIds: [] },
+  payload: { model: 'test', dims: 2, datasetId: 'd', categoryId: null, tagIds: [] },
 });
 
 class StubVectorIndex implements VectorIndex {
@@ -114,9 +114,9 @@ describe('FallbackVectorIndex', () => {
     const index = new FallbackVectorIndex(primary, fallback, {
       resolvePayloads: () =>
         new Map([
-          ['a', { categoryId: 'cat', tagIds: [] }],
-          ['b', { categoryId: 'other', tagIds: [] }],
-          ['c', { categoryId: 'cat', tagIds: [] }],
+          ['a', { datasetId: 'd', categoryId: 'cat', tagIds: [] }],
+          ['b', { datasetId: 'd', categoryId: 'other', tagIds: [] }],
+          ['c', { datasetId: 'other', categoryId: 'cat', tagIds: [] }],
         ]),
       overfetchFactor: 4,
     });
@@ -125,6 +125,30 @@ describe('FallbackVectorIndex', () => {
     expect(fallback.searchCalls[0]?.topK).toBe(8);
     expect(out.map((hit) => hit.bookmarkId)).toEqual(['a', 'c']);
     expect(out.map((hit) => hit.rank)).toEqual([1, 3]);
+  });
+
+  // The dataset boundary must hold on the fallback path too (MODEL.md
+  // principle 1): candidates from other datasets never reach fusion.
+  test('filters candidates from other datasets out of the fallback path', async () => {
+    const primary = new StubVectorIndex();
+    primary.failure = new Error('qdrant down');
+    const fallback = new StubVectorIndex([
+      rank('a', 1, 0.9),
+      rank('c', 2, 0.8),
+      rank('d', 3, 0.7),
+    ]);
+    const index = new FallbackVectorIndex(primary, fallback, {
+      resolvePayloads: () =>
+        new Map([
+          ['a', { datasetId: 'd', categoryId: null, tagIds: [] }],
+          ['c', { datasetId: 'other', categoryId: null, tagIds: [] }],
+          ['d', { datasetId: 'd', categoryId: null, tagIds: [] }],
+        ]),
+      overfetchFactor: 4,
+    });
+
+    const out = await index.search(new Float32Array([1, 0]), 2, { datasetId: 'd' });
+    expect(out.map((hit) => hit.bookmarkId)).toEqual(['a', 'd']);
   });
 
   test('upsert, updatePayload and delete fan out to both indices', async () => {

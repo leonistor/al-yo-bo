@@ -2,21 +2,26 @@ import type { RankedCandidate } from './types.ts';
 
 /**
  * Payload stored alongside each vector. It mirrors the bookmark's filterable
- * state so the vector engine can apply category/tag filters inside the top-k
- * query (server-side) instead of after fusion.
+ * state — including its dataset, so the vector engine can enforce the dataset
+ * boundary (MODEL.md principle 1) inside the top-k query (server-side) instead
+ * of after fusion.
  */
 export interface VectorPayload {
   model: string;
   dims: number;
+  /** Dataset the point's bookmark belongs to; never changes for a point. */
+  datasetId: string;
   categoryId: string | null;
   tagIds: string[];
 }
 
 /**
- * Filter pushed into the vector query. Both values are optional; when both are
- * present they are ANDed, matching the keyword search semantics.
+ * Filter pushed into the vector query. All present values are ANDed, matching
+ * the keyword search semantics. `datasetId` is always set by the search
+ * service — semantic search is dataset-scoped like keyword search.
  */
 export interface VectorFilter {
+  datasetId?: string;
   categoryId?: string;
   tagId?: string;
 }

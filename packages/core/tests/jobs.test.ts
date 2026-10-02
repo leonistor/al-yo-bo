@@ -537,6 +537,8 @@ describe('embedBookmark', () => {
     expect(deps.vector.ids).toEqual([id]);
     // The configured model is the stored identity, not the client's echo.
     expect(deps.vector.upserts[0]!.payload.model).toBe('openai/text-embedding-3-small');
+    // The point carries its dataset so query-time filtering can scope it.
+    expect(deps.vector.upserts[0]!.payload.datasetId).toBe(db.datasetId);
     expect(deps.vector.upserts[0]!.vector).toEqual(Float32Array.from([1, 2, 3]));
   });
 

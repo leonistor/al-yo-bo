@@ -249,8 +249,12 @@ raw speed at this size. The revisit conditions are in §11.
   PK, FK cascade, `dims`, `model`, `embedding` BLOB little-endian Float32, `updated_at`). See
   MODEL.md. Backups are the SQLite file copy.
 - The Qdrant collection (default `bookmarks`) holds one point per embedding: point id = bookmark
-  UUID, cosine space, payload `{ model, dims, categoryId, tagIds }` with keyword payload indexes on
-  the filter fields, and collection metadata `{ model }`.
+  UUID, cosine space, payload `{ model, dims, datasetId, categoryId, tagIds }` with keyword payload
+  indexes on the filter fields, and collection metadata `{ model }`. The `datasetId` payload field
+  keeps the dataset boundary (MODEL.md principle 1) intact in semantic search: the search service
+  always pushes the active dataset into the vector filter, so points from other datasets can never
+  reach fusion. `ensureCollection` re-ensures the payload indexes idempotently, which upgrades a
+  pre-`datasetId` collection in place; the boot `sync` then rewrites every payload.
 - **All rows must share one dimension** (fixed by `EMBEDDING_MODEL`); a model change requires a
   re-embed pass. On startup the collection is checked against the SQLite rows: a dims/model
   mismatch drops and recreates it, and `sync` replays SQLite rows into missing points and deletes

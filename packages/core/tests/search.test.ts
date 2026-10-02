@@ -163,4 +163,38 @@ describe('SearchService — fused pagination', () => {
     expect(response.mode).toBe('keyword');
     expect(response.total).toBe(2);
   });
+
+  // The dataset boundary is pushed into the vector query (MODEL.md principle
+  // 1): semantic search is dataset-scoped exactly like keyword search.
+  test('pushes the dataset boundary into the semantic query', async () => {
+    const db = makeDb();
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/a',
+      title: 'rust one',
+    });
+    const vector = new StubVectorIndex([bookmark.id]);
+    const service = createSearchService({
+      db,
+      config: testConfig(),
+      vector: createVectorProvider(vector, 'memory'),
+      embeddings: stubEmbeddings,
+      datasetId: db.datasetId,
+    });
+
+    await service.search({ q: 'rust', mode: 'semantic', ...BASE, limit: 10, offset: 0 });
+    expect(vector.searchFilters.at(-1)).toMatchObject({ datasetId: db.datasetId });
+
+    // An explicit input datasetId wins, matching the keyword path's precedence.
+    const other = '00000000-0000-7000-8000-000000000001';
+    await service.search({
+      q: 'rust',
+      mode: 'semantic',
+      ...BASE,
+      datasetId: other,
+      limit: 10,
+      offset: 0,
+    });
+    expect(vector.searchFilters.at(-1)).toMatchObject({ datasetId: other });
+  });
 });

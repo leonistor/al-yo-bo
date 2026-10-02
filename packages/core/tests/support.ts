@@ -26,6 +26,8 @@ export class StubVectorIndex implements VectorIndex {
   upserts: VectorUpsert[] = [];
   deletions: string[] = [];
   payloads: Array<{ bookmarkId: string; patch: VectorPayloadPatch }> = [];
+  /** Every filter handed to `search`, for asserting what was pushed down. */
+  searchFilters: Array<VectorFilter | undefined> = [];
 
   constructor(public ids: string[] = []) {}
 
@@ -52,8 +54,9 @@ export class StubVectorIndex implements VectorIndex {
   async search(
     _query: Float32Array,
     topK: number,
-    _filter?: VectorFilter,
+    filter?: VectorFilter,
   ): Promise<RankedCandidate[]> {
+    this.searchFilters.push(filter);
     return this.ids.slice(0, Math.max(0, topK)).map((bookmarkId, index) => ({
       bookmarkId,
       rank: index + 1,

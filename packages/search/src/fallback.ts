@@ -1,6 +1,7 @@
 import type { RankedCandidate, VectorFilter, VectorIndex, VectorPayloadPatch, VectorUpsert } from '@al-yo-bo/shared';
 
 export interface FallbackPayload {
+  datasetId: string;
   categoryId: string | null;
   tagIds: string[];
 }
@@ -17,6 +18,9 @@ export interface FallbackVectorIndexOptions {
 /** True when every field set on `filter` is satisfied by the resolved payload. */
 function matchesFilter(payload: FallbackPayload | undefined, filter: VectorFilter): boolean {
   if (!payload) {
+    return false;
+  }
+  if (filter.datasetId !== undefined && payload.datasetId !== filter.datasetId) {
     return false;
   }
   if (filter.categoryId !== undefined && payload.categoryId !== filter.categoryId) {

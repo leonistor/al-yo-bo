@@ -19,7 +19,7 @@ const rank = (id: string, position: number, score: number) => ({
 const point = (bookmarkId: string, values: number[]): VectorUpsert => ({
   bookmarkId,
   vector: new Float32Array(values),
-  payload: { model: 'test', dims: values.length, categoryId: null, tagIds: [] },
+  payload: { model: 'test', dims: values.length, datasetId: 'd', categoryId: null, tagIds: [] },
 });
 
 describe('reciprocal rank fusion', () => {
@@ -83,7 +83,7 @@ describe('KnnIndex', () => {
     await index.upsert({
       bookmarkId: 'new',
       vector,
-      payload: { model: 'test', dims: 2, categoryId: null, tagIds: [] },
+      payload: { model: 'test', dims: 2, datasetId: 'd', categoryId: null, tagIds: [] },
     });
 
     expect(Array.from(vector)).toEqual([3, 4]);

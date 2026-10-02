@@ -218,6 +218,9 @@ export async function embedBookmark(deps: JobDeps, bookmarkId: string): Promise<
     payload: {
       model,
       dims,
+      // The dataset boundary must hold in the vector engine too (MODEL.md
+      // principle 1): points are filtered by dataset at query time.
+      datasetId: bookmark.datasetId,
       categoryId: bookmark.categoryId,
       tagIds: bookmark.tags.map((tag) => tag.tagId),
     },

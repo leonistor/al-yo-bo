@@ -49,10 +49,12 @@ export interface VectorSearch {
 
 /** One bookmark's filterable state, read from SQLite (canonical payload source). */
 function payloadOfBookmark(bookmark: {
+  datasetId: string;
   categoryId: string | null;
   tags: Array<{ tagId: string }>;
 }): SyncPayload & FallbackPayload {
   return {
+    datasetId: bookmark.datasetId,
     categoryId: bookmark.categoryId,
     tagIds: bookmark.tags.map((tag) => tag.tagId),
   };
@@ -61,7 +63,11 @@ function payloadOfBookmark(bookmark: {
 function resolvePayload(db: Database): (bookmarkId: string) => SyncPayload {
   return (bookmarkId) => {
     const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
-    return bookmark ? payloadOfBookmark(bookmark) : { categoryId: null, tagIds: [] };
+    // A missing bookmark row cannot happen while its embedding row exists (FK
+    // cascade); the empty-dataset fallback simply matches no filter.
+    return bookmark
+      ? payloadOfBookmark(bookmark)
+      : { datasetId: '', categoryId: null, tagIds: [] };
   };
 }
 

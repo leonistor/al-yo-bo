@@ -93,6 +93,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   async function semanticCandidates(input: {
     q: string;
     mode: SearchMode;
+    datasetId?: string;
     categoryId?: string;
     tagId?: string;
     limit: number;
@@ -111,9 +112,12 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       if (!queryVector) {
         return [];
       }
-      // Category/tag filters are pushed into the vector query (server-side on
-      // Qdrant, client-side overfetch on the in-memory fallback).
+      // The dataset boundary is pushed into the vector query together with the
+      // category/tag filters (server-side on Qdrant, client-side overfetch on
+      // the in-memory fallback) — semantic search is dataset-scoped exactly
+      // like keyword search (MODEL.md principle 1).
       return await index.search(queryVector, input.offset + input.limit, {
+        datasetId: input.datasetId ?? datasetId,
         categoryId: input.categoryId,
         tagId: input.tagId,
       });
@@ -162,6 +166,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
         : await semanticCandidates({
             q: input.q,
             mode: input.mode,
+            datasetId: input.datasetId ?? datasetId,
             categoryId: input.categoryId,
             tagId: input.tagId,
             limit: window + 1,
