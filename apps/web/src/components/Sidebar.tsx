@@ -273,23 +273,25 @@ function RailButton({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          aria-pressed={active}
-          data-active={active}
-          className="relative data-[active=true]:bg-accent data-[active=true]:text-accent-foreground"
-          onClick={onClick}
-        >
-          {children}
-          {badge !== undefined && badge > 0 && (
-            <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground">
-              {badge}
-            </span>
-          )}
-        </Button>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={label}
+            aria-pressed={active}
+            data-active={active}
+            className="relative data-[active=true]:bg-accent data-[active=true]:text-accent-foreground"
+            onClick={onClick}
+          />
+        }
+      >
+        {children}
+        {badge !== undefined && badge > 0 && (
+          <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground">
+            {badge}
+          </span>
+        )}
       </TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
