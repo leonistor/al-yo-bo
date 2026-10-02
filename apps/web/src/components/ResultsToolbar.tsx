@@ -115,7 +115,9 @@ export function ResultsToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Select value={`${sort}:${direction}`} onValueChange={handleSortChange}>
+        {/* `items` registers value→label pairs so SelectValue renders the
+            option label, not the raw `sort:direction` value. */}
+        <Select items={SORT_OPTIONS} value={`${sort}:${direction}`} onValueChange={handleSortChange}>
           <SelectTrigger className="w-36 sm:w-40" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>

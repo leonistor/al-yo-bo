@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -64,7 +65,10 @@ export function SidebarAccountMenu({
       <DropdownMenuContent align="end" className="min-w-40">
         {profile && (
           <>
-            <DropdownMenuLabel>{displayName}</DropdownMenuLabel>
+            {/* GroupLabel (DropdownMenuLabel) requires a Menu.Group ancestor. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{displayName}</DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
           </>
         )}

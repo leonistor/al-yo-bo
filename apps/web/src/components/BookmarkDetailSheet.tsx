@@ -471,6 +471,12 @@ export function BookmarkDetailSheet({
           <Field>
             <FieldLabel htmlFor="detail-category">Category</FieldLabel>
             <Select
+              // items registers value→label pairs so SelectValue renders the
+              // category name, not the raw id.
+              items={{
+                none: 'No category',
+                ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
+              }}
               value={categoryId}
               onValueChange={(v) => setCategoryId(v ?? 'none')}
             >

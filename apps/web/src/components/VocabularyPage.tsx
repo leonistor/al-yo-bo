@@ -128,6 +128,12 @@ export function VocabularyPage({ categories, sections, onChanged }: VocabularyPa
               }
             />
             <Select
+              // items registers value→label pairs so SelectValue renders the
+              // section name, not the raw id.
+              items={{
+                none: 'No section',
+                ...Object.fromEntries(sections.map((section) => [section.id, section.name])),
+              }}
               value={categorySectionId}
               onValueChange={(v) => setCategorySectionId(v ?? 'none')}
             >
@@ -165,6 +171,12 @@ export function VocabularyPage({ categories, sections, onChanged }: VocabularyPa
               }
             />
             <Select
+              // items registers value→label pairs so SelectValue renders the
+              // category name, not the raw id.
+              items={{
+                none: 'Global scope',
+                ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
+              }}
               value={tagCategoryId}
               onValueChange={(v) => setTagCategoryId(v ?? 'none')}
             >
