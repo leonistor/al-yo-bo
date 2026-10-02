@@ -33,16 +33,32 @@ themes are the same tokens with different values; never branch on theme in compo
 deprecated = `muted-foreground`). Vocabulary no longer has a `proposed` state — the importer
 creates it active, and classifier output is either auto-assigned or a below-threshold suggestion.
 
-## Components (shadcn/ui)
+## Components (shadcn/ui on base-ui)
 
-- Add components with the CLI (`bunx shadcn@latest add <component>`); load the **shadcn** skill for
-  guidance. Keep generated files under the web app's `src/components/ui/`.
+- **Substrate: base-ui.** All `src/components/ui/*` wrappers import from `@base-ui/react/*` (style
+  `base-nova`, set in `apps/web/components.json`). Phase 3 migrated every primitive from radix to
+  base-ui. Radix is no longer a direct dependency of feature code; `radix-ui` is retained only while
+  assistant-ui transitively pulls it (removed in Phase 5).
+- **Registries.** `apps/web/components.json` registers two non-default registries alongside the
+  built-in shadcn registry:
+  - `@coss` → `https://coss.com/ui/r/{name}.json` — production-tuned base-ui components
+  - `@beui` → `https://beui.dev/r/{name}.json` — motion-first AI/agent primitives
+  Add with `bunx shadcn@latest add @coss/<name>` or `@beui/<name>`; prefer over the universal shadcn
+  registry when a coss/beui equivalent exists.
+- **Add with the CLI.** `bunx shadcn@latest add <component>` for shadcn primitives;
+  `bunx --bun shadcn@latest add @coss/<component>` for coss; `@beui/<component>` for beui. Load
+  the **shadcn** skill (and the **migrate-radix-to-base** skill for refactors) for guardrails.
+- **Copy-paste, ours to edit.** Generated wrappers stay under `src/components/ui/`; they are the
+  single source of truth for the design system — fork freely.
 - **Compose, don't fork.** Wrap primitives in feature components (`BookmarkCard`, `TagChip`,
-  `CategoryNav`) under `src/components/`; keep `ui/` close to upstream.
-- **Variants over ad-hoc classes.** Use `cva` variant maps for component styling; no conditional
-  Tailwind soups in JSX.
-- Canonical building blocks: `button`, `input`, `label`, `dialog`, `dropdown-menu`, `command`,
-  `popover`, `badge`, `card`, `tabs`, `scroll-area`, `separator`, `toast`/`sonner`, `table`.
+  `CategoryNav`) under `src/components/`; feature components may consume both shadcn and coss/beui
+  wrappers.
+- **Variants over ad-hoc classes.** Use `cva` variant maps; no conditional Tailwind soups in JSX.
+- **Polymorphic primitives** use base-ui's `render` prop, not radix's `asChild`:
+  `<Trigger render={<Button/>}>...</Trigger>`.
+- Canonical building blocks: `button`, `input`, `input-group`, `label`, `dialog`, `alert-dialog`,
+  `dropdown-menu`, `command`, `popover`, `badge`, `card`, `tabs`, `scroll-area`, `separator`,
+  `toast`/`sonner`, `table`, `tooltip`. (`card` is currently dead — wire it through `BookmarkCard`.)
 
 ## Layout & responsive
 
@@ -79,9 +95,20 @@ opened-count counters — unless they are separately requested and added to thes
 
 ## Interaction & motion
 
-- Motion is functional: transitions **150–200 ms**, `ease-out`; respect `prefers-reduced-motion`.
+- **Timing tokens** (the single source for the project — pick library, theme, layout, motion all
+  defer here):
+  - `150 ms` — hover/press feedback (button states, card hover, link transitions)
+  - `200 ms` — state changes (mode toggle, layout, filter changes, dialog backdrop)
+  - `250–300 ms` — panel/sheet entrances, command palette open/close
+  - Easing: `ease-out` for entrances, `ease-in-out` for layout resizes
+- Respect `prefers-reduced-motion` — disable translate/scale animations; keep opacity transitions
+  only.
+- One well-timed entrance animation beats scattered micro-interactions. Page-load entrance stagger
+  for the library view (`200 ms`, `translate-y-1 → 0`, opacity `0 → 1`); pagination crossfade
+  (`150 ms`); filter change pulse on the result count.
 - Optimistic mutations must show pending affordance and a recovery path on failure.
-- Keyboard: `/` focuses search, `c` opens chat, `Esc` closes overlays, arrows move list selection.
+- Keyboard: `/` focuses search, `c` opens chat, `Esc` closes overlays, **arrows move list
+  selection** (see accessibility checklist — this is the missing piece).
 - Focus states use the `ring` token and must remain visible on every interactive element.
 
 ## Import page
@@ -115,12 +142,18 @@ opened-count counters — unless they are separately requested and added to thes
 - A failed image load (`onError`) falls through to the placeholder; the UI never shows a broken
   image. Both surfaces crop with `object-cover object-top` so page heroes read well.
 
-## Chat (assistant-ui)
+## Chat (beui.dev)
 
-- The chat surface uses **assistant-ui** primitives; styling follows the same tokens above.
+- The chat surface uses **beui.dev** primitives (`message-bubble`, `prompt-input`,
+  `streaming-response`, `agent-activity`, `message-scroller`) — installed from the `@beui`
+  registry. assistant-ui is being retired in Phase 5.
 - Streaming, tool-call, and error states each get a distinct, calm presentation; never block the
   transcript on a failed tool call.
 - Message actions (copy, cite, "open bookmark") are always available, not hover-only.
+- The chat tool-result surface (bookmark hits) reuses `BookmarkCard` from the library for visual
+  consistency between chat and main view.
+- Once the chat panel is fully on beui, drop `@assistant-ui/react` from `apps/web` deps; this
+  transitively retires `radix-ui` from the project.
 
 ## Accessibility checklist
 
@@ -129,3 +162,10 @@ opened-count counters — unless they are separately requested and added to thes
 - [ ] Inputs have labels; icon-only buttons have `aria-label`.
 - [ ] Live regions for streaming/async updates (search results, chat).
 - [ ] No meaning conveyed by color alone (pair with icon/text).
+- [ ] **List keyboard navigation.** `BookmarkList` and the import result grid support `↑`/`↓` to
+      move selection, `Enter` to open, `Delete`/backspace to remove. Roving tabindex pattern; the
+      list has `role="listbox"` semantics for screen readers.
+- [ ] "Skip to results" link for screen-reader/keyboard users.
+- [ ] Focus trap verified on every dialog (`BookmarkDetailDialog`, `VocabDialog`, `AddBookmarkDialog`,
+      the `AlertDialog` nested in `BookmarkDetailDialog`).
+- [ ] Verify `--muted-foreground` against `--background` in both themes; darken if below AA.
