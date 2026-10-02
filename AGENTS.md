@@ -10,6 +10,12 @@ Technical reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 being built. Do not invent structure, dependencies, or conventions that contradict the docs — if
 something is genuinely missing, update the docs first or ask.
 
+**This is a development environment.** Anything under `data/` is disposable dev data — seed
+fixtures, test noise, scratch profile values. Never treat its current contents (bookmarks,
+datasets, the profile) as precious: reseeding, clearing, or migrating it during development is
+expected and safe. When a smoke test mutates state, a scratch `DATA_DIR` is still tidier, but do
+not block work on preserving the existing data.
+
 ## Sources of truth
 
 Read the relevant doc before changing anything:

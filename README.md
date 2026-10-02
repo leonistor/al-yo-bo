@@ -76,6 +76,21 @@ their page content and vectors automatically when scraping and embeddings are av
 
 ## Usage
 
+Quick orientation:
+
+- **Search** — one box, three modes: **keyword** (FTS5), **semantic**, and **hybrid** (rank fusion);
+  everything is scoped to the active dataset. Press `/` to focus the search.
+- **Capture** — add a URL from the top bar, or import a whole markdown collection file; bookmarks
+  are upserted by URL within a dataset, so re-importing merges instead of duplicating.
+- **Organize** — categories group bookmarks, tags classify them, and the classifier's
+  below-threshold suggestions wait in the **review queue** for a manual accept.
+- **Switch datasets** — datasets are separate workspaces (own bookmarks + vocabulary); seeding one
+  activates it (`bun run db:seed` is the switch mechanism), and the profile's active dataset is what
+  the app serves.
+- **Profile** — the single user's name, GitHub username, and avatar (initials until a file is
+  uploaded) show in the top bar and sidebar.
+- **Chat** — ask the assistant to search and suggest without losing your place in the list.
+
 ### Importing bookmarks from markdown
 
 The main way to get bookmarks in is a markdown collection file. In the UI, use the **Import** button
