@@ -107,7 +107,25 @@ button/scroll-area/spinner upgrade), `@coss/alert-dialog` (consolidated
   `components/assistant-ui/`.
 - Adds `motion` dep.
 
-**Status**: ⏳ pending.
+**Status**: ✅ complete (commit 1c4dace). Execution notes:
+
+- beui `message`, `prompt-input`, `streaming-response`, `agent-activity`
+  installed from `@beui` (vendored under `components/agents/` +
+  `components/motion/` plus a few `lib/` helpers); oxlint `ignorePatterns`
+  carve-out added for the vendored dirs (upstream code style differs).
+- `ChatPanel.tsx` rebuilt on `@ai-sdk/react` `useChat` + `DefaultChatTransport`
+  against the unchanged `POST /api/chat` contract; `searchBookmarks` renders as
+  an agent-activity row, then the library's `BookmarkCard` (now exported; its
+  trash action dismisses a hit from the chat view only, never the library).
+- **Dep deviation from the original bullets**: `ai` stays (transport,
+  `UIMessage` types, `sendAutomaticallyWhen`); dropped `@assistant-ui/*` +
+  `remark-gfm` (`react-markdown` was only transitive); added `@ai-sdk/react`
+  and `motion`.
+- Assistant text renders as plain text (no markdown renderer) — follow-up
+  below if richer output is wanted.
+- Smoke-tested live: the unconfigured/error path (calm inline alert,
+  transcript and composer intact) and the full search → cards → streamed
+  answer path with `llama3.2:latest`.
 
 ### Phase 6 — UI/UX direction + DESIGN.md update
 
@@ -128,7 +146,7 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - After Phase 5, `bun remove radix-ui` from `apps/web`; verify `bun run typecheck`
   + `bun run build`.
 
-**Status**: ⏳ pending (gated on Phase 5).
+**Status**: ✅ complete (commit 5210a4c).
 
 ## Verification gates (after each phase)
 
@@ -139,20 +157,19 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - Browser smoke for visuals: `bun run browser:start` (Playwriter per
   DESIGN.md / AGENTS.md).
 
-## Risks & open questions (revised)
+## Risks & open questions (revised — post-Phase-5 state)
 
-1. **assistant-ui / Base UI compat** — low priority; default partial; likely
-   moot once Phase 5 drops assistant-ui.
+1. **assistant-ui / Base UI compat** — moot: assistant-ui is dropped (1c4dace).
 2. **Sonner → Base UI toast** — coss.com/ui drops Sonner; intentional or keep?
-3. **`cn` package compat with Base UI** — likely fine, verified after the first
-   migration.
-4. **`shadcn/tailwind.css` runtime dep** — base-nova should still use it; verify
-   after style flip.
-5. **Per-component commit cadence** — one commit per migrated component.
-6. **Lombiq `tailwind-4-docs` sync** — needs Python 3.8+ on the dev machine.
-7. **beui.dev + assistant-ui coexistence** — if both end up installed during
-   refactor, mind bundle size; drop assistant-ui as soon as the last non-chat
-   usage is removed.
+   **Still open.**
+3. **`cn` package compat with Base UI** — resolved during Phase 3 (typecheck +
+   lint clean).
+4. **`shadcn/tailwind.css` runtime dep** — resolved in Phase 3 (base-nova
+   builds green).
+5. **Per-component commit cadence** — followed throughout.
+6. **Lombiq `tailwind-4-docs` sync** — done (Phase 0).
+7. **beui.dev + assistant-ui coexistence** — moot: both never coexisted; the
+   beui rebuild removed assistant-ui in the same change.
 
 ## Execution order
 
@@ -161,8 +178,9 @@ follow-ups are the 7 next actions in `docs/UI-UX-DIRECTION.md`.
 - Phase 4 / 5 can run in parallel after Phase 3 if scope allows.
 - **Actual sequencing**: Phase 6's doc side (39ac863) landed mid-Phase-4, ahead
   of Phase 5 — intentional, since it was doc-only. Its "concrete pages"
-  follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Remaining
-  order: Phase 4 leftovers → Phase 5 → final cleanup.
+  follow-ups are the next actions in `docs/UI-UX-DIRECTION.md`. Phase 5 and
+  the final cleanup have since landed (1c4dace, 5210a4c). Remaining: the
+  Phase 4 leftovers (`@coss/field`, `@coss/table`).
 
 ## Audit summary (drives Phase 4 picks)
 
@@ -182,7 +200,7 @@ Captured in `docs/UI-UX-DIRECTION.md`.
   no virtualization. BookmarkList, ImportPage rows, ClassifierSuggestions.
 - Tables: zero. (DESIGN.md promises one; `ui/table.tsx` doesn't exist.)
 - assistant-ui surface: `ChatPanel.tsx` renders `Thread`, `Composer`,
-  `ActionBar`, etc.
+  `ActionBar`, etc. (replaced by the beui chat in Phase 5).
 
 **Dead installed primitives (zero imports)**: `command` (cmdk, now replaced),
 `popover`, `collapsible`, `card` (now revived), `input-group`.
@@ -203,17 +221,20 @@ Captured in `docs/UI-UX-DIRECTION.md`.
 
 ## Status snapshot
 
-- 26 commits on `main` since the plan was approved.
-- All apps/web workspaces typecheck clean.
-- Lint clean (pre-existing warnings + 2 new `react-perf(jsx-no-jsx-as-prop)` hints
-  on `render={<X/>}` polymorphic usage — acceptable; memoize later if it shows
-  in profiling).
+- 30 commits on `main` since the plan was approved (as of this update).
+- All workspaces typecheck clean; lint green (warnings only — pre-existing
+  `react-perf` hints plus 2 new ones on `ChatPanel.tsx`, same acceptable
+  category); build green.
+- Deps now: `@assistant-ui/*`, `remark-gfm`, `cmdk`, and `radix-ui` all
+  removed (`react-markdown` was only transitive); `@ai-sdk/react@^4.0.130`
+  and `motion@^13.5.0` added; `ai@^7.0.127` stays (transport, `UIMessage`
+  types, `sendAutomaticallyWhen`).
+- beui primitives vendored under `apps/web/src/components/agents/` +
+  `apps/web/src/components/motion/` (+ small `lib/` helpers), excluded from
+  lint via `.oxlintrc.json` `ignorePatterns`.
+- `components/assistant-ui/` and `hooks/use-attachment-src.ts` deleted.
 - 13 migration reports in `.migration/` (Phase 3 base-ui ports + Phase 4 coss
   adoptions).
-- `cmdk` dep removed from `apps/web/package.json`.
-- `@radix-ui/*` deps gone from source; the unified `radix-ui@^1.6.7` stays
-  (declared directly in apps/web, also pulled transitively by assistant-ui)
-  until Phase 5.
 
 ## Outstanding refactors (surfaced for follow-up)
 
@@ -230,9 +251,10 @@ Captured in `docs/UI-UX-DIRECTION.md`.
    `<Select>`-as-action-trigger anti-pattern).
 8. **Command palette wiring** (`Cmd/Ctrl+K` → coss command modal — search +
    category/tag jumps + recent queries).
-9. **Phase 5** beui chat replacement (drop `@assistant-ui/react` + the
-   now-unused `radix-ui` transitive dep).
-10. **Final cleanup** `bun remove radix-ui`.
+9. **Markdown rendering for assistant chat text** — plain text today; decide
+   whether to add a lightweight renderer (model answers are markdown-ish).
+10. **Chat "cite" action** — DESIGN.md §Chat lists copy/cite/open as always
+    available; beui `citations.tsx` is installed but not wired.
 
 ## Source files referenced
 
@@ -242,4 +264,6 @@ Captured in `docs/UI-UX-DIRECTION.md`.
   DESIGN > README).
 - `apps/web/components.json` — `base-nova` style + `@coss` / `@beui` registries.
 - `apps/web/src/components/ui/*` — 26 base-ui + coss wrappers (was 22 stock).
-- `.migration/*.md` — per-component migration reports (8 files).
+- `apps/web/src/components/agents/*` + `components/motion/*` — vendored beui
+  primitives (Phase 5 chat surface).
+- `.migration/*.md` — per-component migration reports (13 files).

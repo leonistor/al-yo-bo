@@ -147,9 +147,9 @@ DESIGN.md to reflect the base-ui + coss/beui + beui-chat reality.
    `@coss/dialog`, `@coss/sheet`, `@coss/alert-dialog`, `@coss/card`,
    `@coss/empty`, `@coss/table` for ImportPage, `@coss/command` to replace the
    dead `ui/command.tsx`).
-3. **Phase 5** — replace assistant-ui chat surface with beui.dev primitives
-   (`message-bubble`, `prompt-input`, `streaming-response`, `agent-activity`).
-   Drop `@assistant-ui/react` and the now-unused `radix-ui` transitive dep.
+3. **Phase 5** — done (commit 1c4dace). Chat surface rebuilt on beui
+   primitives (`message`, `prompt-input`, `streaming-response`,
+   `agent-activity`); `@assistant-ui/*` and `radix-ui` dropped.
 4. **List keyboard navigation** — `BookmarkList.tsx` roving tabindex + arrows.
 5. **Top bar redesign** — search-hero layout with consolidated Create + account
    menus.
