@@ -104,6 +104,10 @@ interface BookmarkListProps {
   onAdd: () => void;
   onImport: () => void;
   onClearFilters: () => void;
+  /** Active tag filter; renders the matching pill as `selected`. */
+  selectedTagId?: string | null;
+  /** Toggles the tag filter when a row pill is clicked. */
+  onTagClick?: (tagId: string) => void;
 }
 
 /** Skeleton mirroring the real card anatomy so loading doesn't shift layout. */
@@ -141,11 +145,35 @@ function CardSkeleton({ layout }: { layout: Layout }) {
   );
 }
 
+interface BookmarkTagPillProps {
+  tag: BookmarkWithTags['tags'][number];
+  selected: boolean;
+  onTagClick?: (tagId: string) => void;
+}
+
+/** Interactive row tag; keeps its click handler stable inside the memoized card. */
+function BookmarkTagPill({ tag, selected, onTagClick }: BookmarkTagPillProps) {
+  const handleClick = useCallback(() => onTagClick?.(tag.tagId), [onTagClick, tag.tagId]);
+
+  return (
+    <TagPill
+      variant={selected ? 'selected' : 'outline'}
+      onClick={onTagClick ? handleClick : undefined}
+    >
+      {tag.name}
+    </TagPill>
+  );
+}
+
 interface BookmarkCardProps {
   bookmark: BookmarkWithTags;
   layout: Layout;
   onOpen: (bookmark: BookmarkWithTags) => void;
   onDelete: (bookmark: BookmarkWithTags) => void;
+  /** Active tag filter; renders the matching pill as `selected`. */
+  selectedTagId?: string | null;
+  /** Toggles the tag filter when a row pill is clicked. */
+  onTagClick?: (tagId: string) => void;
   /** Active in the roving-focus list; defaults to true for standalone usage. */
   active?: boolean;
   /** Index within the list; used for stagger animation. */
@@ -165,6 +193,8 @@ export const BookmarkCard = memo(function BookmarkCard({
   layout,
   onOpen,
   onDelete,
+  selectedTagId,
+  onTagClick,
   active,
   index,
   listItem,
@@ -248,9 +278,12 @@ export const BookmarkCard = memo(function BookmarkCard({
         {bookmark.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {bookmark.tags.map((tag) => (
-              <TagPill key={tag.tagId} variant="outline">
-                {tag.name}
-              </TagPill>
+              <BookmarkTagPill
+                key={tag.tagId}
+                tag={tag}
+                selected={selectedTagId === tag.tagId}
+                onTagClick={onTagClick}
+              />
             ))}
           </div>
         )}
@@ -278,6 +311,8 @@ export function BookmarkList({
   onAdd,
   onImport,
   onClearFilters,
+  selectedTagId,
+  onTagClick,
 }: BookmarkListProps) {
   const [activeId, setActiveId] = useState<string | null>(items[0]?.id ?? null);
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -441,6 +476,8 @@ export function BookmarkList({
           listItem
           onOpen={onOpen}
           onDelete={onDelete}
+          selectedTagId={selectedTagId}
+          onTagClick={onTagClick}
           onKeyDown={handleCardKeyDown}
         />
       ))}

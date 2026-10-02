@@ -30,6 +30,19 @@ interface ResultsToolbarProps {
   onRefresh: () => void;
 }
 
+/** Sort options fold direction in (DESIGN.md §Results toolbar). */
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'created_at:desc', label: 'Newest first' },
+  { value: 'created_at:asc', label: 'Oldest first' },
+  { value: 'updated_at:desc', label: 'Recently updated' },
+  { value: 'title:asc', label: 'Title A–Z' },
+  { value: 'title:desc', label: 'Title Z–A' },
+];
+
+function isBookmarkSort(value: string): value is BookmarkSort {
+  return value === 'created_at' || value === 'updated_at' || value === 'title';
+}
+
 export function ResultsToolbar({
   total,
   loading,
@@ -49,16 +62,23 @@ export function ResultsToolbar({
 
   const handleSortChange = useCallback(
     (value: string | null) => {
-      if (value !== null) onSortChange(value as BookmarkSort);
+      if (value === null) {
+        return;
+      }
+      const [nextSort, nextDirection] = value.split(':');
+      if (nextSort === undefined || nextDirection === undefined) {
+        return;
+      }
+      if (!isBookmarkSort(nextSort)) {
+        return;
+      }
+      if (nextDirection !== 'asc' && nextDirection !== 'desc') {
+        return;
+      }
+      onSortChange(nextSort);
+      onDirectionChange(nextDirection);
     },
-    [onSortChange],
-  );
-
-  const handleDirectionChange = useCallback(
-    (value: string | null) => {
-      if (value !== null) onDirectionChange(value as 'asc' | 'desc');
-    },
-    [onDirectionChange],
+    [onSortChange, onDirectionChange],
   );
 
   const selectListLayout = useCallback(() => onLayoutChange('list'), [onLayoutChange]);
@@ -95,27 +115,16 @@ export function ResultsToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        <Select value={sort} onValueChange={handleSortChange}>
-          <SelectTrigger className="w-32 sm:w-36" aria-label="Sort by">
+        <Select value={`${sort}:${direction}`} onValueChange={handleSortChange}>
+          <SelectTrigger className="w-36 sm:w-40" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="created_at">Newest first</SelectItem>
-            <SelectItem value="updated_at">Recently updated</SelectItem>
-            <SelectItem value="title">Title</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={direction}
-          onValueChange={handleDirectionChange}
-        >
-          <SelectTrigger className="w-28" aria-label="Sort direction">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="desc">Descending</SelectItem>
-            <SelectItem value="asc">Ascending</SelectItem>
+            {SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

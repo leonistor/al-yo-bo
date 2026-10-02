@@ -16,17 +16,22 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { Theme } from '@/lib/useTheme';
 
-interface TopbarAccountMenuProps {
+interface SidebarAccountMenuProps {
   profile: Profile | null;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
 }
 
-export function TopbarAccountMenu({
+/**
+ * Profile + theme menu (DESIGN.md §Sidebar info architecture: the sidebar footer
+ * — not the topbar — owns Profile & theme). The compact avatar trigger keeps the
+ * rail-width footer usable; the dropdown carries the identity and theme radios.
+ */
+export function SidebarAccountMenu({
   profile,
   theme,
   onThemeChange,
-}: TopbarAccountMenuProps) {
+}: SidebarAccountMenuProps) {
   const handleThemeChange = useCallback(
     (value: string) => {
       if (value === 'light' || value === 'dark' || value === 'system') {
@@ -44,20 +49,16 @@ export function TopbarAccountMenu({
         render={
           <Button
             variant="ghost"
-            className="gap-2 px-1.5"
+            size="icon"
+            className="justify-start"
             aria-label="Account and theme"
           />
         }
       >
-        {displayName && (
-          <span className="hidden text-sm text-muted-foreground lg:inline">
-            {displayName}
-          </span>
-        )}
         {profile ? (
-          <ProfileAvatar profile={profile} className="size-8" />
+          <ProfileAvatar profile={profile} className="size-6" />
         ) : (
-          <UserIcon className="size-8 rounded-full bg-muted p-1.5 text-muted-foreground" />
+          <UserIcon className="size-6 rounded-full bg-muted p-1 text-muted-foreground" />
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">

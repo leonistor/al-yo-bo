@@ -1,45 +1,37 @@
-import { MenuIcon, MessageSquareIcon } from 'lucide-react';
+import { MenuIcon, MessageSquareIcon, PlusIcon } from 'lucide-react';
 import type { RefObject } from 'react';
 
-import type { Profile, SearchMode } from '@al-yo-bo/shared';
+import type { SearchMode } from '@al-yo-bo/shared';
 
 import { Button } from '@/components/ui/button';
-import type { Theme } from '@/lib/useTheme';
 
-import { TopbarAccountMenu } from './TopbarAccountMenu';
-import { TopbarCreateButton } from './TopbarCreateButton';
 import { TopbarSearch } from './TopbarSearch';
 
 interface TopbarProps {
   query: string;
   mode: SearchMode;
-  theme: Theme;
-  /** The single user's profile; null while loading or on a fetch error. */
-  profile: Profile | null;
   searchRef: RefObject<HTMLInputElement | null>;
   chatOpen: boolean;
   onQueryChange: (value: string) => void;
   onModeChange: (mode: SearchMode) => void;
-  onThemeChange: (theme: Theme) => void;
   onAdd: () => void;
-  onImport: () => void;
   onToggleChat: () => void;
   /** Below md the sidebar is hidden; this opens it as an off-canvas sheet. */
   onOpenNav: () => void;
 }
 
+/**
+ * Command bar — content header row 1 (DESIGN.md §Command bar). Owns search and
+ * the chat/Add actions only; navigation and the account menu live in the sidebar.
+ */
 export function Topbar({
   query,
   mode,
-  theme,
-  profile,
   searchRef,
   chatOpen,
   onQueryChange,
   onModeChange,
-  onThemeChange,
   onAdd,
-  onImport,
   onToggleChat,
   onOpenNav,
 }: TopbarProps) {
@@ -86,12 +78,10 @@ export function Topbar({
         Chat
       </Button>
 
-      <TopbarCreateButton onAdd={onAdd} onImport={onImport} />
-      <TopbarAccountMenu
-        profile={profile}
-        theme={theme}
-        onThemeChange={onThemeChange}
-      />
+      <Button onClick={onAdd} aria-label="Add bookmark">
+        <PlusIcon data-icon="inline-start" />
+        <span className="hidden sm:inline">Add</span>
+      </Button>
     </header>
   );
 }

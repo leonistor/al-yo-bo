@@ -12,8 +12,8 @@ import type {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { AddBookmarkDialog } from '@/components/AddBookmarkDialog';
-import { BookmarkDetailDialog } from '@/components/BookmarkDetailDialog';
+import { AddBookmarkSheet } from '@/components/AddBookmarkSheet';
+import { BookmarkDetailSheet } from '@/components/BookmarkDetailSheet';
 import { BookmarkList } from '@/components/BookmarkList';
 import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -40,7 +40,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
-import { VocabDialog } from '@/components/VocabDialog';
+import { VocabularyPage } from '@/components/VocabularyPage';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
   acceptCandidate,
@@ -58,6 +58,7 @@ import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
 import { useLayout } from '@/lib/useLayout';
 import type { Layout } from '@/lib/useLayout';
+import { useSidebar } from '@/lib/useSidebar';
 import { useTheme } from '@/lib/useTheme';
 import { addRecentQuery, getRecentQueries } from '@/lib/recent-queries';
 
@@ -85,6 +86,8 @@ interface BookmarkListCrossfadeProps {
   onAdd: () => void;
   onImport: () => void;
   onClearFilters: () => void;
+  selectedTagId: string | null;
+  onTagClick: (tagId: string) => void;
 }
 
 /**
@@ -108,6 +111,8 @@ function BookmarkListCrossfade({
   onAdd,
   onImport,
   onClearFilters,
+  selectedTagId,
+  onTagClick,
 }: BookmarkListCrossfadeProps) {
   const [activeSlot, setActiveSlot] = useState(0);
   const [slots, setSlots] = useState<
@@ -196,6 +201,8 @@ function BookmarkListCrossfade({
               onAdd={onAdd}
               onImport={onImport}
               onClearFilters={onClearFilters}
+              selectedTagId={selectedTagId}
+              onTagClick={onTagClick}
             />
           </div>
         );
@@ -248,12 +255,20 @@ export function App() {
 
   const [layout, setLayout] = useLayout();
   const [theme, setTheme] = useTheme();
+  const {
+    width: sidebarWidth,
+    collapsed: sidebarCollapsed,
+    openSections,
+    setWidth: setSidebarWidth,
+    setCollapsed: setSidebarCollapsed,
+    toggleCollapsed: toggleSidebar,
+    setOpenSection: setSidebarOpenSection,
+  } = useSidebar();
 
   const [selected, setSelected] = useState<BookmarkWithTags | null>(null);
   const [pendingDelete, setPendingDelete] = useState<BookmarkWithTags | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [vocabOpen, setVocabOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -263,7 +278,6 @@ export function App() {
   const listScrollRef = useRef<HTMLDivElement | null>(null);
 
   const isTablet = useMediaQuery('(min-width: 768px)');
-  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const queryClient = useQueryClient();
 
@@ -290,6 +304,13 @@ export function App() {
         return;
       }
 
+      // Cmd/Ctrl+B toggles the sidebar even while typing, same reason as Cmd+K.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
       if (event.key === '/' && !typing) {
         event.preventDefault();
         searchRef.current?.focus();
@@ -310,7 +331,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [chatOpen, commandOpen]);
+  }, [chatOpen, commandOpen, toggleSidebar]);
 
   // A page change renders a fresh batch; don't leave the user scrolled mid-list.
   useEffect(() => {
@@ -446,7 +467,7 @@ export function App() {
   const closeNav = useCallback(() => setNavOpen(false), []);
   const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
   const goImport = useCallback(() => navigate('import'), []);
-  const openVocab = useCallback(() => setVocabOpen(true), []);
+  const goVocabulary = useCallback(() => navigate('vocabulary'), []);
 
   const onModeChange = useCallback((next: SearchMode) => {
     setMode(next);
@@ -460,6 +481,12 @@ export function App() {
 
   const onSelectTag = useCallback((id: string | null) => {
     setTagId(id);
+    setPage(0);
+  }, []);
+
+  // Row tag pills toggle the active tag filter without leaving the library.
+  const onTagClick = useCallback((id: string) => {
+    setTagId((current) => (current === id ? null : id));
     setPage(0);
   }, []);
 
@@ -578,39 +605,45 @@ export function App() {
   const sidebarProps = {
     aggregates,
     profile,
+    theme,
     view,
     selectedCategoryId: categoryId,
     selectedTagId: tagId,
     reviewCount,
+    openSections,
+    onSetOpenSection: setSidebarOpenSection,
     // Both library and review live under the library route; picking either
     // from the nav must leave the import page.
     onSelectView,
     onSelectCategory,
     onSelectTag,
-    onManageVocabulary: openVocab,
+    onThemeChange: setTheme,
+    onNavigateImport: goImport,
+    onNavigateVocabulary: goVocabulary,
   };
 
   return (
     <div className="flex h-dvh bg-background text-foreground">
-      {isDesktop ? (
-        <Sidebar {...sidebarProps} />
-      ) : isTablet ? (
-        <Sidebar {...sidebarProps} variant="rail" onOpenNav={openNav} />
-      ) : null}
+      {isTablet && (
+        <Sidebar
+          {...sidebarProps}
+          collapsed={sidebarCollapsed}
+          width={sidebarWidth}
+          onToggleCollapse={toggleSidebar}
+          onSetWidth={setSidebarWidth}
+          onSetCollapsed={setSidebarCollapsed}
+        />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           query={query}
           mode={mode}
-          theme={theme}
-          profile={profile}
           searchRef={searchRef}
           chatOpen={chatOpen}
           onQueryChange={setQuery}
           onModeChange={onModeChange}
-          onThemeChange={setTheme}
           onAdd={openAdd}
-          onImport={goImport}
           onToggleChat={toggleChat}
           onOpenNav={openNav}
         />
@@ -618,6 +651,12 @@ export function App() {
         <main className="flex min-h-0 flex-1 gap-3 p-4">
           {route === 'import' ? (
             <ImportPage onCommitted={onImportCommitted} />
+          ) : route === 'vocabulary' ? (
+            <VocabularyPage
+              categories={categories}
+              sections={sections}
+              onChanged={onVocabChanged}
+            />
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -654,6 +693,8 @@ export function App() {
                         onAdd={openAdd}
                         onImport={goImport}
                         onClearFilters={clearFilters}
+                        selectedTagId={tagId}
+                        onTagClick={onTagClick}
                       />
                     </div>
 
@@ -705,7 +746,7 @@ export function App() {
         </main>
       </div>
 
-      {/* Full navigation, off-canvas below md (topbar menu / rail button). */}
+      {/* Full navigation, off-canvas below md (topbar menu button). */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetContent side="left" className="gap-0 p-0">
           <SheetHeader className="border-b">
@@ -757,20 +798,13 @@ export function App() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AddBookmarkDialog
+      <AddBookmarkSheet
         open={addOpen}
         categories={categories}
         onOpenChange={setAddOpen}
         onCreated={reload}
       />
-      <VocabDialog
-        open={vocabOpen}
-        categories={categories}
-        sections={sections}
-        onOpenChange={setVocabOpen}
-        onChanged={onVocabChanged}
-      />
-      <BookmarkDetailDialog
+      <BookmarkDetailSheet
         bookmark={selected}
         categories={categories}
         tags={tags}
