@@ -12,8 +12,7 @@ import { toast } from 'sonner';
 
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
+  AlertDialogClose,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -22,7 +21,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +49,7 @@ import {
   updateBookmark,
 } from '@/lib/client';
 import { formatDate, hostOf } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface ScrapeLastError {
   at?: number;
@@ -425,8 +425,15 @@ export function BookmarkDetailDialog({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={remove}>Delete</AlertDialogAction>
+                <AlertDialogClose className={cn(buttonVariants({ variant: "outline" }))}>
+                  Cancel
+                </AlertDialogClose>
+                <AlertDialogClose
+                  onClick={remove}
+                  className={cn(buttonVariants({ variant: "destructive" }))}
+                >
+                  Delete
+                </AlertDialogClose>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

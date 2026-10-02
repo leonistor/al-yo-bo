@@ -22,15 +22,14 @@ import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
+  AlertDialogClose,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
@@ -54,6 +53,7 @@ import {
   fetchTags,
 } from '@/lib/client';
 import { navigate, useRoute } from '@/lib/router';
+import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
 import { useLayout } from '@/lib/useLayout';
 import { useTheme } from '@/lib/useTheme';
@@ -540,8 +540,15 @@ export function App() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onDeleteConfirmed}>Delete</AlertDialogAction>
+            <AlertDialogClose className={cn(buttonVariants({ variant: "outline" }))}>
+              Cancel
+            </AlertDialogClose>
+            <AlertDialogClose
+              onClick={onDeleteConfirmed}
+              className={cn(buttonVariants({ variant: "destructive" }))}
+            >
+              Delete
+            </AlertDialogClose>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
