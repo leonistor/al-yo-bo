@@ -1,8 +1,9 @@
 {
   "$comment": "Real bookmark collections from Leo's personal Zen archive — a five-file representative sample. Not project content.",
   "source": "docs/examples-mds/",
-  "extractedAt": "2026-10-01T18:17:09.387Z",
+  "extractedAt": "2026-10-02T06:37:54.073Z",
   "dataset": "leo",
+  "profileName": "leo",
   "categories": [
     "AI",
     "AI design",
@@ -1325,6 +1326,21 @@
       }
     },
     {
+      "url": "https://lilex.myrt.co/",
+      "title": "Lilex — Free Monospaced Font with Ligatures for Developers",
+      "description": "Lilex — Free Monospaced Font with Ligatures for Developers",
+      "category": "fonts",
+      "tags": [],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "collect-Sep-20.md",
+          "category": "fonts",
+          "priority": 3
+        }
+      }
+    },
+    {
       "url": "https://vercel.com/font?type=mono#get",
       "title": "Geist Font",
       "description": "Geist Font",
@@ -2166,6 +2182,23 @@
       }
     },
     {
+      "url": "https://jstack.app/docs/getting-started/first-steps",
+      "title": "JStack - Full-Stack Next.js & TypeScript Toolkit",
+      "description": "JStack - Full-Stack Next.js & TypeScript Toolkit",
+      "category": "next.js",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "imported-react.md",
+          "category": "next.js",
+          "priority": null
+        }
+      }
+    },
+    {
       "url": "https://blog.6nok.org/building-a-semantic-movie-search-demo-with-pgvector-and-next.js/",
       "title": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
       "description": "Building a semantic movie search demo with pgvector and Next.js | Fatih's Personal Blog",
@@ -2693,6 +2726,23 @@
       }
     },
     {
+      "url": "https://freedium.cfd/https://leapcell.medium.com/simplifying-rust-error-handling-with-thiserror-02e65911f2a0",
+      "title": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
+      "description": "Simplifying Rust Error Handling with Thiserror | by Leapcell - Freedium",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "category": "utils",
+          "priority": null
+        }
+      }
+    },
+    {
       "url": "https://crates.io/crates/cargo-make",
       "title": "cargo-make - crates.io: Rust Package Registry",
       "description": "cargo-make - crates.io: Rust Package Registry",
@@ -2713,6 +2763,23 @@
       "url": "https://docs.rs/itertools/latest/itertools/structs/index.html",
       "title": "itertools::structs - Rust",
       "description": "itertools::structs - Rust",
+      "category": "utils",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "category": "utils",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://freedium.cfd/https://medium.com/@sagiegurari/automating-your-rust-workflows-with-cargo-make-part-1-of-5-introduction-and-basics-b19ced7e7057",
+      "title": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
+      "description": "Automating your Rust workflows with cargo-make - Part 1 of 5 - Introduction and Basics | by Sagie Gur-Ari - Freedium",
       "category": "utils",
       "tags": [
         "imported"
@@ -3325,6 +3392,23 @@
       "url": "https://sebszyller.com/blog/2024/rustwithllmsneedleinhaystack",
       "title": "Learning Rust with Large Language Models (Part III)",
       "description": "Learning Rust with Large Language Models (Part III)",
+      "category": "Rust web",
+      "tags": [
+        "imported"
+      ],
+      "createdAt": 1790826683000,
+      "metadata": {
+        "import": {
+          "file": "rust.md",
+          "category": "Rust web",
+          "priority": null
+        }
+      }
+    },
+    {
+      "url": "https://prompthive.sh/",
+      "title": "PromptHive - Lightning-fast open source prompt manager",
+      "description": "PromptHive - Lightning-fast open source prompt manager",
       "category": "Rust web",
       "tags": [
         "imported"

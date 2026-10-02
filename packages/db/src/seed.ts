@@ -96,6 +96,12 @@ interface SeedBookmark {
 interface SeedFile {
   /** Dataset name the fixture loads into (created on demand). */
   dataset: string;
+  /**
+   * Optional identity for the singleton profile (e.g. "leo"). Set when the
+   * fixture represents the single user's own collection; synthetic demo
+   * fixtures (grimoire) omit it and leave the profile name untouched.
+   */
+  profileName?: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
@@ -145,6 +151,11 @@ export function seedFromFile(db: Database, filePath = DEFAULT_SEED_PATH): SeedRe
   };
 
   const insideTransaction = db.transaction(() => {
+    if (seed.profileName) {
+      // The fixture names the user (identity), not just the dataset (content
+      // workspace) — MODEL.md keeps the two orthogonal, so seed both.
+      updateProfile(db, { name: seed.profileName });
+    }
     const existing = getDatasetByName(db, seed.dataset);
     const dataset = existing ?? createDataset(db, seed.dataset);
     report.datasetId = dataset.id;

@@ -413,11 +413,13 @@ describe('seed fixture', () => {
     const db = freshDb();
 
     const report = seedFromFile(db);
-    expect(report.bookmarksAdded).toBe(212);
+    expect(report.bookmarksAdded).toBe(217);
     expect(report.categoriesCreated).toBe(40);
     expect(report.tagsCreated).toBe(1);
-    expect(report.assignments).toBe(114);
-    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(212);
+    expect(report.assignments).toBe(118);
+    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(217);
+    // The fixture names the user; seeding must set the profile identity too.
+    expect(getProfile(db)?.name).toBe('leo');
   });
 
   test('resolves the leo dataset by default and both datasets by name', () => {

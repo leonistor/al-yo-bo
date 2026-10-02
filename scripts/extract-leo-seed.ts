@@ -39,6 +39,8 @@ interface SeedFile {
   source: string;
   extractedAt: string;
   dataset: string;
+  /** Names the singleton profile — this fixture IS the user's collection. */
+  profileName: string;
   categories: string[];
   tags: string[];
   bookmarks: SeedBookmark[];
@@ -91,6 +93,7 @@ const seed: SeedFile = {
   source: 'docs/examples-mds/',
   extractedAt: new Date().toISOString(),
   dataset: 'leo',
+  profileName: 'leo',
   categories,
   tags,
   bookmarks,
