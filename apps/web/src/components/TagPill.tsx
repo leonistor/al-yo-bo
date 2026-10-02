@@ -36,6 +36,8 @@ const tagPillVariants = cva(
 export interface TagPillProps extends Omit<ComponentProps<'span'>, 'onClick' | 'ref'> {
   /** Tag name. */
   children: ReactNode;
+  /** Accessible name for the remove button when children are not plain text. */
+  name?: string;
   /** Optional count rendered inside the pill (sidebar tag groups). */
   count?: number;
   /** Makes the pill clickable (filters by tag). */
@@ -55,6 +57,7 @@ export interface TagPillProps extends Omit<ComponentProps<'span'>, 'onClick' | '
 export function TagPill({
   children,
   count,
+  name,
   onClick,
   onRemove,
   size,
@@ -88,7 +91,7 @@ export function TagPill({
       {isRemovable && (
         <button
           type="button"
-          aria-label={`Remove ${typeof children === 'string' ? children : 'tag'}`}
+          aria-label={`Remove ${name ?? (typeof children === 'string' ? children : 'tag')}`}
           onClick={handleRemove}
           className="-mr-0.5 inline-flex size-3.5 cursor-pointer items-center justify-center rounded-full text-current/70 transition-colors hover:bg-foreground/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
