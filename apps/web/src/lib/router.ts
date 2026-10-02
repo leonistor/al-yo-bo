@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Minimal hash router — two routes, no dependency.
- * `#/` (or no hash) is the library shell; `#/import` is the import page.
- * The review queue stays an in-app view under the library route.
+ * Minimal hash router — three routes, no dependency.
+ * `#/` (or no hash) is the library shell; `#/import` and `#/vocabulary` are
+ * in-shell pages. The review queue stays an in-app view under the library route.
  */
-export type Route = 'library' | 'import';
+export type Route = 'library' | 'import' | 'vocabulary';
+
+const ROUTES: Route[] = ['library', 'import', 'vocabulary'];
 
 function parseHash(hash: string): Route {
-  return hash.replace(/^#\/?/, '') === 'import' ? 'import' : 'library';
+  const candidate = hash.replace(/^#\/?/, '');
+  return ROUTES.find((route) => route === candidate) ?? 'library';
 }
 
 export function getRoute(): Route {
@@ -16,7 +19,7 @@ export function getRoute(): Route {
 }
 
 export function navigate(route: Route): void {
-  window.location.hash = route === 'import' ? '/import' : '/';
+  window.location.hash = route === 'library' ? '/' : `/${route}`;
 }
 
 /** Reactive route state; re-renders on `hashchange` (nav links, back/forward). */
