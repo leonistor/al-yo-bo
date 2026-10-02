@@ -151,7 +151,9 @@ CREATE INDEX categories_section ON categories(section_id);
 
 ### `bookmarks`
 
-The core record: URL plus scraped and user-provided content.
+The core record: URL plus scraped and user-provided content. URL uniqueness is **per dataset**
+(`(dataset_id, url)`): the same page may be collected in two workspaces, and an import into one
+dataset never updates a bookmark living in another.
 
 ```sql
 CREATE TABLE bookmarks (
@@ -174,7 +176,7 @@ CREATE TABLE bookmarks (
   updated_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
 
-CREATE UNIQUE INDEX bookmarks_url_unique ON bookmarks(url);
+CREATE UNIQUE INDEX bookmarks_dataset_url_unique ON bookmarks(dataset_id, url);
 CREATE INDEX bookmarks_dataset ON bookmarks(dataset_id);
 CREATE INDEX bookmarks_category ON bookmarks(category_id);
 ```

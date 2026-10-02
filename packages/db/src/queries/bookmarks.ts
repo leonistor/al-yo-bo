@@ -144,11 +144,15 @@ export function getBookmarkById(db: Database, id: string): Bookmark | null {
   return row ? mapBookmark(row) : null;
 }
 
-export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
-  const row = prepared<BookmarkRow, [string]>(
+/**
+ * URL lookup scoped to one dataset (the unique index is `(dataset_id, url)`
+ * since migration 0008 — the same URL may exist in different datasets).
+ */
+export function getBookmarkByUrl(db: Database, datasetId: string, url: string): Bookmark | null {
+  const row = prepared<BookmarkRow, [Uint8Array, string]>(
     db,
-    `SELECT ${COLUMNS} FROM bookmarks WHERE url = ?`,
-  ).get(normalizeUrl(url));
+    `SELECT ${COLUMNS} FROM bookmarks WHERE dataset_id = ? AND url = ?`,
+  ).get(uuidToBytes(datasetId), normalizeUrl(url));
   return row ? mapBookmark(row) : null;
 }
 
@@ -237,12 +241,16 @@ export function updateBookmark(
   return getBookmarkById(db, id);
 }
 
-/** Idempotent upsert keyed on the normalized URL. */
+/**
+ * Idempotent upsert keyed on the normalized URL **within the input's dataset**
+ * — imports into dataset A never touch a bookmark with the same URL in
+ * dataset B.
+ */
 export function upsertBookmarkByUrl(
   db: Database,
   input: BookmarkInput,
 ): { bookmark: Bookmark; created: boolean } {
-  const existing = getBookmarkByUrl(db, input.url);
+  const existing = getBookmarkByUrl(db, input.datasetId, input.url);
   if (!existing) {
     return { bookmark: createBookmark(db, input), created: true };
   }

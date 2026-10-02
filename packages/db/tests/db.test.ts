@@ -43,6 +43,7 @@ import {
   setupDatabase,
   UnknownSeedDatasetError,
   updateBookmark,
+  upsertBookmarkByUrl,
   upsertEmbedding,
 } from '../src/index.ts';
 
@@ -478,6 +479,42 @@ describe('seed fixture', () => {
     expect(report.bookmarksUpdated).toBe(0);
     expect(getAggregates(db, grimoireId).total).toBe(23);
     expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('per-dataset URL uniqueness', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  // Regression: the pre-0008 global UNIQUE(url) made "the same page in two
+  // workspaces" structurally impossible and let an upsert in one dataset
+  // update a bookmark in another.
+  test('the same URL can exist in two datasets and upserts stay scoped', () => {
+    const other = createDataset(db, 'other');
+    const first = upsertBookmarkByUrl(db, {
+      datasetId: db.datasetId,
+      url: 'https://shared.test/page',
+    });
+    const second = upsertBookmarkByUrl(db, {
+      datasetId: other.id,
+      url: 'https://shared.test/page',
+    });
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(true); // threw under the old global index
+    expect(first.bookmark.id).not.toBe(second.bookmark.id);
+
+    // Re-upsert updates in place within its dataset, leaving the other alone.
+    const again = upsertBookmarkByUrl(db, {
+      datasetId: db.datasetId,
+      url: 'https://shared.test/page',
+      title: 'Updated',
+    });
+    expect(again.created).toBe(false);
+    expect(again.bookmark.id).toBe(first.bookmark.id);
+    expect(again.bookmark.title).toBe('Updated');
+    expect(getBookmarkById(db, second.bookmark.id)?.title).toBeNull();
   });
 });
 
