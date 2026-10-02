@@ -10,9 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@assistant-ui/ai-sdk": "^0.0.9",
-    "@assistant-ui/react": "^0.15.23",
-    "@assistant-ui/react-markdown": "^0.14.18",
+    "@ai-sdk/react": "^4.0.130",
     "@base-ui/react": "^1.8.0",
     "@fontsource-variable/work-sans": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -22,11 +20,11 @@
     "cn": "^0.4.0",
     "hono": "^4.13.12",
     "lucide-react": "^1.49.0",
+    "motion": "^13.5.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "remark-gfm": "^4.0.1",
     "shadcn": "^4.21.1",
     "sonner": "^2.0.8",
     "tailwindcss": "^4.3.3",

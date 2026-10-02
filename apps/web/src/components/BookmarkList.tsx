@@ -123,7 +123,7 @@ function CardSkeleton() {
   );
 }
 
-function BookmarkCard({
+export function BookmarkCard({
   bookmark,
   layout,
   onOpen,

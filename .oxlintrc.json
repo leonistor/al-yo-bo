@@ -40,6 +40,7 @@
     ".agents/**",
     "**/routeTree.gen.ts",
     "**/components/ui/**",
-    "**/components/assistant-ui/**"
+    "**/components/agents/**",
+    "**/components/motion/**"
   ]
 }

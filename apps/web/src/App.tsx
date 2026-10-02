@@ -69,7 +69,7 @@ const NO_SECTIONS: Section[] = [];
 const NO_TAGS: Tag[] = [];
 const NO_CANDIDATES: ReviewCandidate[] = [];
 
-/** Chat ships assistant-ui + the AI SDK; keep both out of the initial bundle. */
+/** Chat pulls the AI SDK + beui + motion; keep all of it out of the initial bundle. */
 const ChatPanel = lazy(() =>
   import('@/components/ChatPanel').then((module) => ({ default: module.ChatPanel })),
 );
