@@ -159,10 +159,19 @@ function BookmarkCard({
           <span className="shrink-0 self-center text-xs text-muted-foreground">
             {formatDate(bookmark.createdAt)}
           </span>
-          <Button variant="ghost" size="icon-sm" asChild aria-label={`Open ${title} in a new tab`}>
-            <a href={bookmark.url} target="_blank" rel="noreferrer">
-              <ExternalLinkIcon />
-            </a>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            render={
+              <a
+                href={bookmark.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${title} in a new tab`}
+              />
+            }
+          >
+            <ExternalLinkIcon />
           </Button>
           <Button
             variant="ghost"
