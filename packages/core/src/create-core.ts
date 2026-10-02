@@ -12,6 +12,7 @@ import { createBookmarkService, type BookmarkService } from './services/bookmark
 import { createEnrichmentService, type EnrichmentService } from './services/enrichment.ts';
 import { createHealthService, type HealthService } from './services/health.ts';
 import { createImportService, type ImportService } from './services/import.ts';
+import { createProfileService, type AvatarStore, type ProfileService } from './services/profile.ts';
 import { createReviewService, type ReviewService } from './services/review.ts';
 import { createSearchService, type SearchService } from './services/search.ts';
 import { createVocabularyService, type VocabularyService } from './services/vocabulary.ts';
@@ -30,6 +31,8 @@ export interface CoreDeps {
   screenshot?: ScreenshotClient | null;
   /** Absolute path the screenshot job writes image bytes to. */
   screenshotsDir?: string;
+  /** Avatar write port (data-root file); absent = avatar upload is rejected. */
+  avatarStore?: AvatarStore;
   maxAttempts?: number;
   /**
    * Rebuilds the vector serving stack from SQLite and hot-swaps it. The app edge
@@ -48,6 +51,8 @@ export interface Core {
   import: ImportService;
   enrichment: EnrichmentService;
   health: HealthService;
+  /** The single user's profile (identity + active-dataset pointer). */
+  profile: ProfileService;
   /** The default dataset id (config `defaultDataset`), for routes that need it. */
   defaultDatasetId: string;
   /** Rebuilds FTS rows, then the vector stack via the injected callback (§8). */
@@ -89,6 +94,7 @@ export function createCore(deps: CoreDeps): Core {
     review: createReviewService({ db, config, vector, datasetId: dataset.id }),
     import: createImportService({ db, jobs: enrichment, extract: extract ?? null }),
     enrichment,
+    profile: createProfileService({ db, avatarStore: deps.avatarStore }),
     defaultDatasetId: dataset.id,
     health: createHealthService({
       vector,

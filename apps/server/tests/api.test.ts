@@ -2,7 +2,13 @@ import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import type { ClassifierClient } from '@al-yo-bo/classifier';
-import { ScrapeError, createCore, createVectorProvider, type ScrapeFn } from '@al-yo-bo/core';
+import {
+  ScrapeError,
+  createCore,
+  createVectorProvider,
+  type AvatarStore,
+  type ScrapeFn,
+} from '@al-yo-bo/core';
 import {
   createBookmark,
   getBookmarkById,
@@ -15,6 +21,7 @@ import {
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import type {
   ImportedBookmark,
+  Profile,
   RankedCandidate,
   VectorFilter,
   VectorIndex,
@@ -70,6 +77,7 @@ interface AppOptions {
   embeddings?: EmbeddingClient;
   scrape?: ScrapeFn;
   classifier?: ClassifierClient;
+  avatarStore?: AvatarStore;
   reindex?: () => Promise<{ vectorBackend: 'qdrant' | 'memory' }>;
 }
 
@@ -89,6 +97,7 @@ function buildApp(db: Database & { datasetId: string }, options: AppOptions = {}
     embeddings: options.embeddings,
     classifier: options.classifier,
     scrape: options.scrape,
+    avatarStore: options.avatarStore,
     reindex: options.reindex,
   });
   return { db, core, config, app: createApp(core, config) };
@@ -594,5 +603,80 @@ describe('review API', () => {
     const { app } = makeApp();
     const candidates = await app.request('/api/review/candidates');
     expect(((await candidates.json()) as unknown[]).length).toBe(0);
+  });
+});
+
+describe('profile API', () => {
+  test('returns the singleton profile', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/profile');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Profile;
+    expect(body.id).toBe('00000000-0000-0000-0000-000000000000');
+    expect(body.name).toBeNull();
+    expect(body.activeDatasetId).toBeNull();
+  });
+
+  test('patches identity fields and normalizes the GitHub username', async () => {
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/profile',
+      jsonRequest({ name: 'Leo', githubUsername: '@leonistor' }, 'PATCH'),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Profile;
+    expect(body.name).toBe('Leo');
+    // People type "@user"; the API contract promises the bare username.
+    expect(body.githubUsername).toBe('leonistor');
+  });
+
+  test('rejects an activeDatasetId that does not reference a dataset', async () => {
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/profile',
+      jsonRequest({ activeDatasetId: '00000000-0000-7000-8000-000000000000' }, 'PATCH'),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  test('accepts an avatar upload through the injected store', async () => {
+    const stored: string[] = [];
+    const { app, db } = makeApp({
+      avatarStore: async (file) => {
+        stored.push(file.ext);
+        return `avatar.${file.ext}`;
+      },
+    });
+
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const form = new FormData();
+    form.append('avatar', new File([png], 'me.png', { type: 'image/png' }));
+    const response = await app.request('/api/profile/avatar', { method: 'POST', body: form });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Profile;
+    expect(body.avatarPath).toBe('avatar.png');
+    expect(stored).toEqual(['png']);
+    expect(db.query('SELECT avatar_path FROM profile').get()).toEqual({ avatar_path: 'avatar.png' });
+  });
+
+  test('rejects uploads that are not JPEG/PNG images', async () => {
+    const { app } = makeApp({
+      avatarStore: async () => {
+        throw new Error('store must not be called');
+      },
+    });
+
+    const form = new FormData();
+    const junk = new TextEncoder().encode('not an image');
+    form.append('avatar', new File([junk], 'x.txt'));
+    const bad = await app.request('/api/profile/avatar', { method: 'POST', body: form });
+    expect(bad.status).toBe(400);
+
+    const missing = await app.request('/api/profile/avatar', {
+      method: 'POST',
+      body: new FormData(),
+    });
+    expect(missing.status).toBe(400);
   });
 });

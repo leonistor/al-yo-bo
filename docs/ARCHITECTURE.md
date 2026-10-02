@@ -69,7 +69,7 @@ flowchart LR
 
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
-    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\nreview · import · enrichment · health"]
+    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\nreview · import · enrichment · profile · health"]
     Worker["Job worker (in-process loop)\nscrape · embed · classify · screenshot · reindex"]
     Search["Search module\nFTS5 + vector top-k + RRF"]
   end
@@ -106,9 +106,10 @@ durability boundary (see §8), so it is shown separately.
 **Transport vs. domain.** `apps/server` (the Hono API) is a thin transport adapter: it parses HTTP,
 calls exactly one `packages/core` service, and maps domain errors to problem+json. `packages/core`
 owns the application services — search orchestration, bookmark CRUD and its re-run triggers,
-vocabulary, review, import, the enrichment queue, and health. The app edge constructs the concrete
-adapters (Qdrant stack, OpenRouter embeddings, Ollaya client, scraper) and injects them as
-interfaces, so core stays transport-neutral and testable without a server.
+vocabulary, review, import, the enrichment queue, the single-user profile, and health. The app edge
+constructs the concrete adapters (Qdrant stack, OpenRouter embeddings, Ollaya client, scraper,
+avatar file store) and injects them as interfaces, so core stays transport-neutral and testable
+without a server.
 
 **External participants.**
 

@@ -71,6 +71,14 @@ export {
   type JobScheduler,
 } from './services/enrichment.ts';
 export {
+  createProfileService,
+  type AvatarStore,
+  type AvatarFile,
+  type ProfileService,
+  type ProfileServiceDeps,
+  type ProfilePatchInput,
+} from './services/profile.ts';
+export {
   createHealthService,
   type HealthService,
   type HealthServiceDeps,

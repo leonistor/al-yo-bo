@@ -7,6 +7,7 @@ import {
   type BookmarkTagView,
   type Category,
   type Dataset,
+  type Profile,
   type Section,
   type Tag,
   type TagStatus,
@@ -16,6 +17,16 @@ export interface DatasetRow {
   id: Uint8Array;
   name: string;
   created_at: number;
+}
+
+export interface ProfileRow {
+  id: Uint8Array;
+  name: string | null;
+  github_username: string | null;
+  avatar_path: string | null;
+  active_dataset_id: Uint8Array | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface SectionRow {
@@ -79,6 +90,18 @@ export function mapDataset(row: DatasetRow): Dataset {
     id: bytesToUuid(row.id),
     name: row.name,
     createdAt: row.created_at,
+  };
+}
+
+export function mapProfile(row: ProfileRow): Profile {
+  return {
+    id: bytesToUuid(row.id),
+    name: row.name,
+    githubUsername: row.github_username,
+    avatarPath: row.avatar_path,
+    activeDatasetId: row.active_dataset_id ? bytesToUuid(row.active_dataset_id) : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

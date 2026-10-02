@@ -5,12 +5,15 @@ import {
   drainImportBatches,
   makeScraper,
   startJobQueue,
+  type AvatarStore,
   type JobScheduler,
 } from '@al-yo-bo/core';
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono, type Context } from 'hono';
 import { serveStatic } from 'hono/bun';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { createApp } from './app.ts';
 import { loadConfig } from './env.ts';
@@ -75,6 +78,17 @@ const screenshotClient = compositeScreenshotClient({
   }),
 });
 
+// Avatar bytes are a file artifact like screenshots (§5): stored under the data
+// root, one file per upload (overwritten), never a BLOB in the single backup
+// file. The port keeps core free of paths.
+const profileDir = join(config.dataDir, 'profile');
+const avatarStore: AvatarStore = async (file) => {
+  await mkdir(profileDir, { recursive: true });
+  const filename = `avatar.${file.ext}`;
+  await writeFile(join(profileDir, filename), file.bytes);
+  return filename;
+};
+
 const core = createCore({
   db,
   config,
@@ -85,6 +99,7 @@ const core = createCore({
   extract: extractClient,
   screenshot: screenshotClient,
   screenshotsDir: config.screenshotsDir,
+  avatarStore,
   // Same cap as dead-link invalidation: a job gives up on the same attempt that
   // marks the bookmark invalid.
   maxAttempts: config.scrape.maxAttempts,
@@ -102,6 +117,14 @@ const app = new Hono();
 // Serves screenshot artifacts from the configured screenshots dir (under the
 // data root). Guarded by a UUIDv7 + `.jpg` regex so the route cannot escape it.
 app.get('/data/screenshots/:filename', (c) => serveScreenshot(c, config.screenshotsDir));
+
+// Serves the profile avatar from `<DATA_DIR>/profile/`. Only the file name
+// stored on the profile row is honored, and it is regex-guarded, so the route
+// cannot escape the directory. Re-uploads overwrite the same name; the web
+// client cache-busts with `?v=<updatedAt>`.
+app.get('/data/profile/avatar', async (c) =>
+  serveProfileAvatar(c, config.dataDir, core.profile.get()?.avatarPath ?? null),
+);
 
 app.route('/', createApp(core, config));
 
@@ -192,6 +215,26 @@ async function serveScreenshot(c: Context, dir: string): Promise<Response> {
   return new Response(file, {
     headers: {
       'content-type': 'image/jpeg',
+      'cache-control': 'public, max-age=31536000, immutable',
+    },
+  });
+}
+
+async function serveProfileAvatar(
+  c: Context,
+  dataDir: string,
+  avatarPath: string | null,
+): Promise<Response> {
+  if (!avatarPath || !/^[A-Za-z0-9._-]+\.(jpg|png)$/.test(avatarPath)) {
+    return c.json({ type: 'not_found', title: 'Not found' }, 404);
+  }
+  const file = Bun.file(join(dataDir, 'profile', avatarPath));
+  if (!(await file.exists())) {
+    return c.json({ type: 'not_found', title: 'Not found' }, 404);
+  }
+  return new Response(file, {
+    headers: {
+      'content-type': avatarPath.endsWith('.png') ? 'image/png' : 'image/jpeg',
       'cache-control': 'public, max-age=31536000, immutable',
     },
   });

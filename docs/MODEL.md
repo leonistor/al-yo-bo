@@ -28,10 +28,17 @@
    vector data all live in the same SQLite file. A Qdrant collection holds a *rebuildable serving
    copy* of the embeddings (ARCHITECTURE §6): it is never the only copy of anything and is repaired
    from `bookmark_embeddings` at startup.
+8. **The profile is the person; datasets are content workspaces.** One singleton `profile` row holds
+   the single user's identity (name, GitHub username, avatar file) and the active-dataset pointer.
+   The row is not deletable, identity never changes when switching datasets, and there is no user
+   axis (no `users` table, no `user_id` columns) anywhere else. Deleting the active dataset only
+   nulls the pointer.
 
 ## Entity overview
 
 ```
+profile ─── datasets                                 (active-dataset pointer; singleton identity)
+
 datasets ──< sections ──< categories ──< bookmarks      (organization)
 datasets ──< categories ──< tags                        (classification scope)
 
@@ -72,6 +79,31 @@ CREATE TABLE datasets (
 ) STRICT;
 
 CREATE UNIQUE INDEX datasets_name_unique ON datasets(name);
+```
+
+### `profile`
+
+The single user's identity — name, GitHub username, avatar file name — plus the active-dataset
+pointer (which dataset the running app scopes to). A **singleton**: migration 0007 inserts one row
+with the fixed all-zero sentinel id, the app reads it by id (never by name), and there is no delete
+path. `active_dataset_id` is a pointer, not ownership — deleting the dataset nulls it
+(`ON DELETE SET NULL`), identity survives. The avatar is a file under `<DATA_DIR>/profile/`
+(BLOBs would bloat the single backup file); `avatar_path` holds the file name.
+
+```sql
+CREATE TABLE profile (
+  id                BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
+  name              TEXT,
+  github_username   TEXT,
+  avatar_path       TEXT,
+  active_dataset_id BLOB REFERENCES datasets(id) ON DELETE SET NULL
+                      CHECK (active_dataset_id IS NULL
+                             OR (typeof(active_dataset_id) = 'blob' AND length(active_dataset_id) = 16)),
+  created_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+  updated_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+) STRICT;
+
+INSERT INTO profile (id) VALUES (X'00000000000000000000000000000000');
 ```
 
 ### `sections`
@@ -348,7 +380,8 @@ CREATE TABLE bookmark_embeddings (
 
 | Deleted            | Effect                                                                                                                                                                                   |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| dataset            | cascades to its bookmarks (→ classification evidence, tags, embeddings, FTS rows), sections, categories, and tags |
+| profile            | **not deletable** — no delete path exists; deleting the active dataset only nulls `active_dataset_id` |
+| dataset            | cascades to its bookmarks (→ classification evidence, tags, embeddings, FTS rows), sections, categories, and tags; the profile's `active_dataset_id` is nulled if it pointed here |
 | bookmark           | cascades to `classification_runs` (→ results and unknown labels), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
 | tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                                                                                                                                                                                        |
 | category           | `bookmarks.category_id` and `tags.category_id` set to `NULL`                                                                                                                                                                                                                                                             |

@@ -4,6 +4,7 @@ import {
   ValidationError,
   type BookmarkPatch,
   type Core,
+  type ProfilePatchInput,
 } from '@al-yo-bo/core';
 import {
   isUuid,
@@ -54,6 +55,30 @@ const importedBookmarkSchema = z.object({
 const importCommitSchema = z.object({
   bookmarks: z.array(importedBookmarkSchema).min(1),
 });
+
+/** Upload size cap for the avatar (local single-user tool; images are small). */
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Sniffs the image format from magic bytes rather than trusting the multipart
+ * content type (which the client controls). Only JPEG and PNG are accepted —
+ * the avatar route stores files with a fixed extension per format.
+ */
+function avatarExt(bytes: Uint8Array): 'jpg' | 'png' | null {
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'jpg';
+  }
+  if (
+    bytes.length > 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return 'png';
+  }
+  return null;
+}
 
 /**
  * Commit-body validator. Returning the parsed object (rather than a bare
@@ -335,6 +360,41 @@ export function createApp(core: Core, config: ServerConfig) {
     })
 
     .get('/api/aggregates', (c) => c.json(core.search.aggregates()))
+
+    .get('/api/profile', (c) => c.json(core.profile.get()))
+
+    .patch('/api/profile', jsonBody, (c) => {
+      const body = c.req.valid('json');
+      const patch: ProfilePatchInput = {};
+      if ('name' in body) {
+        patch.name = optionalString(body, 'name');
+      }
+      if ('githubUsername' in body) {
+        patch.githubUsername = optionalString(body, 'githubUsername');
+      }
+      if ('activeDatasetId' in body) {
+        patch.activeDatasetId = optionalId(body, 'activeDatasetId');
+      }
+      return c.json(core.profile.update(patch));
+    })
+
+    // The app's only binary upload: one multipart file field named "avatar".
+    .post('/api/profile/avatar', async (c) => {
+      const form = await c.req.parseBody();
+      const file = form['avatar'];
+      if (!(file instanceof File)) {
+        throw new ValidationError('"avatar" file field is required');
+      }
+      if (file.size > MAX_AVATAR_BYTES) {
+        throw new ValidationError('"avatar" must be at most 2 MB');
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const ext = avatarExt(bytes);
+      if (!ext) {
+        throw new ValidationError('"avatar" must be a JPEG or PNG image');
+      }
+      return c.json(await core.profile.saveAvatar({ bytes, ext }));
+    })
 
     .get('/api/review/candidates', (c) => c.json(core.review.listCandidates()))
 

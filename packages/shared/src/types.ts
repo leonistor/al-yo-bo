@@ -16,6 +16,23 @@ export interface Dataset {
   createdAt: number;
 }
 
+/**
+ * The single user's profile — identity plus the active-dataset pointer. The
+ * profile is the person; datasets are content workspaces (MODEL.md). The row
+ * is a singleton (fixed sentinel id) and never deletable.
+ */
+export interface Profile {
+  id: string;
+  name: string | null;
+  githubUsername: string | null;
+  /** Avatar file name under `<DATA_DIR>/profile/`, when one was uploaded. */
+  avatarPath: string | null;
+  /** Dataset the running app scopes to; null falls back to `DEFAULT_DATASET`. */
+  activeDatasetId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Section {
   id: string;
   datasetId: string;
