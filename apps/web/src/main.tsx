@@ -1,5 +1,5 @@
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode, lazy, Suspense } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { toast } from 'sonner';
 
@@ -26,16 +26,6 @@ const queryClient = new QueryClient({
   },
 });
 
-// Devtools stay out of the production bundle: `import.meta.env.DEV` is statically
-// replaced at build time, so the dynamic import is dead code in prod builds.
-const ReactQueryDevtools = import.meta.env.DEV
-  ? lazy(() =>
-      import('@tanstack/react-query-devtools').then((module) => ({
-        default: module.ReactQueryDevtools,
-      })),
-    )
-  : null;
-
 const root = document.getElementById('root');
 if (!root) {
   throw new Error('Missing #root element');
@@ -48,11 +38,6 @@ createRoot(root).render(
         <App />
         <Toaster position="bottom-right" />
       </TooltipProvider>
-      {ReactQueryDevtools && (
-        <Suspense fallback={null}>
-          <ReactQueryDevtools initialIsOpen={false} />
-        </Suspense>
-      )}
     </QueryClientProvider>
   </StrictMode>,
 );
