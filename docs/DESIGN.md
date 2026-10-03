@@ -176,6 +176,32 @@ Sections, category groups, and the Tags group; reused wherever a collapsible gro
 - Content height animation `200ms`; keyboard operable via the base-ui trigger.
 - Open/closed state persists (sidebar: `ayb:sidebar:sections`).
 
+### List rows & actions — the one managed-list language
+
+Shared primitives under `src/components/` used by every list-like page (Vocabulary, review queue,
+bookmarks, import): one row anatomy, one action cluster, one destructive confirmation.
+
+- **`EditableRow`** — row chrome: `rounded-lg border border-border bg-card p-3`, hover surface
+  (`hover:bg-accent/50`), focus ring inside. Renders as `<li>` inside a `role="list"` when
+  `asListItem`. The review queue, vocabulary rows, and skeletons all use it.
+- **`RowActions`** — the one action cluster. Icon buttons revealed on hover / `group-focus-within` /
+  `pointer-coarse` (`150ms` opacity); >2 actions overflow into a `DropdownMenu` with
+  `data-[variant=destructive]` items. Every icon button carries an `aria-label`; roving tabindex
+  follows the list's active row.
+- **Inline edit** — `useInlineEdit` + `InlineEditInput` (Import-row precedent): borderless-until-hover
+  inputs, `Enter` commits, `Esc` cancels, row spinner while pending. `value` must be
+  identity-stable across renders (memoize objects) — the hook resyncs the draft on identity change.
+- **Keyboard** — `useListKeyboardNav` (extracted from `BookmarkList`): roving tabindex, `↑↓` move
+  (grid: column-aware `←→↑↓`), `Home`/`End`, `Enter` activates the row's primary control,
+  `Delete`/`Backspace` routes to the same confirm flow as the row's delete action.
+- **Destructive confirmation** — `ConfirmDeleteDialog` wraps the `AlertDialog`: title, description,
+  and an `impact` list spelling out consequences *before* commit (e.g. tag delete names the
+  assignment loss and the classification-evidence destruction — deprecate stays the primary
+  "remove from use" action). The only modal in the app.
+- **Vocabulary page** — Tabs (line variant) Tags / Categories / Sections; per-tab create form
+  (existing `Field` pattern), client-side name filter, status pills (active = primary,
+  deprecated = muted), usage counts from aggregates.
+
 ### Sheets and pages — not dialogs
 
 Detail/editing surfaces are **right-anchored sheets** or **routes**, never modal dialogs. Context
@@ -281,9 +307,10 @@ opacity-only.
 - [ ] Inputs have labels; icon-only buttons have `aria-label`.
 - [ ] Live regions for streaming/async updates (search results, chat).
 - [ ] No meaning conveyed by color alone (pair with icon/text).
-- [ ] **List keyboard navigation.** `BookmarkList` and the import result grid support `↑`/`↓` to
-      move selection, `Enter` to open, `Delete`/backspace to remove (grid: `←`/`→`, column-aware
-      `↑`/`↓`, Home/End). Roving tabindex; `role="list"`/`role="listitem"` semantics.
+- [ ] **List keyboard navigation.** All managed lists (`BookmarkList`, import result grid,
+      vocabulary tabs, review queue) share `useListKeyboardNav`: `↑`/`↓` to move selection, `Enter`
+      to activate, `Delete`/backspace to remove (grid: `←`/`→`, column-aware `↑`/`↓`, Home/End).
+      Roving tabindex; `role="list"`/`role="listitem"` semantics.
 - [ ] "Skip to results" link for screen-reader/keyboard users.
 - [ ] Focus trap verified on every sheet (`BookmarkDetailSheet`, `AddBookmarkSheet`) and the
       `AlertDialog` triggered from within; focus restored on close.
@@ -302,3 +329,11 @@ opacity-only.
    consolidate.
 4. Motion + empty-state pass — apply DESIGN.md motion tokens to sidebar collapse/sheet
    transitions; review empty/skeleton states against imagery fallback rules.
+5. Review-queue Dismiss (fast-follow) — suggestions currently have Accept only. Needs a new
+   `POST /api/review/candidates/dismiss` route and a semantics decision against the
+   immutable-evidence invariant (likely clearing the result's `selected` bit so it leaves the
+   queue); rows then gain a dismiss action via the shared `RowActions`.
+6. Batch operations — multi-select delete/tagging across managed lists (rows already share one
+   action language; selection state and a batch mutation surface are the missing pieces).
+7. Vocabulary pagination/virtualization — the vocab lists are unpaginated with a client-side
+   filter; revisit if a dataset grows past ~500 entries per tab.
