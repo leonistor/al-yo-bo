@@ -1,5 +1,5 @@
 import { useChat } from '@ai-sdk/react';
-import type { BookmarkWithTags } from '@al-yo-bo/shared';
+import type { BookmarkImage, BookmarkWithTags } from '@al-yo-bo/shared';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
@@ -29,8 +29,9 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 /**
  * One `searchBookmarks` hit as returned by `POST /api/chat` (ARCHITECTURE §2).
- * The server sends `BookmarkHit`s, so `updatedAt` is present at runtime even
- * though the tool's citation payload only advertises the display fields.
+ * The server sends full `BookmarkHit`s, so `updatedAt` and `image` are present
+ * at runtime even though the tool's prompt-facing payload only advertises the
+ * display fields.
  */
 interface SearchBookmarkHit {
   id: string;
@@ -39,6 +40,7 @@ interface SearchBookmarkHit {
   description: string | null;
   tags?: string[];
   categoryName?: string | null;
+  image?: BookmarkImage | null;
   updatedAt?: number;
 }
 
@@ -70,8 +72,9 @@ function messageText(message: ChatMessage): string {
 
 /**
  * Adapts a compact chat hit to the bookmark view model so the tool-result
- * surface renders through `CompactBookmarkCard` (DESIGN.md §Chat). Missing
- * scrape metadata degrades to the tile's placeholder thumbnail.
+ * surface renders through `CompactBookmarkCard` (DESIGN.md §Chat). The server
+ * hit carries `image`, so tiles show the real screenshot; missing imagery
+ * degrades to the tile's placeholder thumbnail.
  */
 function toBookmarkWithTags(hit: SearchBookmarkHit): BookmarkWithTags {
   return {
@@ -82,6 +85,7 @@ function toBookmarkWithTags(hit: SearchBookmarkHit): BookmarkWithTags {
     description: hit.description,
     content: null,
     metadata: null,
+    image: hit.image ?? undefined,
     categoryId: null,
     contentHash: null,
     scrapedAt: null,

@@ -209,6 +209,7 @@ describe('SearchService — chatHits', () => {
       title: 'color tools',
       description: 'palette generators',
       categoryId: category.id,
+      metadata: { image: { ogImageUrl: 'https://img.test/palette.png', screenshotPath: null } },
     });
     const tag = createTag(db, { datasetId: db.datasetId, name: 'color' });
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
@@ -219,7 +220,8 @@ describe('SearchService — chatHits', () => {
     const [hit] = hits;
     if (!hit) throw new Error('expected one hit');
     // The projection is the chat tool's contract: names, never ids; never page
-    // content (packages/core/src/dto.ts).
+    // content (packages/core/src/dto.ts). `image` carries the UI's thumbnail
+    // references so chat tiles show screenshots instead of placeholders.
     expect(hit).toEqual({
       id: bookmark.id,
       url: 'https://example.com/palette',
@@ -227,9 +229,19 @@ describe('SearchService — chatHits', () => {
       description: 'palette generators',
       tags: ['color'],
       categoryName: 'Design',
+      image: { ogImageUrl: 'https://img.test/palette.png', screenshotPath: null },
       updatedAt: expect.any(Number),
     });
     expect('content' in hit).toBe(false);
+  });
+
+  test('nulls the image for bookmarks without scrape metadata', async () => {
+    const { service, db } = makeService();
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/1', title: 'one' });
+
+    const [hit] = await service.chatHits('one', 5);
+
+    expect(hit?.image).toEqual({ ogImageUrl: null, screenshotPath: null });
   });
 
   test('answers blank queries with no hits', async () => {

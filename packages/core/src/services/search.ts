@@ -260,6 +260,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       description: item.description,
       tags: item.tags.map((tag) => tag.name),
       categoryName: item.categoryId ? (categoryNameById.get(item.categoryId) ?? null) : null,
+      image: item.image ?? null,
       updatedAt: item.updatedAt,
     }));
   }
