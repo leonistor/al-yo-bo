@@ -14,6 +14,11 @@ interface UseInlineEditResult<T> {
 /**
  * Display-to-edit state machine for a single inline-editable row.
  * Enter commits, Escape cancels, and a pending flag drives the row spinner.
+ *
+ * `value` MUST have a stable identity between renders when it is an object
+ * (memoize it at the call site): when not editing, the draft resyncs to
+ * `value` on identity change, so a fresh literal every render would loop.
+ * Primitives are safe unmodified (Object.is compares them by value).
  */
 export function useInlineEdit<T>(
   value: T,

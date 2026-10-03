@@ -255,15 +255,18 @@ function TagRow({
     },
   });
 
-  const inline = useInlineEdit(
-    { name: tag.name, categoryId: tag.categoryId ?? 'none' },
-    async (draft) => {
-      await updateMutation.mutateAsync({
-        name: draft.name.trim(),
-        categoryId: draft.categoryId === 'none' ? null : draft.categoryId,
-      });
-    },
+  // Stable identity is a useInlineEdit contract: a fresh literal per render
+  // would make the not-editing draft resync loop (see useInlineEdit doc).
+  const inlineValue = useMemo(
+    () => ({ name: tag.name, categoryId: tag.categoryId ?? 'none' }),
+    [tag.name, tag.categoryId],
   );
+  const inline = useInlineEdit(inlineValue, async (draft) => {
+    await updateMutation.mutateAsync({
+      name: draft.name.trim(),
+      categoryId: draft.categoryId === 'none' ? null : draft.categoryId,
+    });
+  });
 
   const { setDraft } = inline;
 
@@ -460,15 +463,16 @@ function CategoryRow({
     },
   });
 
-  const inline = useInlineEdit(
-    { name: category.name, sectionId: category.sectionId ?? 'none' },
-    async (draft) => {
-      await updateMutation.mutateAsync({
-        name: draft.name.trim(),
-        sectionId: draft.sectionId === 'none' ? null : draft.sectionId,
-      });
-    },
+  const inlineValue = useMemo(
+    () => ({ name: category.name, sectionId: category.sectionId ?? 'none' }),
+    [category.name, category.sectionId],
   );
+  const inline = useInlineEdit(inlineValue, async (draft) => {
+    await updateMutation.mutateAsync({
+      name: draft.name.trim(),
+      sectionId: draft.sectionId === 'none' ? null : draft.sectionId,
+    });
+  });
 
   const { setDraft } = inline;
 
