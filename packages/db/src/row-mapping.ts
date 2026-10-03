@@ -34,8 +34,6 @@ export interface SectionRow {
   dataset_id: Uint8Array;
   name: string;
   description: string | null;
-  status: string;
-  merged_into_id: Uint8Array | null;
   created_at: number;
 }
 
@@ -45,8 +43,6 @@ export interface CategoryRow {
   section_id: Uint8Array | null;
   name: string;
   description: string | null;
-  status: string;
-  merged_into_id: Uint8Array | null;
   created_at: number;
 }
 
@@ -57,7 +53,6 @@ export interface TagRow {
   name: string;
   description: string | null;
   status: string;
-  merged_into_id: Uint8Array | null;
   created_at: number;
 }
 
