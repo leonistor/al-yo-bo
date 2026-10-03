@@ -82,7 +82,8 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   into the project. When a UI needs an icon, search this instead of guessing names.
 - **GitHub/npm research:** **octocode** — evidence-first search of GitHub repos, code, PRs, commits
   and npm packages, with token-compact output. Available as an MCP server
-  (`.opencode/opencode.jsonc`; restart opencode to load it) and as a CLI driven directly
+  (`.opencode/opencode.jsonc`; **disabled by default to save context** — flip `enabled` and
+  restart opencode when a research-heavy session needs it) and as a CLI driven directly
   (`npx octocode tools <name> --queries '<json>' --compact`) or via the globally installed
   `octocode-research` skill. Repo discovery example:
   `npx octocode tools ghSearch --queries '{"operation":"repositories","keywords":["lucide icons mcp"],"sort":"stars"}' --compact`.

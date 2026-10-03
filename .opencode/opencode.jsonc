@@ -2,13 +2,17 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["octto"],
   "mcp": {
+    // Heavy MCPs are disabled by default (~49k tokens of tool schemas across
+    // these three — measured via tools/list in .omo/session-work/mcp-size.ts).
+    // Flip to true per-session when needed + restart opencode.
+    // crawlberg: built-in webfetch/websearch cover most scraping; use for full-site crawls.
     "crawlberg": {
-      "enabled": true,
+      "enabled": false,
       "type": "local",
       "command": ["crawlberg", "mcp"],
     },
     "chrome-devtools": {
-      "enabled": true,
+      "enabled": false,
       "type": "local",
       "command": ["bunx", "-y", "chrome-devtools-mcp@latest"],
     },
@@ -41,11 +45,13 @@
       "enabled": true,
     },
     // Octocode: evidence-first GitHub/npm/local code research (docs/ARCHITECTURE note).
+    // Disabled by default (biggest schema load) — the CLI works without the MCP:
+    // `npx octocode tools <name> --queries '<json>' --compact`.
     // GitHub token is picked up automatically from the `gh` CLI (no env needed).
     "octocode": {
       "type": "local",
       "command": ["npx", "-y", "octocode-mcp@latest"],
-      "enabled": true,
+      "enabled": false,
       "environment": {
         "ENABLE_LOCAL": "true",
         "ENABLE_CLONE": "true",
