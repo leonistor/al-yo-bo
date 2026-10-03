@@ -78,9 +78,9 @@ export function Topbar({
         Chat
       </Button>
 
-      <Button onClick={onAdd} aria-label="Add bookmark">
+      <Button onClick={onAdd}>
         <PlusIcon data-icon="inline-start" />
-        <span className="hidden sm:inline">Add</span>
+        <span className="sr-only sm:not-sr-only sm:inline">Add</span>
       </Button>
     </header>
   );

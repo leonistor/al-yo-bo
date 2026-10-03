@@ -236,7 +236,7 @@ export const BookmarkCard = memo(function BookmarkCard({
           >
             <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
           </button>
-          <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -363,8 +363,17 @@ export function BookmarkList({
       let nextIndex = index;
 
       switch (event.key) {
+        case 'Enter':
+          // The title button already opens on click; make the list keyboard
+          // model explicit and avoid falling through to the navigation keys.
+          if (event.currentTarget.hasAttribute('data-title-button')) {
+            onOpen(bookmark);
+            event.preventDefault();
+          }
+          return;
         case 'Delete':
         case 'Backspace':
+          // Route through the same confirm flow as the card's delete button.
           onDelete(bookmark);
           event.preventDefault();
           return;
@@ -403,7 +412,7 @@ export function BookmarkList({
         event.preventDefault();
       }
     },
-    [items, layout, onDelete],
+    [items, layout, onDelete, onOpen],
   );
 
   if (loading) {

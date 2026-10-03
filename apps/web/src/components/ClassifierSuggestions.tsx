@@ -2,8 +2,8 @@ import type { ReviewCandidate } from '@al-yo-bo/shared';
 import { CheckIcon, Settings2Icon } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { TagPill } from '@/components/TagPill';
 import {
   Empty,
   EmptyDescription,
@@ -58,7 +58,7 @@ function CandidateRow({
         </span>
         <span className="truncate text-xs text-muted-foreground">{candidate.bookmarkUrl}</span>
       </div>
-      <Badge variant="outline">{candidate.tagName}</Badge>
+      <TagPill variant="static">{candidate.tagName}</TagPill>
       <span className="text-xs text-muted-foreground">
         {Math.round(candidate.probability * 100)}%
       </span>

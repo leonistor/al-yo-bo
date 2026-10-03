@@ -297,7 +297,23 @@ export function App() {
       const target = event.target as HTMLElement | null;
       const typing =
         target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      // base-ui marks every open popup/sheet/dialog with `data-open`; don't
+      // let `/` or `c` fire while any overlay has focus.
+      const overlayOpen =
+        document.querySelector(
+          '[data-slot="sheet-popup"][data-open], ' +
+            '[data-slot="alert-dialog-popup"][data-open], ' +
+            '[data-slot="command-dialog-popup"][data-open], ' +
+            '[data-slot="popover-content"][data-open], ' +
+            '[data-slot="dropdown-menu-content"][data-open], ' +
+            '[data-slot="dropdown-menu-sub-content"][data-open], ' +
+            '[data-slot="select-popup"][data-open]',
+        ) !== null;
 
       // Cmd/Ctrl+K toggles the command palette even while the user is typing
       // in an input, so it must be checked before the typing guard.
@@ -314,15 +330,36 @@ export function App() {
         return;
       }
 
-      if (event.key === '/' && !typing) {
+      if (event.key === '/' && !typing && !overlayOpen) {
         event.preventDefault();
         searchRef.current?.focus();
       }
-      if (event.key === 'c' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (
+        event.key === 'c' &&
+        !typing &&
+        !overlayOpen &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
         event.preventDefault();
         setChatOpen((open) => !open);
       }
       if (event.key === 'Escape') {
+        // Close the topmost overlay on each press: sheets first, then the
+        // command palette, then the chat panel.
+        if (addOpen) {
+          setAddOpen(false);
+          return;
+        }
+        if (selected) {
+          setSelected(null);
+          return;
+        }
+        if (navOpen) {
+          setNavOpen(false);
+          return;
+        }
         if (commandOpen) {
           setCommandOpen(false);
           return;
@@ -334,7 +371,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [chatOpen, commandOpen, toggleSidebar]);
+  }, [addOpen, chatOpen, commandOpen, navOpen, selected, toggleSidebar]);
 
   // A page change renders a fresh batch; don't leave the user scrolled mid-list.
   useEffect(() => {
@@ -523,15 +560,15 @@ export function App() {
     setPage(0);
   }, []);
 
-  const handlePaletteSearch = useCallback((query: string) => {
+  const handlePaletteSearch = useCallback((term: string) => {
     setView('library');
     navigate('library');
-    setQuery(query);
-    setSearchQuery(query);
+    setQuery(term);
+    setSearchQuery(term);
     setCategoryId(null);
     setTagId(null);
     setPage(0);
-    setRecentQueries(addRecentQuery(query));
+    setRecentQueries(addRecentQuery(term));
   }, []);
 
   const handleJumpToCategory = useCallback((id: string) => {
