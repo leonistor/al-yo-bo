@@ -43,7 +43,7 @@ function ModeButton({ value, label, icon: Icon, active, onChange }: ModeButtonPr
       className={cn(
         'flex h-6 w-6 items-center justify-center rounded text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-7 sm:w-7',
         active
-          ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+          ? 'bg-background text-foreground ring-1 ring-border'
           : 'text-muted-foreground hover:text-foreground',
       )}
     >

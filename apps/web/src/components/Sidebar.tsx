@@ -66,8 +66,10 @@ interface SidebarProps extends Omit<SidebarNavProps, 'onNavigate' | 'showTools'>
   onSetCollapsed: (collapsed: boolean) => void;
 }
 
+// Active nav entries use sidebar-accent so the selected state stays on the
+// sidebar surface palette (DESIGN.md §Sidebar).
 const rowClass =
-  'w-full justify-start gap-2 px-2 font-normal data-[active=true]:bg-accent data-[active=true]:text-accent-foreground';
+  'w-full justify-start gap-2 px-2 font-normal data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground';
 
 interface NavSelectionProps {
   onSelectView: (view: 'library' | 'review') => void;
@@ -256,9 +258,7 @@ function SidebarNav({
       >
         <InboxIcon />
         <span>All bookmarks</span>
-        <Badge variant="secondary" className="ml-auto tabular-nums">
-          {model.total}
-        </Badge>
+        <NavCount>{model.total}</NavCount>
       </Button>
 
       <Button
@@ -269,11 +269,7 @@ function SidebarNav({
       >
         <Settings2Icon />
         <span>Review queue</span>
-        {model.reviewCount > 0 && (
-          <Badge variant="secondary" className="ml-auto tabular-nums">
-            {model.reviewCount}
-          </Badge>
-        )}
+        {model.reviewCount > 0 && <NavCount>{model.reviewCount}</NavCount>}
       </Button>
 
       {model.sections.map((section) => {
@@ -358,6 +354,28 @@ function SidebarNav({
   );
 }
 
+interface NavCountProps {
+  children: ReactNode;
+  /** Corner badge for icon rail; inline badge for expanded rows. */
+  corner?: boolean;
+}
+
+/** Shared count renderer: secondary inline in expanded rows, primary corner in the rail. */
+function NavCount({ children, corner }: NavCountProps) {
+  if (corner) {
+    return (
+      <span className="absolute top-0 right-0 flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="ml-auto tabular-nums">
+      {children}
+    </Badge>
+  );
+}
+
 interface RailButtonProps {
   label: string;
   onClick: () => void;
@@ -387,11 +405,7 @@ function RailButton({ label, onClick, children, badge, active }: RailButtonProps
     <Tooltip>
       <TooltipTrigger render={triggerRender}>
         {children}
-        {badge !== undefined && badge > 0 && (
-          <span className="absolute top-0 right-0 flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
-            {badge}
-          </span>
-        )}
+        {badge !== undefined && badge > 0 && <NavCount corner>{badge}</NavCount>}
       </TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>

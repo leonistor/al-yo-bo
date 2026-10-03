@@ -318,15 +318,19 @@ opacity-only.
 
 ## Deferred UI/UX improvements (iteration 2)
 
-1. Card elevation/radius normalization — base Card uses `shadow-xs` + `rounded-2xl`
-   (`ui/card.tsx:15`), deviating from the flat no-shadow aesthetic and `--radius` token; restyle
-   to flat, token-only radii.
-2. Unify sidebar nav trees — mobile sheet body (`Sidebar.tsx` ~:261-371) and collapsed rail
-   (~:570-617) are parallel nav trees with diverging badge/count rendering; extract one shared
-   renderer.
-3. Unify tag pill wrappers — `TagItem` (`Sidebar.tsx` ~:120-132) and `BookmarkTagPill`
-   (`BookmarkList.tsx` ~:155-166) both wrap `TagPill` with slightly different behavior;
-   consolidate.
+1. ~~Card elevation/radius normalization~~ — done. `Card` and `CardFrame` use `rounded-lg`
+   (`apps/web/src/components/ui/card.tsx:15,35`), table `variant="card"` uses `rounded-lg` corners
+   (`apps/web/src/components/ui/table.tsx:64`), and the preview-rail card dropped `shadow-sm`
+   (`apps/web/src/components/motion/preview-rail.tsx:53`). `TopbarSearch.tsx:46` mode toggle no
+   longer uses `shadow-sm` on its static surface.
+2. ~~Unify sidebar nav trees~~ — done. Active nav entries now share
+   `sidebar-accent`/`sidebar-accent-foreground` in both expanded rows and the collapsed rail
+   (`apps/web/src/components/Sidebar.tsx:69-72,397`), and counts render through the shared
+   `NavCount` component (`apps/web/src/components/Sidebar.tsx:261,272,363-377,408`).
+3. ~~Unify tag pill wrappers~~ — done. `TagItem` and `BookmarkTagPill` were removed;
+   `FilterTagPill` (`apps/web/src/components/FilterTagPill.tsx:24`) is the single wrapper used in
+   the sidebar tag list and bookmark card tag rows (`apps/web/src/components/Sidebar.tsx:331` and
+   `apps/web/src/components/BookmarkList.tsx:258`).
 4. Motion + empty-state pass — apply DESIGN.md motion tokens to sidebar collapse/sheet
    transitions; review empty/skeleton states against imagery fallback rules.
 5. Review-queue Dismiss (fast-follow) — suggestions currently have Accept only. Needs a new
