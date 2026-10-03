@@ -12,6 +12,9 @@ export default defineConfig({
     },
   },
   server: {
+    // Listen on all interfaces so the dev server is reachable from other
+    // devices on the LAN (phone, tablet) — API calls still proxy to 127.0.0.1.
+    host: '0.0.0.0',
     proxy: {
       '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true },
       // Local screenshot artifacts (ARCHITECTURE §8). Without this, Vite's SPA
