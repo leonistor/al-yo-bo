@@ -53,7 +53,7 @@
     "octocode": {
       "type": "local",
       "command": ["npx", "-y", "octocode-mcp@latest"],
-      "enabled": false,
+      "enabled": true,
       "environment": {
         "ENABLE_LOCAL": "true",
         "ENABLE_CLONE": "true",
