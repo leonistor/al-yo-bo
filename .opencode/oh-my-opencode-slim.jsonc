@@ -10,14 +10,14 @@
   // "multiplexer": { "type": "cmux-tui", "layout": "main-vertical" },
   // "agents": { "oracle": { "model": "synthetic/hf:moonshotai/Kimi-K3" } },
   // "presets": { "synthetic": { "designer": { "mcps": ["*", "!crawlberg", "!shadcn"] } } },
-  "preset": "synthetic",
+  "preset": "opencode-go",
   // Observer's default Nemotron-3-Super model has no image input (attachment:
   // false) but its lane is image/PDF analysis — swap it to the vision-capable
   // DeepSeek-V4.1-Flash already used by explorer/librarian/fixer (see
   // `opencode models synthetic --verbose`).
   "presets": {
     "synthetic": {
-      "observer": { "model": "synthetic/hf:deepseek-ai/DeepSeek-V4.1-Flash" }
-    }
-  }
+      "observer": { "model": "synthetic/hf:deepseek-ai/DeepSeek-V4.1-Flash" },
+    },
+  },
 }
