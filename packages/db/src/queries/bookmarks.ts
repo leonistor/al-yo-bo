@@ -245,6 +245,12 @@ export function updateBookmark(
  * Idempotent upsert keyed on the normalized URL **within the input's dataset**
  * — imports into dataset A never touch a bookmark with the same URL in
  * dataset B.
+ *
+ * On update, `metadata` is shallow-merged over the existing row rather than
+ * replaced: re-importing a collection refreshes the importer's `import` block
+ * while preserving provenance the importer does not own (`scrape`, `image`),
+ * per ARCHITECTURE §7 merge-by-URL. `updateBookmark` stays a replace-setter so
+ * internal writers can intentionally clear a subtree.
  */
 export function upsertBookmarkByUrl(
   db: Database,
@@ -254,7 +260,8 @@ export function upsertBookmarkByUrl(
   if (!existing) {
     return { bookmark: createBookmark(db, input), created: true };
   }
-  const updated = updateBookmark(db, existing.id, input);
+  const metadata = input.metadata ? { ...existing.metadata, ...input.metadata } : undefined;
+  const updated = updateBookmark(db, existing.id, { ...input, metadata });
   if (!updated) {
     throw new Error('Bookmark upsert failed');
   }

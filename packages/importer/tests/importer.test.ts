@@ -3,11 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import {
   createDataset,
   createTag,
+  getBookmarkByUrl,
   getCategoryByName,
   getTagByName,
   openDatabase,
   setTagStatus,
   setupDatabase,
+  updateBookmark,
 } from '@al-yo-bo/db';
 import { uuidToBytes } from '@al-yo-bo/shared';
 
@@ -240,6 +242,43 @@ describe('ingest', () => {
     });
     expect(second.added).toBe(0);
     expect(second.updated).toBe(5);
+  });
+
+  // Regression: re-import used to replace `metadata` wholesale, wiping
+  // `scrape` provenance and `image` refs and re-triggering screenshot/og
+  // discovery on every import (ARCHITECTURE §7 merge-by-URL).
+  test('re-import merges metadata instead of replacing it', () => {
+    const { db, datasetId } = freshDb();
+    const { bookmarks } = parseCollection('- x: https://example.com/merge-meta');
+    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    ingestBookmarks(db, datasetId, bookmarks, resolution, { file: 'one.md' });
+
+    const existing = getBookmarkByUrl(db, datasetId, 'https://example.com/merge-meta');
+    if (!existing) {
+      throw new Error('initial import did not create the bookmark');
+    }
+    updateBookmark(db, existing.id, {
+      metadata: {
+        ...existing.metadata,
+        scrape: { finalUrl: 'https://example.com/final', truncated: false },
+        image: { screenshotPath: '/data/shots/x.png' },
+      },
+    });
+
+    ingestBookmarks(db, datasetId, bookmarks, resolution, { file: 'two.md' });
+
+    const after = getBookmarkByUrl(db, datasetId, 'https://example.com/merge-meta');
+    expect(after?.metadata?.scrape).toEqual({
+      finalUrl: 'https://example.com/final',
+      truncated: false,
+    });
+    expect(after?.metadata?.image).toEqual({ screenshotPath: '/data/shots/x.png' });
+    // The importer's own block is refreshed to the latest file.
+    expect(after?.metadata?.import).toEqual({
+      file: 'two.md',
+      category: null,
+      priority: null,
+    });
   });
 
   test('ingests an empty list without touching the database', () => {

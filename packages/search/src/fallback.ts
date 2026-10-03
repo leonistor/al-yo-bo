@@ -33,6 +33,25 @@ function matchesFilter(payload: FallbackPayload | undefined, filter: VectorFilte
 }
 
 /**
+ * Client-side payload filter shared by the fallback search and the standalone
+ * filtering decorator, so an index that cannot filter server-side (the
+ * in-memory `KnnIndex`) enforces identical dataset/category/tag semantics no
+ * matter which backend path built it. Ranking is left untouched: filtered hits
+ * keep the rank they earned in the wider overfetch window.
+ */
+function filterCandidates(
+  candidates: RankedCandidate[],
+  filter: VectorFilter,
+  resolvePayloads: (bookmarkIds: string[]) => Map<string, FallbackPayload>,
+  topK: number,
+): RankedCandidate[] {
+  const payloads = resolvePayloads(candidates.map((candidate) => candidate.bookmarkId));
+  return candidates
+    .filter((candidate) => matchesFilter(payloads.get(candidate.bookmarkId), filter))
+    .slice(0, Math.max(0, topK));
+}
+
+/**
  * Routes vector operations to a Qdrant primary with an in-process KNN fallback.
  *
  * SQLite stays canonical: embeddings and payloads are read from the database, so
@@ -115,10 +134,7 @@ export class FallbackVectorIndex implements VectorIndex {
     }
 
     const candidates = await this.fallback.search(query, topK * this.overfetchFactor);
-    const payloads = this.resolvePayloads(candidates.map((candidate) => candidate.bookmarkId));
-    return candidates
-      .filter((candidate) => matchesFilter(payloads.get(candidate.bookmarkId), filter))
-      .slice(0, Math.max(0, topK));
+    return filterCandidates(candidates, filter, this.resolvePayloads, topK);
   }
 
   async upsert(point: VectorUpsert): Promise<void> {
@@ -151,5 +167,67 @@ export class FallbackVectorIndex implements VectorIndex {
     } catch (error) {
       console.warn(`[FallbackVectorIndex] fallback ${operation} failed`, error);
     }
+  }
+}
+
+export interface FilteringVectorIndexOptions {
+  /** Batch-resolves filterable payload for candidate ids (from SQLite) to apply filters client-side. */
+  resolvePayloads: (bookmarkIds: string[]) => Map<string, FallbackPayload>;
+  /** Overfetch multiplier when a filter must be applied client-side. Default 8. */
+  overfetchFactor?: number;
+}
+
+/**
+ * Applies payload filters over a single vector index that cannot filter itself.
+ *
+ * `KnnIndex` stores vectors only, so it ignores the `search` filter. When it is
+ * the *primary* — no Qdrant URL configured, or Qdrant unreachable at boot — it
+ * must still honor dataset/category/tag scoping, otherwise degraded semantic
+ * search leaks bookmarks across datasets. This decorator gives every backend
+ * path identical filter semantics (ARCHITECTURE §6) by reusing the same
+ * overfetch-and-filter logic as `FallbackVectorIndex`.
+ *
+ * `resolvePayloads` is required: a caller that cannot resolve payloads should
+ * not be wrapping the index at all, since silently dropping the filter is the
+ * bug this type exists to prevent.
+ */
+export class FilteringVectorIndex implements VectorIndex {
+  private readonly resolvePayloads: (bookmarkIds: string[]) => Map<string, FallbackPayload>;
+  private readonly overfetchFactor: number;
+
+  constructor(
+    private index: VectorIndex,
+    options: FilteringVectorIndexOptions,
+  ) {
+    this.resolvePayloads = options.resolvePayloads;
+    this.overfetchFactor = options.overfetchFactor ?? 8;
+  }
+
+  get size(): number {
+    return this.index.size;
+  }
+
+  async search(
+    query: Float32Array,
+    topK: number,
+    filter?: VectorFilter,
+  ): Promise<RankedCandidate[]> {
+    if (!filter) {
+      return this.index.search(query, topK);
+    }
+    const candidates = await this.index.search(query, topK * this.overfetchFactor);
+    return filterCandidates(candidates, filter, this.resolvePayloads, topK);
+  }
+
+  async upsert(point: VectorUpsert): Promise<void> {
+    await this.index.upsert(point);
+  }
+
+  async updatePayload(bookmarkId: string, patch: VectorPayloadPatch): Promise<void> {
+    await this.index.updatePayload(bookmarkId, patch);
+  }
+
+  async delete(bookmarkId: string): Promise<void> {
+    await this.index.delete(bookmarkId);
   }
 }

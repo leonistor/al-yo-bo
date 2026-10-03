@@ -1,7 +1,12 @@
 import type { Database } from 'bun:sqlite';
 
 import { getBookmarksWithTagsByIds, listEmbeddings } from '@al-yo-bo/db';
-import { FallbackVectorIndex, KnnIndex, type FallbackPayload } from '@al-yo-bo/search';
+import {
+  FallbackVectorIndex,
+  FilteringVectorIndex,
+  KnnIndex,
+  type FallbackPayload,
+} from '@al-yo-bo/search';
 import type { VectorIndex } from '@al-yo-bo/shared';
 import { QdrantIndex, type SyncPayload, type SyncReport } from '@al-yo-bo/vectordb';
 
@@ -85,6 +90,18 @@ function resolvePayloads(db: Database): (bookmarkIds: string[]) => Map<string, F
 }
 
 /**
+ * Wraps the in-memory KNN in the filter-applying decorator whenever it serves
+ * as the primary (no Qdrant URL, or Qdrant unavailable at boot). `KnnIndex`
+ * ignores `search` filters, so without this wrapper degraded semantic search
+ * would return bookmarks from other datasets and ignore category/tag scoping —
+ * the filter semantics must be identical on every backend path (ARCHITECTURE
+ * §6). The reported `backend` stays `'memory'`.
+ */
+function memoryIndex(knn: KnnIndex, db: Database): VectorIndex {
+  return new FilteringVectorIndex(knn, { resolvePayloads: resolvePayloads(db) });
+}
+
+/**
  * Boots the vector-serving stack (ARCHITECTURE §6):
  *
  * 1. `KnnIndex` always loads from SQLite — it is the offline fallback, so it
@@ -116,7 +133,7 @@ export async function initVectorIndex(db: Database, config: ServerConfig): Promi
 
   const url = config.qdrant.url;
   if (!url) {
-    return { index: knn, backend: 'memory' };
+    return { index: memoryIndex(knn, db), backend: 'memory' };
   }
 
   const qdrant = new QdrantIndex({
@@ -138,6 +155,6 @@ export async function initVectorIndex(db: Database, config: ServerConfig): Promi
     };
   } catch (error) {
     console.warn(`[vector] Qdrant unavailable at ${url}; serving semantic search from the in-memory index`, error);
-    return { index: knn, backend: 'memory' };
+    return { index: memoryIndex(knn, db), backend: 'memory' };
   }
 }
