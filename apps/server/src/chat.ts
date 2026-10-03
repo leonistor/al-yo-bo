@@ -13,7 +13,7 @@ import { convertToModelMessages, isStepCount, streamText, tool, type UIMessage }
 import { createOllama } from 'ollama-ai-provider-v2';
 import { z } from 'zod';
 
-import type { BookmarkHit } from '@al-yo-bo/core';
+import { ChatUnavailableError, type BookmarkHit } from '@al-yo-bo/core';
 
 import type { ServerConfig } from './env.ts';
 
@@ -48,14 +48,10 @@ export function createChatHandler(options: ChatHandlerOptions) {
 
   return async (c: Context): Promise<Response> => {
     if (!config.chat.model) {
-      return c.json(
-        {
-          type: 'https://al-yo-bo.local/problems/chat-unavailable',
-          title: 'Chat is not configured (set OLLAMA_CHAT_MODEL)',
-          status: 503,
-        },
-        503,
-      );
+      // Domain error, mapped to 503 problem+json by app.onError (errors.ts) —
+      // same shape the old hand-rolled body produced, without bypassing the
+      // central mapping.
+      throw new ChatUnavailableError('Chat is not configured (set OLLAMA_CHAT_MODEL)');
     }
 
     let messages: UIMessage[];

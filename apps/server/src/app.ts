@@ -201,7 +201,18 @@ export function createApp(core: Core, config: ServerConfig) {
   });
 
   const app = new Hono()
-    .get('/api/health', async (c) => c.json(await core.health.health()))
+    .get(
+      '/api/health',
+      async (c) =>
+        c.json(
+          await core.health.health({
+            // Chat config lives at the app edge (core has none), so health
+            // takes it per call — mirrors the `health(chat?)` contract.
+            available: Boolean(config.chat.model),
+            model: config.chat.model ?? null,
+          }),
+        ),
+    )
 
     .get('/api/bookmarks', async (c) =>
       c.json(
