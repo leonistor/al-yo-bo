@@ -11,8 +11,10 @@ set -euo pipefail
 profile="${PROFILE:-}"
 data_dir="${DATA_DIR:-}"
 
-# Parse `--profile=<name>` / `--profile <name>`; unknown args (including a
-# stray `--` bun may forward) are ignored.
+# Parse `--profile=<name>` / `--profile <name>`; `--list-profiles` (alias
+# `--profiles`) prints the available profiles and exits. Unknown args
+# (including a stray `--` bun may forward) are ignored.
+list_profiles=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile=*)
@@ -27,11 +29,35 @@ while [ $# -gt 0 ]; do
         shift
       fi
       ;;
+    --list-profiles|--profiles)
+      list_profiles=1
+      shift
+      ;;
     *)
       shift
       ;;
   esac
 done
+
+if [ "$list_profiles" -eq 1 ]; then
+  # A profile is a directory under data/profiles/ created by a previous
+  # `--profile=<name>` run; "(no db)" marks dirs a failed boot left behind.
+  found=0
+  for dir in data/profiles/*/; do
+    [ -d "$dir" ] || continue
+    found=1
+    name="$(basename "$dir")"
+    if [ -f "$dir/bookmarks.db" ]; then
+      echo "$name"
+    else
+      echo "$name (no db)"
+    fi
+  done
+  if [ "$found" -eq 0 ]; then
+    echo "[dev] no profiles yet — create one with: bun run dev -- --profile=<name>"
+  fi
+  exit 0
+fi
 
 if [ -n "$profile" ]; then
   # The name becomes a path segment; keep it strict (must match the PROFILE
