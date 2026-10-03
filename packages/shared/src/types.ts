@@ -207,3 +207,32 @@ export interface ImportReport {
   /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §8). */
   addedIds: string[];
 }
+
+/** File formats the Export feature can produce. */
+export type ExportFormat = 'html' | 'json' | 'csv' | 'markdown';
+
+/**
+ * Bookmark selection for an export run — mirrors the search filter fields.
+ * Dates are epoch-ms bounds on `created_at` (inclusive), like `SearchQuery`.
+ */
+export interface ExportFilters {
+  q?: string;
+  categoryId?: string;
+  tagId?: string;
+  status?: BookmarkListStatus;
+  dateFrom?: number;
+  dateTo?: number;
+}
+
+/** A hydrated bookmark plus resolved vocabulary names, ready for serialization. */
+export interface ExportBookmarkRow extends BookmarkWithTags {
+  categoryName: string | null;
+  sectionName: string | null;
+}
+
+/** One produced export artifact, before transport packaging (zip lives at the server edge). */
+export interface ExportedFile {
+  filename: string;
+  contentType: string;
+  content: string;
+}

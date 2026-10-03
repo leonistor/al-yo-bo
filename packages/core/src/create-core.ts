@@ -10,6 +10,7 @@ import type { ScrapeFn } from './scrape.ts';
 import type { ScreenshotClient } from './screenshot.ts';
 import { createBookmarkService, type BookmarkService } from './services/bookmarks.ts';
 import { createEnrichmentService, type EnrichmentService } from './services/enrichment.ts';
+import { createExportService, type ExportService } from './services/export.ts';
 import { createHealthService, type HealthService } from './services/health.ts';
 import { createImportService, type ImportService } from './services/import.ts';
 import { createProfileService, type AvatarStore, type ProfileService } from './services/profile.ts';
@@ -49,6 +50,7 @@ export interface Core {
   vocabulary: VocabularyService;
   review: ReviewService;
   import: ImportService;
+  export: ExportService;
   enrichment: EnrichmentService;
   health: HealthService;
   /** The single user's profile (identity + active-dataset pointer). */
@@ -99,6 +101,7 @@ export function createCore(deps: CoreDeps): Core {
     }),
     review: createReviewService({ db, config, vector, datasetId: dataset.id }),
     import: createImportService({ db, jobs: enrichment, extract: extract ?? null }),
+    export: createExportService({ db, datasetId: dataset.id }),
     enrichment,
     profile: createProfileService({ db, avatarStore: deps.avatarStore }),
     defaultDatasetId: dataset.id,

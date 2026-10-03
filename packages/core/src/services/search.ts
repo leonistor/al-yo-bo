@@ -32,6 +32,9 @@ export interface SearchInput {
   datasetId?: string;
   categoryId?: string;
   tagId?: string;
+  /** Epoch-ms bounds on `created_at` (inclusive); set ⇒ keyword-only, since KNN has no date predicate. */
+  dateFrom?: number;
+  dateTo?: number;
   status: BookmarkListStatus;
   sort: BookmarkSort;
   direction: 'asc' | 'desc';
@@ -137,6 +140,8 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
         datasetId: input.datasetId ?? datasetId,
         categoryId: input.categoryId,
         tagId: input.tagId,
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
         status: input.status,
         sort: input.sort,
         direction: input.direction,
@@ -156,14 +161,18 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
       status: input.status,
     });
 
     // Fused modes fetch candidates from rank 0 over the whole page window, plus one
     // probe item past it so `hasMore` is observable; keyword-only pages in SQL.
     const window = offset + limit;
+    // Date-bounded searches stay keyword-only: the semantic index has no date
+    // predicate, so hybrid hits could not honor the range.
     const rawSemantic =
-      input.mode === 'keyword'
+      input.mode === 'keyword' || input.dateFrom !== undefined || input.dateTo !== undefined
         ? []
         : await semanticCandidates({
             q: input.q,
@@ -186,6 +195,8 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
       status: input.status,
       // In fused modes both ranked lists must cover the same window, otherwise
       // page slices of the fused ranking would repeat or skip items across pages.

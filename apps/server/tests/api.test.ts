@@ -10,8 +10,11 @@ import {
   type ScrapeFn,
 } from '@al-yo-bo/core';
 import {
+  assignTag,
   createBookmark,
+  createCategory,
   createDataset,
+  createTag,
   getBookmarkById,
   getDatasetByName,
   openDatabase,
@@ -20,6 +23,7 @@ import {
   setupDatabase,
 } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
+import { unzipSync } from 'fflate';
 import type {
   ImportedBookmark,
   Profile,
@@ -770,5 +774,132 @@ describe('lan API', () => {
       expect(address).not.toStartWith('127.');
       expect(address).not.toBe('0.0.0.0');
     }
+  });
+});
+
+describe('export API', () => {
+  test('streams a single format as an attachment', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/export?formats=html');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="alyobo-bookmarks.html"',
+    );
+    // Raw body, not JSON — the RPC contract only types it.
+    expect((await response.text()).startsWith('<!DOCTYPE NETSCAPE-Bookmark-file-1>')).toBe(true);
+  });
+
+  test('zips multiple formats at the edge', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/export?formats=html&formats=json');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/zip');
+    expect(response.headers.get('content-disposition')).toMatch(
+      /^attachment; filename="alyobo-export-\d{4}-\d{2}-\d{2}\.zip"$/,
+    );
+
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(entries).toSorted()).toEqual([
+      'alyobo-bookmarks.html',
+      'alyobo-bookmarks.json',
+    ]);
+
+    const decoder = new TextDecoder();
+    expect(decoder.decode(entries['alyobo-bookmarks.html']!).startsWith('<!DOCTYPE NETSCAPE')).toBe(
+      true,
+    );
+    const json = JSON.parse(decoder.decode(entries['alyobo-bookmarks.json']!)) as {
+      format: string;
+    };
+    expect(json.format).toBe('al-yo-bo/export');
+  });
+
+  test('forwards tag, status, text and date filters to the uncapped query', async () => {
+    const { db, app } = makeApp();
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'export-tag' });
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Export Category' });
+    const matching = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://export-match.test',
+      title: 'Match sqlite',
+      categoryId: category.id,
+    });
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://export-other.test', title: 'Other' });
+    assignTag(db, { bookmarkId: matching.id, tagId: tag.id, source: 'user' });
+
+    const response = await app.request(
+      `/api/export?formats=json&tagId=${tag.id}&status=active&q=sqlite` +
+        '&dateFrom=2000-01-01&dateTo=2100-01-01',
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { bookmarks: { url: string }[] };
+    expect(body.bookmarks.map((row) => row.url)).toEqual(['https://export-match.test/']);
+  });
+
+  test('rejects missing, unknown and malformed params with a 400', async () => {
+    const { app } = makeApp();
+    const cases: { url: string; title: string }[] = [
+      { url: '/api/export', title: 'At least one export format is required' },
+      { url: '/api/export?formats=xml', title: 'Unsupported export format: xml' },
+      { url: '/api/export?formats=json&categoryId=not-a-uuid', title: 'categoryId' },
+      { url: '/api/export?formats=json&dateFrom=not-a-date', title: 'dateFrom' },
+    ];
+
+    const results = await Promise.all(
+      cases.map(async ({ url, title }) => {
+        const response = await app.request(url);
+        return { status: response.status, title, body: (await response.json()) as { title: string } };
+      }),
+    );
+
+    for (const { status, title, body } of results) {
+      expect(status).toBe(400);
+      expect(body.title).toContain(title);
+    }
+  });
+
+  test('exports a header-only CSV when the filter matches nothing', async () => {
+    const { app } = makeApp();
+    const emptyCategory = '00000000-0000-7000-8000-000000000000';
+    const response = await app.request(`/api/export?formats=csv&categoryId=${emptyCategory}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(await response.text()).toBe('folder,url,title,note,tags,created\n');
+  });
+
+  test('dateFrom/dateTo expand date-only params to UTC day bounds', async () => {
+    const { db, app } = makeApp();
+    const inRange = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://range-in.test',
+      title: 'In range',
+    });
+    const outOfRange = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://range-out.test',
+      title: 'Out of range',
+    });
+    // Seed fixtures carry 2026 timestamps, so a 2001 window isolates these rows.
+    db.query('UPDATE bookmarks SET created_at = ? WHERE url = ?').run(
+      Date.parse('2001-05-05T12:00:00.000Z'),
+      inRange.url,
+    );
+    db.query('UPDATE bookmarks SET created_at = ? WHERE url = ?').run(
+      Date.parse('2001-05-06T12:00:00.000Z'),
+      outOfRange.url,
+    );
+
+    const response = await app.request(
+      '/api/bookmarks?dateFrom=2001-05-05&dateTo=2001-05-05&limit=100',
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { total: number; items: { url: string }[] };
+    expect(body.total).toBe(1);
+    expect(body.items.map((item) => item.url)).toEqual(['https://range-in.test/']);
   });
 });

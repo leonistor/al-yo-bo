@@ -32,6 +32,7 @@ import {
   listBookmarkIdsMissingEmbeddings,
   listBelowThresholdCandidates,
   listBookmarks,
+  listBookmarksForExport,
   listSections,
   listUnknownClassificationLabels,
   DEFAULT_SEED_PATH,
@@ -428,6 +429,126 @@ describe('listing & aggregates', () => {
     const aggregates = getAggregates(db, db.datasetId);
     expect(aggregates.total).toBe(3);
     expect(aggregates.categories.find((c) => c.id === category.id)?.count).toBe(2);
+  });
+});
+
+describe('export listing', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('filters by an inclusive created_at range', () => {
+    const older = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-old.test' });
+    const middle = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-mid.test' });
+    const newer = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-new.test' });
+    for (const [bookmark, at] of [
+      [older, 1000],
+      [middle, 2000],
+      [newer, 3000],
+    ] as const) {
+      db.query('UPDATE bookmarks SET created_at = ? WHERE id = ?').run(at, uuidToBytes(bookmark.id));
+    }
+
+    const rows = listBookmarksForExport(db, {
+      datasetId: db.datasetId,
+      dateFrom: 1000,
+      dateTo: 2000,
+    });
+    expect(rows.map((bookmark) => bookmark.id)).toEqual([middle.id, older.id]);
+  });
+
+  test('combines category, tag, and status filters', () => {
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Exportable' });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'export-tag' });
+    const match = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://exp-match.test',
+      categoryId: category.id,
+    });
+    assignTag(db, { bookmarkId: match.id, tagId: tag.id, source: 'user' });
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://exp-other.test',
+      categoryId: category.id,
+    });
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://exp-invalid.test',
+      categoryId: category.id,
+      status: 'invalid',
+      scrapeAttempts: 3,
+    });
+
+    const rows = listBookmarksForExport(db, {
+      datasetId: db.datasetId,
+      categoryId: category.id,
+      tagId: tag.id,
+      status: 'active',
+    });
+    expect(rows.map((bookmark) => bookmark.id)).toEqual([match.id]);
+  });
+
+  test('filters by a full-text query through the FTS index', () => {
+    const hit = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://exp-fts.test',
+      title: 'Kubernetes networking guide',
+    });
+    createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://exp-fts-other.test',
+      title: 'Gardening tips',
+    });
+
+    const rows = listBookmarksForExport(db, { datasetId: db.datasetId, q: 'kubernetes' });
+    expect(rows.map((bookmark) => bookmark.id)).toEqual([hit.id]);
+  });
+
+  test('returns the whole filtered set, bypassing the list page cap', () => {
+    db.transaction(() => {
+      const insert = db.query(
+        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (let i = 0; i < 105; i++) {
+        insert.run(
+          newIdBytes(),
+          uuidToBytes(db.datasetId),
+          `https://exp-bulk.test/${i}`,
+          `Bulk ${i}`,
+          'active',
+        );
+      }
+    }).immediate();
+
+    expect(listBookmarks(db, { datasetId: db.datasetId, limit: 100 }).items).toHaveLength(100);
+    expect(listBookmarksForExport(db, { datasetId: db.datasetId })).toHaveLength(105);
+  });
+
+  test('orders by created_at desc with id as a stable tie-break', () => {
+    const ids: string[] = [];
+    db.transaction(() => {
+      const insert = db.query(
+        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (let i = 0; i < 10; i++) {
+        const id = newIdBytes();
+        insert.run(
+          id,
+          uuidToBytes(db.datasetId),
+          `https://exp-order.test/${i}`,
+          `Order ${i}`,
+          'active',
+        );
+        ids.push(bytesToUuid(id));
+      }
+    }).immediate();
+    db.query('UPDATE bookmarks SET created_at = 5000 WHERE dataset_id = ?').run(
+      uuidToBytes(db.datasetId),
+    );
+
+    const rows = listBookmarksForExport(db, { datasetId: db.datasetId });
+    expect(rows.map((bookmark) => bookmark.id)).toEqual(ids.toSorted());
   });
 });
 

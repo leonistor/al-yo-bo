@@ -38,6 +38,8 @@ export interface BookmarkInput {
 
 export interface ListBookmarksFilters {
   datasetId?: string;
+  /** Full-text query (FTS5 over url/title/description/content); empty ⇒ no text constraint. */
+  q?: string;
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -114,6 +116,15 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
   if (filters.datasetId) {
     where.push('dataset_id = ?');
     params.push(uuidToBytes(filters.datasetId));
+  }
+  if (filters.q) {
+    const match = toFtsMatch(filters.q);
+    // A whitespace-only query tokenizes to nothing; dropping the clause matches
+    // keywordSearch's behavior (no match string ⇒ no text constraint).
+    if (match) {
+      where.push('id IN (SELECT bookmark_id FROM bookmark_fts WHERE bookmark_fts MATCH ?)');
+      params.push(match);
+    }
   }
   if (filters.categoryId) {
     where.push('category_id = ?');
@@ -392,6 +403,26 @@ export function listBookmarks(
   ).all(...params, limit, offset);
 
   return { items: hydrate(db, rows), total };
+}
+
+/**
+ * Full, uncapped read for exports. Deliberately skips `listBookmarks`'
+ * pagination window so an export reflects the entire filtered set; the
+ * 100-row `clampPagination` cap is a presentation concern enforced above this
+ * layer, never here. `created_at DESC, id` is a total order (ids are unique),
+ * so repeated exports are byte-stable.
+ */
+export function listBookmarksForExport(
+  db: Database,
+  filters: ListBookmarksFilters,
+): BookmarkWithTags[] {
+  const { whereSql, params } = buildFilterClauses(filters);
+  const rows = prepared<BookmarkRow, SQLQueryBindings[]>(
+    db,
+    `SELECT ${COLUMNS} FROM bookmarks ${whereSql}
+        ORDER BY created_at DESC, id`,
+  ).all(...params);
+  return hydrate(db, rows);
 }
 
 export function getBookmarksWithTagsByIds(db: Database, ids: string[]): BookmarkWithTags[] {

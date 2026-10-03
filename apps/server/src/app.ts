@@ -10,8 +10,11 @@ import {
   isUuid,
   type BookmarkListStatus,
   type BookmarkSort,
+  type ExportFilters,
+  type ExportFormat,
   type SearchMode,
 } from '@al-yo-bo/shared';
+import { zipSync } from 'fflate';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { validator } from 'hono/validator';
@@ -121,6 +124,26 @@ function parseNumber(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/**
+ * Parses an ISO date/datetime query param to epoch ms. Date-only values
+ * (`YYYY-MM-DD`) expand to UTC day bounds so an inclusive `dateTo` covers the
+ * whole end day. Unparseable values are a 400, never silently dropped.
+ */
+function parseIsoDate(value: string | undefined, field: string, bound: 'from' | 'to'): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const time = bound === 'from' ? 'T00:00:00.000Z' : 'T23:59:59.999Z';
+    return Date.parse(`${value}${time}`);
+  }
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) {
+    throw new ValidationError(`"${field}" must be an ISO date (YYYY-MM-DD)`);
+  }
+  return ms;
+}
+
 function requiredString(body: Record<string, unknown>, field: string): string {
   const value = body[field];
   if (typeof value !== 'string' || value.trim() === '') {
@@ -221,6 +244,8 @@ export function createApp(core: Core, config: ServerConfig) {
           mode: parseMode(c.req.query('mode')),
           categoryId: queryUuid(c.req.query('categoryId'), 'categoryId'),
           tagId: queryUuid(c.req.query('tagId'), 'tagId'),
+          dateFrom: parseIsoDate(c.req.query('dateFrom'), 'dateFrom', 'from'),
+          dateTo: parseIsoDate(c.req.query('dateTo'), 'dateTo', 'to'),
           status: parseStatus(c.req.query('status')),
           sort: parseSort(c.req.query('sort')),
           direction: parseDirection(c.req.query('direction')),
@@ -461,6 +486,63 @@ export function createApp(core: Core, config: ServerConfig) {
       const datasetId = datasetIdParam || core.defaultDatasetId;
       const file = c.req.query('file') || undefined;
       return c.json(core.import.commit(bookmarks, datasetId, { file }));
+    })
+
+    // Bookmark export (ARCHITECTURE §Export): a synchronous request/response,
+    // never a job. Core owns filter/format validation and serialization; this
+    // adapter only parses the query and packages bytes — a single format streams
+    // that file, multiple formats are zipped here at the edge with fflate.
+    .get('/api/export', async (c) => {
+      const filters: ExportFilters = {};
+      const q = c.req.query('q')?.trim();
+      if (q) {
+        filters.q = q;
+      }
+      const categoryId = queryUuid(c.req.query('categoryId'), 'categoryId');
+      if (categoryId) {
+        filters.categoryId = categoryId;
+      }
+      const tagId = queryUuid(c.req.query('tagId'), 'tagId');
+      if (tagId) {
+        filters.tagId = tagId;
+      }
+      filters.status = parseStatus(c.req.query('status'));
+      const dateFrom = parseIsoDate(c.req.query('dateFrom'), 'dateFrom', 'from');
+      if (dateFrom !== undefined) {
+        filters.dateFrom = dateFrom;
+      }
+      const dateTo = parseIsoDate(c.req.query('dateTo'), 'dateTo', 'to');
+      if (dateTo !== undefined) {
+        filters.dateTo = dateTo;
+      }
+
+      // Core rejects unknown/empty formats at runtime (400 via ValidationError);
+      // the assertion only narrows the repeated query strings for the typed call.
+      const formats = (c.req.queries('formats') ?? []) as ExportFormat[];
+      const files = await core.export.run(filters, formats);
+
+      const file = files[0];
+      if (files.length === 1 && file) {
+        return new Response(file.content, {
+          headers: {
+            'Content-Type': file.contentType,
+            'Content-Disposition': `attachment; filename="${file.filename}"`,
+          },
+        });
+      }
+
+      const encoder = new TextEncoder();
+      const entries: Record<string, Uint8Array> = {};
+      for (const exported of files) {
+        entries[exported.filename] = encoder.encode(exported.content);
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      return new Response(zipSync(entries), {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="alyobo-export-${date}.zip"`,
+        },
+      });
     })
 
     // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the

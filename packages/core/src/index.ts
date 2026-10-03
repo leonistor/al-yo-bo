@@ -62,6 +62,11 @@ export {
   type ImportPreview,
 } from './services/import.ts';
 export {
+  createExportService,
+  type ExportService,
+  type ExportServiceDeps,
+} from './services/export.ts';
+export {
   createEnrichmentService,
   type EnrichmentService,
   type EnrichmentServiceDeps,
