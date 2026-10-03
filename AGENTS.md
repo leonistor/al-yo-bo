@@ -86,6 +86,8 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   (`npx octocode tools <name> --queries '<json>' --compact`) or via the globally installed
   `octocode-research` skill. Repo discovery example:
   `npx octocode tools ghSearch --queries '{"operation":"repositories","keywords":["lucide icons mcp"],"sort":"stars"}' --compact`.
+  npmSearch note: unlike ghSearch it takes NO `operation` field, and `keywords` must be an
+  **array** (`{"keywords":["lucide","mcp"],"pageSize":5}`), never a space-joined string.
   Auth reuses the `gh` CLI token automatically — no extra env needed.
 
 ## Hard constraints (ARCHITECTURE §1)
