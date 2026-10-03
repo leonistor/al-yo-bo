@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
-import { formatDate, hostOf } from '@/lib/format';
+import { hostOf } from '@/lib/format';
 import { resolveImageSrc } from '@/lib/image';
 import type { Layout } from '@/lib/useLayout';
 import { cn } from '@/lib/utils';
@@ -39,21 +39,41 @@ const LIST_ITEM_ELEMENT = <li />;
  * (dead remote URLs fall through to the placeholder instead of breaking).
  * Placeholder is a plain muted block with a globe mark — calm, no favicon
  * service round-trip.
+ *
+ * Click affordance: the whole thumbnail opens the detail sheet, mirroring the
+ * title button. It stays `tabIndex={-1}` (not a tab stop) so the roving-focus
+ * keyboard model keeps a single primary control per row — the title button.
  */
-function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: Layout }) {
+function CardThumb({
+  bookmark,
+  layout,
+  title,
+  onOpen,
+  onKeyDown,
+}: {
+  bookmark: BookmarkWithTags;
+  layout: Layout;
+  title: string;
+  onOpen: () => void;
+  onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
+}) {
   const [failed, setFailed] = useState(false);
   const markFailed = useCallback(() => setFailed(true), []);
   const resolved = failed ? null : resolveImageSrc(bookmark.image);
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onOpen}
+      onKeyDown={onKeyDown}
+      tabIndex={-1}
+      aria-label={`Open ${title} details`}
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden bg-muted text-muted-foreground',
+        'flex shrink-0 cursor-pointer items-center justify-center overflow-hidden bg-muted text-muted-foreground focus-visible:outline-none',
         layout === 'grid'
           ? '-mx-3 -mt-3 mb-0 aspect-video rounded-t-lg'
           : 'aspect-video w-24 rounded-md',
       )}
-      aria-hidden={!resolved}
     >
       {resolved ? (
         <img
@@ -69,7 +89,7 @@ function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: L
       ) : (
         <GlobeIcon className="size-4" aria-hidden />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -225,7 +245,13 @@ export const BookmarkCard = memo(function BookmarkCard({
       )}
       style={animationStyle}
     >
-      <CardThumb bookmark={bookmark} layout={layout} />
+      <CardThumb
+        bookmark={bookmark}
+        layout={layout}
+        title={title}
+        onOpen={handleOpen}
+        onKeyDown={onKeyDown}
+      />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-start gap-1">
           <button
@@ -242,11 +268,17 @@ export const BookmarkCard = memo(function BookmarkCard({
           <RowActions actions={actions} active={isActive} onKeyDown={onKeyDown} />
         </div>
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1 truncate">
+          {/* The host doubles as the bookmark's external link: tinted, one step
+              larger than meta text, with an explicit new-tab icon. */}
+          <a
+            href={bookmark.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-w-0 items-center gap-1 truncate text-sm text-primary transition-colors duration-150 hover:text-primary/80"
+          >
             <span className="truncate">{hostOf(bookmark.url)}</span>
-            <span aria-hidden>·</span>
-            <span className="truncate text-foreground/70">{formatDate(bookmark.createdAt)}</span>
-          </span>
+            <ExternalLinkIcon className="size-3.5 shrink-0" aria-hidden />
+          </a>
           {bookmark.status === 'invalid' && <Badge variant="destructive">Invalid</Badge>}
         </p>
         {bookmark.description && (
