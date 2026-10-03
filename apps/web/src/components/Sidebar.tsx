@@ -1,4 +1,4 @@
-import type { Aggregates, CategoryAggregate, Profile, TagAggregate } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryAggregate, Profile } from '@al-yo-bo/shared';
 import {
   FolderOpenIcon,
   HashIcon,
@@ -14,13 +14,14 @@ import type { ReactNode } from 'react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { CollapsibleSection } from '@/components/CollapsibleSection';
+import { FilterTagPill } from '@/components/FilterTagPill';
 import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
-import { TagPill } from '@/components/TagPill';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useSidebarNavModel } from '@/hooks/useSidebarNavModel';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -110,27 +111,6 @@ function CategoryRow({
       <span className="truncate">{category.name}</span>
       <span className="ml-auto text-xs text-muted-foreground tabular-nums">{category.count}</span>
     </Button>
-  );
-}
-
-interface TagItemProps {
-  tag: TagAggregate;
-  selected: boolean;
-  onToggle: (tagId: string) => void;
-}
-
-/** One sidebar tag pill; same per-item handler pattern as CategoryRow. */
-function TagItem({ tag, selected, onToggle }: TagItemProps) {
-  const handleClick = useCallback(() => onToggle(tag.id), [onToggle, tag.id]);
-
-  return (
-    <TagPill
-      variant={selected ? 'selected' : 'outline'}
-      count={tag.count}
-      onClick={handleClick}
-    >
-      {tag.name}
-    </TagPill>
   );
 }
 
@@ -229,10 +209,13 @@ function SidebarNav({
   onNavigate,
   showTools = true,
 }: SidebarNavProps) {
-  const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
-  const tags = aggregates?.tags.filter((tag) => tag.count > 0).slice(0, 14) ?? [];
-  const sections = aggregates?.sections.filter((section) => section.count > 0) ?? [];
-  const uncategorized = categories.filter((category) => category.sectionId === null);
+  const model = useSidebarNavModel(
+    aggregates,
+    view,
+    selectedCategoryId,
+    selectedTagId,
+    reviewCount,
+  );
 
   const showAll = useCallback(() => {
     onSelectView('library');
@@ -268,33 +251,33 @@ function SidebarNav({
       <Button
         variant="ghost"
         className={rowClass}
-        data-active={view === 'library' && !selectedCategoryId && !selectedTagId}
+        data-active={model.isAllActive}
         onClick={showAll}
       >
         <InboxIcon />
         <span>All bookmarks</span>
         <Badge variant="secondary" className="ml-auto tabular-nums">
-          {aggregates?.total ?? 0}
+          {model.total}
         </Badge>
       </Button>
 
       <Button
         variant="ghost"
         className={rowClass}
-        data-active={view === 'review'}
+        data-active={model.isReviewActive}
         onClick={showReview}
       >
         <Settings2Icon />
         <span>Review queue</span>
-        {reviewCount > 0 && (
+        {model.reviewCount > 0 && (
           <Badge variant="secondary" className="ml-auto tabular-nums">
-            {reviewCount}
+            {model.reviewCount}
           </Badge>
         )}
       </Button>
 
-      {sections.map((section) => {
-        const sectionCategories = categories.filter((c) => c.sectionId === section.id);
+      {model.sections.map((section) => {
+        const sectionCategories = model.categories.filter((c) => c.sectionId === section.id);
         return (
           <CollapsibleGroup
             key={section.id}
@@ -319,7 +302,7 @@ function SidebarNav({
         );
       })}
 
-      {uncategorized.length > 0 && (
+      {model.uncategorized.length > 0 && (
         <CollapsibleGroup
           groupKey={sectionKey('uncategorized')}
           title="Other"
@@ -327,7 +310,7 @@ function SidebarNav({
           onSetOpenSection={onSetOpenSection}
         >
           <div className="ml-3 flex flex-col border-l-2 border-border/60">
-            {uncategorized.map((category) => (
+            {model.uncategorized.map((category) => (
               <CategoryRow
                 key={category.id}
                 category={category}
@@ -343,15 +326,17 @@ function SidebarNav({
       <CollapsibleGroup
         groupKey={TAGS_KEY}
         title="Tags"
-        count={tags.length}
+        count={model.tagCount}
         open={openSections[TAGS_KEY] ?? true}
         onSetOpenSection={onSetOpenSection}
       >
         <div className="flex flex-wrap gap-1.5 p-2">
-          {tags.map((tag) => (
-            <TagItem
+          {model.tags.map((tag) => (
+            <FilterTagPill
               key={tag.id}
-              tag={tag}
+              id={tag.id}
+              name={tag.name}
+              count={tag.count}
               selected={selectedTagId === tag.id}
               onToggle={toggleTag}
             />
@@ -383,21 +368,24 @@ interface RailButtonProps {
 
 /** Icon-rail entry with a tooltip; review keeps a count badge. */
 function RailButton({ label, onClick, children, badge, active }: RailButtonProps) {
+  const triggerRender = useMemo(
+    () => (
+      <Button
+        variant="ghost"
+        size="icon-lg"
+        aria-label={label}
+        aria-pressed={active}
+        data-active={active}
+        className="relative data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
+        onClick={onClick}
+      />
+    ),
+    [active, label, onClick],
+  );
+
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            aria-label={label}
-            aria-pressed={active}
-            data-active={active}
-            className="relative data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground"
-            onClick={onClick}
-          />
-        }
-      >
+      <TooltipTrigger render={triggerRender}>
         {children}
         {badge !== undefined && badge > 0 && (
           <span className="absolute top-0 right-0 flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
@@ -433,8 +421,13 @@ export function Sidebar({
   onSetWidth,
   onSetCollapsed,
 }: SidebarProps) {
-  const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
-  const tags = aggregates?.tags.filter((tag) => tag.count > 0).slice(0, 14) ?? [];
+  const model = useSidebarNavModel(
+    aggregates,
+    view,
+    selectedCategoryId,
+    selectedTagId,
+    reviewCount,
+  );
 
   // Drag preview state: while dragging we render a local width so the persisted
   // value is only written once, on release.
@@ -593,30 +586,30 @@ export function Sidebar({
 
           <div className="mt-2 flex flex-col items-center gap-1">
             <RailButton
-              label={`All bookmarks (${aggregates?.total ?? 0})`}
-              active={view === 'library' && !selectedCategoryId && !selectedTagId}
+              label={`All bookmarks (${model.total})`}
+              active={model.isAllActive}
               onClick={showAll}
             >
               <InboxIcon />
             </RailButton>
             <RailButton
-              label={`Review queue${reviewCount > 0 ? ` (${reviewCount})` : ''}`}
-              badge={reviewCount}
-              active={view === 'review'}
+              label={`Review queue${model.reviewCount > 0 ? ` (${model.reviewCount})` : ''}`}
+              badge={model.reviewCount}
+              active={model.isReviewActive}
               onClick={showReview}
             >
               <Settings2Icon />
             </RailButton>
             <RailButton
-              label={`Categories (${categories.length})`}
-              active={view === 'library' && selectedCategoryId !== null}
+              label={`Categories (${model.categoryCount})`}
+              active={model.isCategoryActive}
               onClick={expand}
             >
               <FolderOpenIcon />
             </RailButton>
             <RailButton
-              label={`Tags (${tags.length})`}
-              active={view === 'library' && selectedTagId !== null}
+              label={`Tags (${model.tagCount})`}
+              active={model.isTagActive}
               onClick={expand}
             >
               <HashIcon />
@@ -643,7 +636,7 @@ export function Sidebar({
               al-yo-bo
             </span>
             <Badge variant="secondary" className="tabular-nums">
-              {aggregates?.total ?? 0}
+              {model.total}
             </Badge>
             <div className="ml-auto flex items-center gap-0.5">
               <SidebarAccountMenu

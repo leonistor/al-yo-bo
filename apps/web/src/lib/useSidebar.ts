@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
 
+import { createSafeStorage } from '@/lib/storage';
+
 /** Expanded-sidebar drag bounds and the collapsed rail width (DESIGN.md §Sidebar). */
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 360;
@@ -10,29 +12,8 @@ const WIDTH_KEY = 'ayb:sidebar:width';
 const COLLAPSED_KEY = 'ayb:sidebar:collapsed';
 const SECTIONS_KEY = 'ayb:sidebar:sections';
 
-/**
- * localStorage can throw (sandboxed iframes, privacy modes, quota) — degrade to
- * an in-memory fallback instead of crashing the app at mount.
- */
-const storage = (() => {
-  const memory = new Map<string, string>();
-  try {
-    const probe = 'ayb:sidebar:probe';
-    localStorage.setItem(probe, probe);
-    localStorage.removeItem(probe);
-    return {
-      get: (key: string) => localStorage.getItem(key),
-      set: (key: string, value: string) => localStorage.setItem(key, value),
-    };
-  } catch {
-    return {
-      get: (key: string) => memory.get(key) ?? null,
-      set: (key: string, value: string) => {
-        memory.set(key, value);
-      },
-    };
-  }
-})();
+/** localStorage with an in-memory fallback for sandboxed/private-mode contexts. */
+const storage = createSafeStorage('ayb:sidebar:probe');
 
 function clampWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));

@@ -1,12 +1,12 @@
 import { MonitorIcon, MoonIcon, SunIcon, UserIcon } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { Profile } from '@al-yo-bo/shared';
 
 import { ProfileAvatar } from '@/components/ProfileAvatar';
-import { cn } from '@/lib/utils';
 import type { ButtonProps } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,17 +48,14 @@ export function SidebarAccountMenu({
 
   const displayName = profile?.name ?? profile?.githubUsername;
 
+  const triggerRender = useMemo(
+    () => <Button variant="ghost" size={size} aria-label="Account and theme" />,
+    [size],
+  );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size={size}
-            aria-label="Account and theme"
-          />
-        }
-      >
+      <DropdownMenuTrigger render={triggerRender}>
         {profile ? (
           <ProfileAvatar profile={profile} className={size === 'icon-sm' ? 'size-6' : 'size-7'} />
         ) : (

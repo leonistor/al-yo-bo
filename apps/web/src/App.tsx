@@ -126,6 +126,7 @@ function BookmarkListCrossfade({
   ]);
   const cacheRef = useRef<Record<number, BookmarkWithTags[]>>({ [page]: items });
   const lastListKeyRef = useRef(listKey);
+  const lastProcessedPageRef = useRef(page);
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
   // When filters change the page number is reset, and page-cache entries from
@@ -136,6 +137,7 @@ function BookmarkListCrossfade({
       return;
     }
     lastListKeyRef.current = listKey;
+    lastProcessedPageRef.current = page;
     cacheRef.current = items.length > 0 ? { [page]: items } : {};
     setSlots([
       { page, items },
@@ -158,12 +160,14 @@ function BookmarkListCrossfade({
     );
   }, [items, page, isPlaceholderData]);
 
-  // Start the crossfade when the user moves to a different page.
+  // Start the crossfade when the user moves to a different page. We track the
+  // last processed page in a ref so the effect does not need to depend on the
+  // mutable `slots` state (that would cause an infinite loop).
   useEffect(() => {
-    const currentSlot = slots[activeSlot];
-    if (!currentSlot || page === currentSlot.page) {
+    if (page === lastProcessedPageRef.current) {
       return;
     }
+    lastProcessedPageRef.current = page;
     const nextSlot = activeSlot === 0 ? 1 : 0;
     setSlots((prev) => {
       const next = [...prev];
@@ -374,7 +378,12 @@ export function App() {
   }, [addOpen, chatOpen, commandOpen, navOpen, selected, toggleSidebar]);
 
   // A page change renders a fresh batch; don't leave the user scrolled mid-list.
+  const lastScrolledPageRef = useRef(page);
   useEffect(() => {
+    if (lastScrolledPageRef.current === page) {
+      return;
+    }
+    lastScrolledPageRef.current = page;
     listScrollRef.current?.scrollTo({ top: 0 });
   }, [page]);
 

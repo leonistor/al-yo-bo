@@ -1,4 +1,4 @@
-import type { BookmarkImage, BookmarkWithTags } from '@al-yo-bo/shared';
+import type { BookmarkWithTags } from '@al-yo-bo/shared';
 import {
   BookmarkIcon,
   ExternalLinkIcon,
@@ -8,8 +8,9 @@ import {
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { FilterTagPill } from '@/components/FilterTagPill';
 import { TagPill } from '@/components/TagPill';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,35 +25,12 @@ import {
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate, hostOf } from '@/lib/format';
+import { resolveImageSrc } from '@/lib/image';
 import type { Layout } from '@/lib/useLayout';
 import { cn } from '@/lib/utils';
 
-// Mirrors the server's `/data/screenshots/:filename` guard: a malformed or
-// absolute stored path never reaches the route at all.
-const SCREENSHOT_FILENAME = /^[0-9a-f-]{36}\.jpg$/i;
-
-/**
- * Image fallback chain (ARCHITECTURE §8): local screenshot first, then the
- * remote og:image, otherwise nothing (the caller renders the placeholder).
- * `remote` marks the og:image case so the <img> can relax CORS/referrer.
- */
-function resolveImageSrc(
-  image: BookmarkImage | undefined,
-): { src: string; remote: boolean } | null {
-  if (!image) {
-    return null;
-  }
-  if (image.screenshotPath) {
-    const filename = image.screenshotPath.split('/').pop() ?? '';
-    if (SCREENSHOT_FILENAME.test(filename)) {
-      return { src: `/data/screenshots/${filename}`, remote: false };
-    }
-  }
-  if (image.ogImageUrl) {
-    return { src: image.ogImageUrl, remote: true };
-  }
-  return null;
-}
+/** Stable <li> element for semantic list rendering; avoids inline JSX-as-prop. */
+const LIST_ITEM_ELEMENT = <li />;
 
 /**
  * Card thumbnail with the full fallback chain, including a failed <img> load
@@ -145,26 +123,6 @@ function CardSkeleton({ layout }: { layout: Layout }) {
   );
 }
 
-interface BookmarkTagPillProps {
-  tag: BookmarkWithTags['tags'][number];
-  selected: boolean;
-  onTagClick?: (tagId: string) => void;
-}
-
-/** Interactive row tag; keeps its click handler stable inside the memoized card. */
-function BookmarkTagPill({ tag, selected, onTagClick }: BookmarkTagPillProps) {
-  const handleClick = useCallback(() => onTagClick?.(tag.tagId), [onTagClick, tag.tagId]);
-
-  return (
-    <TagPill
-      variant={selected ? 'selected' : 'outline'}
-      onClick={onTagClick ? handleClick : undefined}
-    >
-      {tag.name}
-    </TagPill>
-  );
-}
-
 interface BookmarkCardProps {
   bookmark: BookmarkWithTags;
   layout: Layout;
@@ -186,6 +144,23 @@ interface BookmarkCardProps {
    * so the list `<ul>` itself stays handler-free.
    */
   onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+}
+
+interface ExternalLinkAnchorProps {
+  url: string;
+  title: string;
+}
+
+/** Stable anchor wrapper for the card's external-link button. */
+function ExternalLinkAnchor({ url, title }: ExternalLinkAnchorProps) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Open ${title} in a new tab`}
+    />
+  );
 }
 
 export const BookmarkCard = memo(function BookmarkCard({
@@ -210,18 +185,27 @@ export const BookmarkCard = memo(function BookmarkCard({
   const handleOpen = useCallback(() => onOpen(bookmark), [onOpen, bookmark]);
   const handleDelete = useCallback(() => onDelete(bookmark), [onDelete, bookmark]);
 
+  const externalLinkRender = useMemo(
+    () => <ExternalLinkAnchor url={bookmark.url} title={title} />,
+    [bookmark.url, title],
+  );
+  const animationStyle = useMemo(
+    () => (isAnimated ? { animationDelay: `${cardIndex * 20}ms` } : undefined),
+    [isAnimated, cardIndex],
+  );
+
   return (
     <Card
       data-bookmark-id={bookmark.id}
       data-index={cardIndex}
-      render={listItem ? <li /> : undefined}
+      render={listItem ? LIST_ITEM_ELEMENT : undefined}
       className={cn(
         'group relative w-full overflow-hidden p-3 transition-colors hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring',
         layout === 'grid' ? 'h-full flex-col' : 'flex-row items-start gap-2',
         isAnimated &&
           'animate-in fade-in-0 duration-200 ease-out motion-safe:slide-in-from-bottom-1',
       )}
-      style={isAnimated ? { animationDelay: `${cardIndex * 20}ms` } : undefined}
+      style={animationStyle}
     >
       <CardThumb bookmark={bookmark} layout={layout} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -242,14 +226,7 @@ export const BookmarkCard = memo(function BookmarkCard({
               size="icon-sm"
               tabIndex={isActive ? 0 : -1}
               onKeyDown={onKeyDown}
-              render={
-                <a
-                  href={bookmark.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`Open ${title} in a new tab`}
-                />
-              }
+              render={externalLinkRender}
             >
               <ExternalLinkIcon />
             </Button>
@@ -280,11 +257,12 @@ export const BookmarkCard = memo(function BookmarkCard({
         {bookmark.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {bookmark.tags.slice(0, 5).map((tag) => (
-              <BookmarkTagPill
+              <FilterTagPill
                 key={tag.tagId}
-                tag={tag}
+                id={tag.tagId}
+                name={tag.name}
                 selected={selectedTagId === tag.tagId}
-                onTagClick={onTagClick}
+                onToggle={onTagClick}
               />
             ))}
             {bookmark.tags.length > 5 && (
@@ -404,7 +382,7 @@ export function BookmarkList({
       if (nextIndex === index || !nextBookmark) return;
       const nextCard = listRef.current
         ?.querySelectorAll<HTMLElement>('[data-bookmark-id]')
-        [nextIndex];
+        .item(nextIndex);
       const nextTitle = nextCard?.querySelector<HTMLButtonElement>('[data-title-button]');
       if (nextTitle) {
         nextTitle.focus();

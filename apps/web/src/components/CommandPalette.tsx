@@ -8,7 +8,7 @@ import {
   SearchIcon,
   TagIcon,
 } from 'lucide-react';
-import { useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 
 import {
   Command,
@@ -42,6 +42,83 @@ function matchesTerm(name: string, term: string): boolean {
   return name.toLowerCase().includes(term.toLowerCase());
 }
 
+interface ActionItemProps {
+  value: string;
+  onClick: () => void;
+  icon: React.ElementType;
+  children: ReactNode;
+}
+
+function ActionItem({ value, onClick, icon: Icon, children }: ActionItemProps) {
+  return (
+    <CommandItem value={value} onClick={onClick}>
+      <Icon className="mr-2 size-4 shrink-0" />
+      {children}
+    </CommandItem>
+  );
+}
+
+interface SearchActionItemProps {
+  term: string;
+  onSearch: (term: string) => void;
+}
+
+function SearchActionItem({ term, onSearch }: SearchActionItemProps) {
+  const handleClick = useCallback(() => onSearch(term), [onSearch, term]);
+
+  return (
+    <ActionItem value="search" onClick={handleClick} icon={SearchIcon}>
+      <span className="truncate">Search bookmarks for “{term}”</span>
+      <CommandShortcut>↵</CommandShortcut>
+    </ActionItem>
+  );
+}
+
+interface RecentSearchItemProps {
+  query: string;
+  onSearch: (query: string) => void;
+}
+
+function RecentSearchItem({ query, onSearch }: RecentSearchItemProps) {
+  const handleClick = useCallback(() => onSearch(query), [onSearch, query]);
+
+  return (
+    <ActionItem value={`recent:${query}`} onClick={handleClick} icon={ClockIcon}>
+      <span className="truncate">{query}</span>
+    </ActionItem>
+  );
+}
+
+interface CategoryItemProps {
+  category: Category;
+  onJump: (id: string) => void;
+}
+
+function CategoryItem({ category, onJump }: CategoryItemProps) {
+  const handleClick = useCallback(() => onJump(category.id), [onJump, category.id]);
+
+  return (
+    <ActionItem value={`category:${category.id}`} onClick={handleClick} icon={FolderIcon}>
+      <span className="truncate">{category.name}</span>
+    </ActionItem>
+  );
+}
+
+interface TagItemProps {
+  tag: Tag;
+  onJump: (id: string) => void;
+}
+
+function TagItem({ tag, onJump }: TagItemProps) {
+  const handleClick = useCallback(() => onJump(tag.id), [onJump, tag.id]);
+
+  return (
+    <ActionItem value={`tag:${tag.id}`} onClick={handleClick} icon={TagIcon}>
+      <span className="truncate">{tag.name}</span>
+    </ActionItem>
+  );
+}
+
 export function CommandPalette({
   open,
   onOpenChange,
@@ -73,39 +150,48 @@ export function CommandPalette({
     [tags, term],
   );
 
-  const handleSearch = (query: string) => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      return;
-    }
-    onSearch(trimmed);
-    onOpenChange(false);
-    setInputValue('');
-  };
+  const handleSearch = useCallback(
+    (query: string) => {
+      const trimmed = query.trim();
+      if (!trimmed) {
+        return;
+      }
+      onSearch(trimmed);
+      onOpenChange(false);
+      setInputValue('');
+    },
+    [onSearch, onOpenChange],
+  );
 
-  const handleCategory = (id: string) => {
-    onJumpToCategory(id);
-    onOpenChange(false);
-    setInputValue('');
-  };
+  const handleCategory = useCallback(
+    (id: string) => {
+      onJumpToCategory(id);
+      onOpenChange(false);
+      setInputValue('');
+    },
+    [onJumpToCategory, onOpenChange],
+  );
 
-  const handleTag = (id: string) => {
-    onJumpToTag(id);
-    onOpenChange(false);
-    setInputValue('');
-  };
+  const handleTag = useCallback(
+    (id: string) => {
+      onJumpToTag(id);
+      onOpenChange(false);
+      setInputValue('');
+    },
+    [onJumpToTag, onOpenChange],
+  );
 
-  const handleValueChange = (
-    value: string,
-    details: AutocompleteRootChangeEventDetails,
-  ) => {
-    // In a command palette the items are actions, not selectable values. Only
-    // typing and clear events should mutate the input; item selection is handled
-    // by each CommandItem's onClick so the palette can close and route the action.
-    if (details.reason === 'input-change' || details.reason === 'input-clear') {
-      setInputValue(value);
-    }
-  };
+  const handleValueChange = useCallback(
+    (value: string, details: AutocompleteRootChangeEventDetails) => {
+      // In a command palette the items are actions, not selectable values. Only
+      // typing and clear events should mutate the input; item selection is handled
+      // by each CommandItem's onClick so the palette can close and route the action.
+      if (details.reason === 'input-change' || details.reason === 'input-clear') {
+        setInputValue(value);
+      }
+    },
+    [],
+  );
 
   const showRecents = !hasTerm && recentQueries.length > 0;
   const showCategories = filteredCategories.length > 0;
@@ -116,26 +202,13 @@ export function CommandPalette({
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandDialogPopup className="max-h-[min(32rem,80vh)] duration-300">
         <CommandPanel>
-          <Command
-            value={inputValue}
-            onValueChange={handleValueChange}
-            mode="none"
-          >
+          <Command value={inputValue} onValueChange={handleValueChange} mode="none">
             <CommandInput placeholder="Search bookmarks, categories, tags…" />
             <CommandList>
               {hasTerm && (
                 <CommandGroup>
                   <CommandGroupLabel>Search</CommandGroupLabel>
-                  <CommandItem
-                    value="search"
-                    onClick={() => handleSearch(term)}
-                  >
-                    <SearchIcon className="mr-2 size-4 shrink-0" />
-                    <span className="truncate">
-                      Search bookmarks for “{term}”
-                    </span>
-                    <CommandShortcut>↵</CommandShortcut>
-                  </CommandItem>
+                  <SearchActionItem term={term} onSearch={handleSearch} />
                 </CommandGroup>
               )}
 
@@ -143,14 +216,7 @@ export function CommandPalette({
                 <CommandGroup>
                   <CommandGroupLabel>Recent searches</CommandGroupLabel>
                   {recentQueries.map((query) => (
-                    <CommandItem
-                      key={`recent:${query}`}
-                      value={`recent:${query}`}
-                      onClick={() => handleSearch(query)}
-                    >
-                      <ClockIcon className="mr-2 size-4 shrink-0" />
-                      <span className="truncate">{query}</span>
-                    </CommandItem>
+                    <RecentSearchItem key={`recent:${query}`} query={query} onSearch={handleSearch} />
                   ))}
                 </CommandGroup>
               )}
@@ -159,14 +225,7 @@ export function CommandPalette({
                 <CommandGroup>
                   <CommandGroupLabel>Categories</CommandGroupLabel>
                   {filteredCategories.map((category) => (
-                    <CommandItem
-                      key={`category:${category.id}`}
-                      value={`category:${category.id}`}
-                      onClick={() => handleCategory(category.id)}
-                    >
-                      <FolderIcon className="mr-2 size-4 shrink-0" />
-                      <span className="truncate">{category.name}</span>
-                    </CommandItem>
+                    <CategoryItem key={`category:${category.id}`} category={category} onJump={handleCategory} />
                   ))}
                 </CommandGroup>
               )}
@@ -175,23 +234,14 @@ export function CommandPalette({
                 <CommandGroup>
                   <CommandGroupLabel>Tags</CommandGroupLabel>
                   {filteredTags.map((tag) => (
-                    <CommandItem
-                      key={`tag:${tag.id}`}
-                      value={`tag:${tag.id}`}
-                      onClick={() => handleTag(tag.id)}
-                    >
-                      <TagIcon className="mr-2 size-4 shrink-0" />
-                      <span className="truncate">{tag.name}</span>
-                    </CommandItem>
+                    <TagItem key={`tag:${tag.id}`} tag={tag} onJump={handleTag} />
                   ))}
                 </CommandGroup>
               )}
 
               {showEmpty && (
                 <CommandEmpty className="py-8 text-center">
-                  <p className="text-muted-foreground">
-                    No categories or tags match “{term}”.
-                  </p>
+                  <p className="text-muted-foreground">No categories or tags match “{term}”.</p>
                   <p className="mt-1 text-xs text-muted-foreground/72">
                     Press Enter to search bookmarks instead.
                   </p>
@@ -208,21 +258,15 @@ export function CommandPalette({
         </CommandPanel>
         <CommandFooter>
           <span className="flex items-center gap-2">
-            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">
-              ↑↓
-            </kbd>
+            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">↑↓</kbd>
             <span>to navigate</span>
           </span>
           <span className="flex items-center gap-2">
-            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">
-              ↵
-            </kbd>
+            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">↵</kbd>
             <span>to select</span>
           </span>
           <span className="flex items-center gap-2">
-            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">
-              esc
-            </kbd>
+            <kbd className="rounded border px-1.5 py-0.5 font-sans text-[10px]">esc</kbd>
             <span>to close</span>
           </span>
         </CommandFooter>

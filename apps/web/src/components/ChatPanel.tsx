@@ -140,6 +140,7 @@ function latestSearchBookmarksHits(messages: ChatMessage[]): SearchBookmarkHit[]
 /** Icon-only copy control; state is exposed to screen readers via aria-label. */
 function CopyMessageButton({ text }: { text: string }) {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
+  const handleCopy = useCallback(() => copyToClipboard(text), [copyToClipboard, text]);
 
   return (
     <Button
@@ -147,7 +148,7 @@ function CopyMessageButton({ text }: { text: string }) {
       variant="ghost"
       size="icon-xs"
       aria-label={isCopied ? 'Message copied' : 'Copy message'}
-      onClick={() => copyToClipboard(text)}
+      onClick={handleCopy}
     >
       {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
     </Button>
@@ -390,6 +391,14 @@ export function ChatPanel() {
       ? messages.findLast((message) => message.role === 'assistant')?.id ?? null
       : null;
 
+  const handleSubmit = useCallback(
+    (value: string) => {
+      void sendMessage({ text: value });
+      setInput('');
+    },
+    [sendMessage, setInput],
+  );
+
   return (
     <section ref={rootRef} aria-label="Assistant chat" className="flex h-full min-h-0 flex-col">
       <MessageScroller className="min-h-0 flex-1" label="Conversation" busy={isBusy}>
@@ -424,10 +433,7 @@ export function ChatPanel() {
         <PromptInput
           value={input}
           onValueChange={setInput}
-          onSubmit={(value) => {
-            void sendMessage({ text: value });
-            setInput('');
-          }}
+          onSubmit={handleSubmit}
           loading={isBusy}
           onStop={stop}
           disabled={isBusy}

@@ -6,7 +6,9 @@ import { toast } from 'sonner';
 import { App } from './App.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+/* eslint-disable import/no-unassigned-import -- global CSS side-effect import */
 import './index.css';
+/* eslint-enable import/no-unassigned-import */
 
 // Dev-only annotation toolbar (visual feedback for AI coding agents; see
 // docs/UI-ANNOTATION-TOOLING.md). The static DEV guard lets Vite fold the

@@ -1,4 +1,5 @@
-import type { BookmarkImage, BookmarkTagView, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
+import { useMutation } from '@tanstack/react-query';
+import type { BookmarkTagView, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
 import {
   ChevronsUpDownIcon,
   CircleAlertIcon,
@@ -8,7 +9,7 @@ import {
   RefreshCwIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -64,7 +65,11 @@ import {
   updateBookmark,
 } from '@/lib/client';
 import { formatDate, hostOf } from '@/lib/format';
+import { resolveImageSrc } from '@/lib/image';
 import { cn } from '@/lib/utils';
+
+/** Stable delete trigger element; avoids recreating the Button on every render. */
+const DELETE_TRIGGER_BUTTON = <Button variant="destructive" />;
 
 interface ScrapeLastError {
   at?: number;
@@ -91,32 +96,6 @@ function scrapeLastError(metadata: Record<string, unknown> | null): ScrapeLastEr
     status: typeof value.status === 'number' ? value.status : undefined,
     message: typeof value.message === 'string' ? value.message : undefined,
   };
-}
-
-// Mirrors the server's `/data/screenshots/:filename` guard: a malformed or
-// absolute stored path never reaches the route at all.
-const SCREENSHOT_FILENAME = /^[0-9a-f-]{36}\.jpg$/i;
-
-/**
- * Image fallback chain (ARCHITECTURE §8): local screenshot first, then the
- * remote og:image, otherwise nothing (the caller renders the placeholder).
- */
-function resolveImageSrc(
-  image: BookmarkImage | undefined,
-): { src: string; remote: boolean } | null {
-  if (!image) {
-    return null;
-  }
-  if (image.screenshotPath) {
-    const filename = image.screenshotPath.split('/').pop() ?? '';
-    if (SCREENSHOT_FILENAME.test(filename)) {
-      return { src: `/data/screenshots/${filename}`, remote: false };
-    }
-  }
-  if (image.ogImageUrl) {
-    return { src: image.ogImageUrl, remote: true };
-  }
-  return null;
 }
 
 /**
@@ -164,6 +143,37 @@ interface TagComboboxProps {
  * the shared `createTag` client path, then assigns the newly created tag through
  * the same `addTag` handler so validation, toast, and mutation paths stay unified.
  */
+interface TagComboboxItemProps {
+  tag: Tag;
+  onSelect: (tagId: string) => void;
+}
+
+function TagComboboxItem({ tag, onSelect }: TagComboboxItemProps) {
+  const handleClick = useCallback(() => onSelect(tag.id), [onSelect, tag.id]);
+
+  return (
+    <CommandItem value={tag.id} onClick={handleClick}>
+      {tag.name}
+    </CommandItem>
+  );
+}
+
+interface CreateTagItemProps {
+  name: string;
+  onCreate: (name: string) => void;
+}
+
+function CreateTagItem({ name, onCreate }: CreateTagItemProps) {
+  const handleClick = useCallback(() => onCreate(name), [onCreate, name]);
+
+  return (
+    <CommandItem value={`create:${name}`} onClick={handleClick}>
+      <PlusIcon className="mr-2 size-4" />
+      Create &quot;{name}&quot;
+    </CommandItem>
+  );
+}
+
 function TagCombobox({ availableTags, allTags, onAssign }: TagComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -200,18 +210,21 @@ function TagCombobox({ availableTags, allTags, onAssign }: TagComboboxProps) {
     [onAssign],
   );
 
+  const triggerRender = useMemo(
+    () => (
+      <Button
+        id="detail-add-tag"
+        variant="outline"
+        size="sm"
+        className="w-48 justify-between"
+      />
+    ),
+    [],
+  );
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            id="detail-add-tag"
-            variant="outline"
-            size="sm"
-            className="w-48 justify-between"
-          />
-        }
-      >
+      <PopoverTrigger render={triggerRender}>
         <span className="text-muted-foreground">Add a tag…</span>
         <ChevronsUpDownIcon className="size-4 opacity-50" />
       </PopoverTrigger>
@@ -220,19 +233,10 @@ function TagCombobox({ availableTags, allTags, onAssign }: TagComboboxProps) {
           <CommandInput placeholder="Search tags…" aria-label="Search tags" />
           <CommandList className="max-h-60">
             {filtered.map((tag) => (
-              <CommandItem key={tag.id} value={tag.id} onClick={() => handleAssign(tag.id)}>
-                {tag.name}
-              </CommandItem>
+              <TagComboboxItem key={tag.id} tag={tag} onSelect={handleAssign} />
             ))}
             {canCreate && (
-              <CommandItem
-                key="create"
-                value={`create:${trimmed}`}
-                onClick={() => handleCreate(trimmed)}
-              >
-                <PlusIcon className="mr-2 size-4" />
-                Create &quot;{trimmed}&quot;
-              </CommandItem>
+              <CreateTagItem name={trimmed} onCreate={handleCreate} />
             )}
             {filtered.length === 0 && !canCreate && (
               <CommandEmpty className="py-4 text-center text-xs">
@@ -263,6 +267,92 @@ function AssignedTagPill({ tag, onRemove }: AssignedTagPillProps) {
   );
 }
 
+interface DetailTitleInputProps {
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+function DetailTitleInput({ value, onChange }: DetailTitleInputProps) {
+  const render = useMemo(
+    () => <Input id="detail-title" value={value} onChange={onChange} />,
+    [value, onChange],
+  );
+
+  return (
+    <Field>
+      <FieldLabel>Title</FieldLabel>
+      <FieldControl render={render} />
+    </Field>
+  );
+}
+
+interface DetailDescriptionInputProps {
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+}
+
+function DetailDescriptionInput({ value, onChange }: DetailDescriptionInputProps) {
+  const render = useMemo(
+    () => <Textarea id="detail-description" value={value} onChange={onChange} />,
+    [value, onChange],
+  );
+
+  return (
+    <Field>
+      {/* htmlFor is explicit: base-ui's generated id loses to our stable
+          DOM id on a plain-textarea render, leaving a dangling for. */}
+      <FieldLabel htmlFor="detail-description">Note</FieldLabel>
+      <FieldControl render={render} />
+    </Field>
+  );
+}
+
+interface DetailCategorySelectProps {
+  categories: Category[];
+  value: string;
+  onValueChange: (value: string) => void;
+}
+
+function DetailCategorySelect({ categories, value, onValueChange }: DetailCategorySelectProps) {
+  const items = useMemo(
+    () => ({
+      none: 'No category',
+      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
+    }),
+    [categories],
+  );
+
+  const handleValueChange = useCallback(
+    (v: string | null) => onValueChange(v ?? 'none'),
+    [onValueChange],
+  );
+
+  return (
+    <Field>
+      <FieldLabel htmlFor="detail-category">Category</FieldLabel>
+      <Select
+        // items registers value→label pairs so SelectValue renders the
+        // category name, not the raw id.
+        items={items}
+        value={value}
+        onValueChange={handleValueChange}
+      >
+        <SelectTrigger id="detail-category">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">No category</SelectItem>
+          {categories.map((category) => (
+            <SelectItem key={category.id} value={category.id}>
+              {category.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
 interface BookmarkDetailSheetProps {
   bookmark: BookmarkWithTags | null;
   categories: Category[];
@@ -284,8 +374,6 @@ export function BookmarkDetailSheet({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('none');
-  const [saving, setSaving] = useState(false);
-  const [scraping, setScraping] = useState(false);
 
   useEffect(() => {
     setCurrent(bookmark);
@@ -294,70 +382,64 @@ export function BookmarkDetailSheet({
     setCategoryId(bookmark?.categoryId ?? 'none');
   }, [bookmark]);
 
-  // Handlers sit above the `!current` early return (rules of hooks). They can
+  // Mutations sit above the `!current` early return (rules of hooks). They can
   // only fire while the sheet is open, when `current` is non-null.
-  const save = useCallback(async () => {
-    setSaving(true);
-    try {
-      const updated = await updateBookmark(current!.id, {
+  const saveMutation = useMutation({
+    mutationFn: async () =>
+      updateBookmark(current!.id, {
         title: title.trim() || null,
         description: description.trim() || null,
         categoryId: categoryId === 'none' ? null : categoryId,
-      });
+      }),
+    onSuccess: (updated) => {
       setCurrent(updated);
       toast.success('Bookmark updated');
       onChanged();
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to update');
-    } finally {
-      setSaving(false);
-    }
-  }, [current, title, description, categoryId, onChanged]);
-
-  const addTag = useCallback(
-    async (tagId: string | null) => {
-      if (tagId === null) return;
-      try {
-        const updated = await assignTagToBookmark(current!.id, tagId);
-        setCurrent(updated);
-        onChanged();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to assign tag');
-      }
     },
-    [current, onChanged],
-  );
+  });
 
-  const removeTag = useCallback(
-    async (tagId: string) => {
-      try {
-        await removeTagFromBookmark(current!.id, tagId);
-        setCurrent((previous) =>
-          previous ? { ...previous, tags: previous.tags.filter((tag) => tag.tagId !== tagId) } : previous,
-        );
-        onChanged();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to remove tag');
-      }
+  const addTagMutation = useMutation({
+    mutationFn: async (tagId: string) => assignTagToBookmark(current!.id, tagId),
+    onSuccess: (updated) => {
+      setCurrent(updated);
+      onChanged();
     },
-    [current, onChanged],
-  );
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to assign tag');
+    },
+  });
 
-  const remove = useCallback(async () => {
-    try {
-      await deleteBookmark(current!.id);
+  const removeTagMutation = useMutation({
+    mutationFn: async (tagId: string) => removeTagFromBookmark(current!.id, tagId),
+    onSuccess: (_, tagId) => {
+      setCurrent((previous) =>
+        previous ? { ...previous, tags: previous.tags.filter((tag) => tag.tagId !== tagId) } : previous,
+      );
+      onChanged();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to remove tag');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => deleteBookmark(current!.id),
+    onSuccess: () => {
       toast.success('Bookmark deleted');
       onDeleted();
       onOpenChange(false);
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to delete');
-    }
-  }, [current, onDeleted, onOpenChange]);
+    },
+  });
 
-  const scrape = useCallback(async () => {
-    setScraping(true);
-    try {
-      const response = await scrapeBookmark(current!.id);
+  const scrapeMutation = useMutation({
+    mutationFn: async () => scrapeBookmark(current!.id),
+    onSuccess: (response) => {
       setCurrent(response.bookmark);
       if (response.status === 'scraped') {
         toast.success('Page scraped');
@@ -365,12 +447,11 @@ export function BookmarkDetailSheet({
         toast.info('Page content unchanged');
       }
       onChanged();
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to scrape');
-    } finally {
-      setScraping(false);
-    }
-  }, [current, onChanged]);
+    },
+  });
 
   const handleTitleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setTitle(event.target.value);
@@ -382,13 +463,19 @@ export function BookmarkDetailSheet({
 
   const closeSelf = useCallback(() => onOpenChange(false), [onOpenChange]);
 
+  const availableTags = useMemo(
+    () => tags.filter((tag) => !current?.tags.some((assigned) => assigned.tagId === tag.id)),
+    [tags, current?.tags],
+  );
+
+  const handleScrape = useCallback(() => scrapeMutation.mutate(), [scrapeMutation]);
+  const handleDelete = useCallback(() => deleteMutation.mutate(), [deleteMutation]);
+  const handleSave = useCallback(() => saveMutation.mutate(), [saveMutation]);
+
   if (!current) {
     return null;
   }
 
-  const availableTags = tags.filter(
-    (tag) => !current.tags.some((assigned) => assigned.tagId === tag.id),
-  );
   const isInvalid = current.status === 'invalid';
   const lastError = isInvalid ? scrapeLastError(current.metadata) : null;
 
@@ -423,9 +510,21 @@ export function BookmarkDetailSheet({
               </Badge>
               {isInvalid && <Badge variant="destructive">Invalid</Badge>}
             </div>
-            <Button variant="outline" size="sm" onClick={scrape} disabled={scraping}>
-              <RefreshCwIcon data-icon="inline-start" className={scraping ? 'animate-spin' : ''} />
-              {scraping ? 'Scraping…' : current.scrapedAt ? 'Re-scrape' : 'Scrape page'}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleScrape}
+              disabled={scrapeMutation.isPending}
+            >
+              <RefreshCwIcon
+                data-icon="inline-start"
+                className={scrapeMutation.isPending ? 'animate-spin' : ''}
+              />
+              {scrapeMutation.isPending
+                ? 'Scraping…'
+                : current.scrapedAt
+                  ? 'Re-scrape'
+                  : 'Scrape page'}
             </Button>
           </div>
 
@@ -448,51 +547,13 @@ export function BookmarkDetailSheet({
               </p>
             </div>
           )}
-          <Field>
-            <FieldLabel>Title</FieldLabel>
-            <FieldControl
-              render={<Input id="detail-title" value={title} onChange={handleTitleChange} />}
-            />
-          </Field>
-          <Field>
-            {/* htmlFor is explicit: base-ui's generated id loses to our stable
-                DOM id on a plain-textarea render, leaving a dangling for. */}
-            <FieldLabel htmlFor="detail-description">Note</FieldLabel>
-            <FieldControl
-              render={
-                <Textarea
-                  id="detail-description"
-                  value={description}
-                  onChange={handleDescriptionChange}
-                />
-              }
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="detail-category">Category</FieldLabel>
-            <Select
-              // items registers value→label pairs so SelectValue renders the
-              // category name, not the raw id.
-              items={{
-                none: 'No category',
-                ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-              }}
-              value={categoryId}
-              onValueChange={(v) => setCategoryId(v ?? 'none')}
-            >
-              <SelectTrigger id="detail-category">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No category</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <DetailTitleInput value={title} onChange={handleTitleChange} />
+          <DetailDescriptionInput value={description} onChange={handleDescriptionChange} />
+          <DetailCategorySelect
+            categories={categories}
+            value={categoryId}
+            onValueChange={setCategoryId}
+          />
 
           <Separator />
 
@@ -504,17 +565,25 @@ export function BookmarkDetailSheet({
                   <span className="text-xs text-muted-foreground">No tags yet.</span>
                 )}
                 {current.tags.map((tag) => (
-                  <AssignedTagPill key={tag.tagId} tag={tag} onRemove={removeTag} />
+                  <AssignedTagPill
+                    key={tag.tagId}
+                    tag={tag}
+                    onRemove={removeTagMutation.mutate}
+                  />
                 ))}
               </div>
-              <TagCombobox availableTags={availableTags} allTags={tags} onAssign={addTag} />
+              <TagCombobox
+                availableTags={availableTags}
+                allTags={tags}
+                onAssign={addTagMutation.mutate}
+              />
             </div>
           </Field>
         </div>
 
         <SheetFooter className="sm:justify-between">
           <AlertDialog>
-            <AlertDialogTrigger render={<Button variant="destructive" />}>
+            <AlertDialogTrigger render={DELETE_TRIGGER_BUTTON}>
               <Trash2Icon data-icon="inline-start" />
               Delete
             </AlertDialogTrigger>
@@ -530,7 +599,7 @@ export function BookmarkDetailSheet({
                   Cancel
                 </AlertDialogClose>
                 <AlertDialogClose
-                  onClick={remove}
+                  onClick={handleDelete}
                   className={cn(buttonVariants({ variant: "destructive" }))}
                 >
                   Delete
@@ -543,7 +612,7 @@ export function BookmarkDetailSheet({
             <Button variant="outline" onClick={closeSelf}>
               Close
             </Button>
-            <Button onClick={save} disabled={saving}>
+            <Button onClick={handleSave} disabled={saveMutation.isPending}>
               Save
             </Button>
           </div>

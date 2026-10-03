@@ -1,32 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { createSafeStorage } from '@/lib/storage';
+
 export type Theme = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'al-yo-bo:theme';
 
-/**
- * localStorage can throw (sandboxed iframes, privacy modes, quota) — degrade to
- * an in-memory fallback instead of crashing the app at mount.
- */
-const storage = (() => {
-  const memory = new Map<string, string>();
-  try {
-    const probe = 'al-yo-bo:probe';
-    localStorage.setItem(probe, probe);
-    localStorage.removeItem(probe);
-    return {
-      get: (key: string) => localStorage.getItem(key),
-      set: (key: string, value: string) => localStorage.setItem(key, value),
-    };
-  } catch {
-    return {
-      get: (key: string) => memory.get(key) ?? null,
-      set: (key: string, value: string) => {
-        memory.set(key, value);
-      },
-    };
-  }
-})();
+/** localStorage with an in-memory fallback for sandboxed/private-mode contexts. */
+const storage = createSafeStorage('al-yo-bo:probe');
 
 export function resolved(theme: Theme): 'light' | 'dark' {
   if (theme !== 'system') {
