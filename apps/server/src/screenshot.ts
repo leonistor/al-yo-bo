@@ -19,6 +19,9 @@ export class ScreenshotError extends Error {
   }
 }
 
+/** Hard cap on a downloaded `og:image`; larger bodies fall through to "no image". */
+export const MAX_OG_IMAGE_BYTES = 8 * 1024 * 1024;
+
 /**
  * Captures the viewport via `Bun.WebView` (zero-install WKWebView on macOS).
  * Throws `ScreenshotError` on navigation failure, timeout, or capture error —
@@ -33,80 +36,159 @@ export function bunWebViewScreenshotClient(options: {
 }): ScreenshotClient {
   return {
     async capture(url: string): Promise<ScreenshotResult | null> {
-      let settled = false;
-      const timeout = setTimeout(() => {
-        settled = true;
-      }, options.timeoutMs);
+      const view = new Bun.WebView({ width: options.width, height: options.height });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      // A hung `navigate`/`screenshot` cannot be cancelled directly, but
+      // `view.close()` rejects the pending operation ("WebView closed"), which
+      // releases the WebContent process. Racing against a rejecting timer means
+      // the timeout actually aborts instead of just flipping a flag. The timer
+      // is closed in `finally` alongside the view.
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          view.close();
+          reject(new ScreenshotError(`Screenshot of ${url} timed out after ${options.timeoutMs}ms`));
+        }, options.timeoutMs);
+      });
 
       try {
-        const view = new Bun.WebView({ width: options.width, height: options.height });
-        await view.navigate(url);
-        await Bun.sleep(options.settleMs);
+        return await Promise.race([
+          (async (): Promise<ScreenshotResult> => {
+            await view.navigate(url);
+            await Bun.sleep(options.settleMs);
 
-        if (settled) {
-          throw new ScreenshotError(`Screenshot of ${url} timed out after ${options.timeoutMs}ms`);
-        }
+            const buffer = (await view.screenshot({
+              encoding: 'buffer',
+              format: 'jpeg',
+              quality: 80,
+            })) as Buffer;
 
-        const buffer = (await view.screenshot({
-          encoding: 'buffer',
-          format: 'jpeg',
-          quality: 80,
-        })) as Buffer;
+            // og:image is best read from the DOM while we have a live page.
+            let ogImageUrl: string | null = null;
+            try {
+              const raw = await view.evaluate(
+                'document.querySelector(\'meta[property="og:image"]\')?.content ?? null',
+              );
+              ogImageUrl = typeof raw === 'string' && raw.length > 0 ? raw : null;
+            } catch {
+              ogImageUrl = null;
+            }
 
-        // og:image is best read from the DOM while we have a live page.
-        let ogImageUrl: string | null = null;
-        try {
-          const raw = await view.evaluate(
-            'document.querySelector(\'meta[property="og:image"]\')?.content ?? null',
-          );
-          ogImageUrl = typeof raw === 'string' && raw.length > 0 ? raw : null;
-        } catch {
-          ogImageUrl = null;
-        }
-
-        clearTimeout(timeout);
-        return { buffer, ogImageUrl };
+            return { buffer, ogImageUrl };
+          })(),
+          timeout,
+        ]);
       } catch (error) {
-        clearTimeout(timeout);
         if (error instanceof ScreenshotError) {
           throw error;
         }
         throw new ScreenshotError(
           `Screenshot of ${url} failed: ${error instanceof Error ? error.message : error}`,
         );
+      } finally {
+        clearTimeout(timer);
+        view.close();
       }
     },
   };
 }
 
-const OG_IMAGE_RE = /<meta\s+(?:[^>]*?\s+)?property=["']og:image["']\s+content=["']([^"']+)["']/i;
+const OG_IMAGE_TAG_RE = /<meta\b[^>]*>/gi;
+const OG_IMAGE_PROPERTY_RE = /\bproperty\s*=\s*["']og:image["']/i;
+const CONTENT_ATTR_RE = /\bcontent\s*=\s*["']([^"']*)["']/i;
+
+/**
+ * Extracts the `og:image` URL from HTML in an attribute-order-independent way.
+ * `<meta property="og:image" content="...">` and `<meta content="..." property="og:image">`
+ * both work. Dependency-free: scan meta tags, keep the ones carrying the
+ * property, then read `content` regardless of where it sits.
+ */
+export function extractOgImageUrl(html: string): string | null {
+  const tags = html.match(OG_IMAGE_TAG_RE);
+  if (!tags) {
+    return null;
+  }
+  for (const tag of tags) {
+    if (!OG_IMAGE_PROPERTY_RE.test(tag)) {
+      continue;
+    }
+    const match = CONTENT_ATTR_RE.exec(tag);
+    const value = match?.[1]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reads a response body up to `maxBytes`, cancelling the stream as soon as the
+ * cap is exceeded so an oversized image never buffers into memory.
+ */
+async function readCappedBuffer(response: Response, maxBytes: number): Promise<Buffer | null> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return null;
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
 
 /**
  * Fallback path: fetch the page HTML, parse `og:image`, download the bytes.
  * Returns `null` when no `og:image` meta tag is present or the download fails.
+ * Non-image responses and bodies over `maxBytes` fall through to `null` — the
+ * scrape pipeline keeps its transient-error semantics (ARCHITECTURE §8).
  */
 export function ogImageScreenshotClient(options: {
   fetchImpl: typeof fetch;
   timeoutMs: number;
+  maxBytes?: number;
+  /** Injectable page fetcher; defaults to `fetchPageHtml`. Tests override it. */
+  fetchPage?: typeof fetchPageHtml;
 }): ScreenshotClient {
+  const fetchPage = options.fetchPage ?? fetchPageHtml;
+  const maxBytes = options.maxBytes ?? MAX_OG_IMAGE_BYTES;
+
   return {
     async capture(url: string): Promise<ScreenshotResult | null> {
-      const { html } = await fetchPageHtml(url, options.timeoutMs);
-      const match = OG_IMAGE_RE.exec(html);
-      if (!match) {
-        return null;
-      }
-      const ogImageUrl = match[1] ?? null;
+      const { html } = await fetchPage(url, options.timeoutMs);
+      const ogImageUrl = extractOgImageUrl(html);
       if (!ogImageUrl) {
         return null;
       }
+
       const response = await options.fetchImpl(ogImageUrl, {
         signal: AbortSignal.timeout(options.timeoutMs),
       });
       if (!response.ok) {
         return null;
       }
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get('content-type');
+      if (contentType && !/^image\//i.test(contentType)) {
+        return null;
+      }
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        return null;
+      }
+      const buffer = await readCappedBuffer(response, maxBytes);
+      if (!buffer) {
+        return null;
+      }
       return { buffer, ogImageUrl };
     },
   };
