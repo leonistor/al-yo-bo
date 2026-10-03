@@ -17,4 +17,5 @@ export const queryKeys = {
   sections: ['sections'] as const,
   tags: ['tags'] as const,
   candidates: ['review-candidates'] as const,
+  lan: ['lan'] as const,
 };

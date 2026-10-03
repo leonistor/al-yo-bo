@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { devUrl, lanInterfaces } from './dev-qr.ts';
+import { lanInterfaces } from '../apps/server/src/lan.ts';
+
+import { devUrl } from './dev-qr.ts';
 
 /**
  * These tests exercise the exported contract against the real machine, so they

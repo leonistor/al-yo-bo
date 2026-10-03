@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { createChatHandler } from './chat.ts';
 import type { ServerConfig } from './env.ts';
 import { toProblemDetails } from './errors.ts';
+import { lanInterfaces } from './lan.ts';
 
 /**
  * Transport adapter (ARCHITECTURE §4): parse/validate the HTTP request, call one
@@ -360,6 +361,11 @@ export function createApp(core: Core, config: ServerConfig) {
     })
 
     .get('/api/aggregates', (c) => c.json(core.search.aggregates()))
+
+    // Local-network interfaces so clients can render LAN URLs themselves (they
+    // know their own location.port). No URLs here — and unauthenticated like the
+    // other local routes.
+    .get('/api/lan', (c) => c.json(lanInterfaces()))
 
     .get('/api/profile', (c) => c.json(core.profile.get()))
 

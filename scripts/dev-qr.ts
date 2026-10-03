@@ -13,45 +13,14 @@
  * guaranteed to be listening on 5173 (it won't silently fall back to another
  * port). Keep the two in sync.
  */
-import { networkInterfaces } from 'node:os';
-
 import { renderUnicodeCompact } from 'uqr';
+
+// Enumeration lives in the server app (it is a serving concern and backs
+// `GET /api/lan`); this script only formats the results for the terminal.
+import { lanInterfaces } from '../apps/server/src/lan.ts';
 
 /** Port the web dev server is pinned to (see `strictPort` in vite.config.ts). */
 const DEV_PORT = 5173;
-
-/**
- * Bun may report an interface's `family` as the string 'IPv4' or the legacy
- * number 4, while the Node typings only declare the string form. Taking
- * `unknown` lets us compare against both without a cast; `unknown` can never
- * be `as any`.
- */
-function isIpv4(family: unknown): boolean {
-  return family === 'IPv4' || family === 4;
-}
-
-export interface LanInterface {
-  name: string;
-  address: string;
-}
-
-/**
- * Non-internal IPv4 addresses from every network interface, in a stable order:
- * interface key order (as returned by `networkInterfaces`), then entry order.
- * Pure — re-reads OS state on each call.
- */
-export function lanInterfaces(): LanInterface[] {
-  const result: LanInterface[] = [];
-  for (const [name, entries] of Object.entries(networkInterfaces())) {
-    if (!entries) continue;
-    for (const entry of entries) {
-      if (!isIpv4(entry.family)) continue;
-      if (entry.internal) continue;
-      result.push({ name, address: entry.address });
-    }
-  }
-  return result;
-}
 
 /** `http://<address>:5173/` — the URL a device on the same LAN should open. */
 export function devUrl(address: string): string {

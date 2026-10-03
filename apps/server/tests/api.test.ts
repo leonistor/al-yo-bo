@@ -680,3 +680,25 @@ describe('profile API', () => {
     expect(missing.status).toBe(400);
   });
 });
+
+describe('lan API', () => {
+  test('returns non-internal IPv4 interfaces without URLs', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/lan');
+    expect(response.status).toBe(200);
+
+    // Count-agnostic: CI containers may have zero LAN interfaces.
+    const body = (await response.json()) as unknown;
+    expect(Array.isArray(body)).toBe(true);
+
+    for (const entry of body as { name?: unknown; address?: unknown }[]) {
+      expect(typeof entry.name).toBe('string');
+      expect(typeof entry.address).toBe('string');
+      const address = entry.address as string;
+      // IPv6 addresses contain ':'; loopback/unspecified are internal.
+      expect(address).not.toContain(':');
+      expect(address).not.toStartWith('127.');
+      expect(address).not.toBe('0.0.0.0');
+    }
+  });
+});

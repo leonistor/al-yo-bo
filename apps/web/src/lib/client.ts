@@ -37,6 +37,20 @@ async function toError(response: { status: number; json: () => Promise<unknown> 
   return new Error(message);
 }
 
+export interface LanInterface {
+  name: string;
+  address: string;
+}
+
+export function fetchLanInterfaces(): Promise<LanInterface[]> {
+  return api.api.lan.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
+}
+
 export interface BookmarkSearchParams {
   q?: string;
   mode?: SearchMode;
