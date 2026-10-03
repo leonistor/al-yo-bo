@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createBookmark } from '@al-yo-bo/db';
+import { assignTag, createBookmark, createCategory, createTag } from '@al-yo-bo/db';
 
 import { createSearchService, type SearchService } from '../src/services/search.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
@@ -196,5 +196,58 @@ describe('SearchService — fused pagination', () => {
       offset: 0,
     });
     expect(vector.searchFilters.at(-1)).toMatchObject({ datasetId: other });
+  });
+});
+
+describe('SearchService — chatHits', () => {
+  test('projects compact LLM-friendly hits with resolved tag and category names', async () => {
+    const { service, db } = makeService();
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Design' });
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/palette',
+      title: 'color tools',
+      description: 'palette generators',
+      categoryId: category.id,
+    });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'color' });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
+
+    const hits = await service.chatHits('color', 5);
+
+    expect(hits).toHaveLength(1);
+    const [hit] = hits;
+    if (!hit) throw new Error('expected one hit');
+    // The projection is the chat tool's contract: names, never ids; never page
+    // content (packages/core/src/dto.ts).
+    expect(hit).toEqual({
+      id: bookmark.id,
+      url: 'https://example.com/palette',
+      title: 'color tools',
+      description: 'palette generators',
+      tags: ['color'],
+      categoryName: 'Design',
+      updatedAt: expect.any(Number),
+    });
+    expect('content' in hit).toBe(false);
+  });
+
+  test('answers blank queries with no hits', async () => {
+    const { service, db } = makeService();
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/1', title: 'one' });
+
+    expect(await service.chatHits('', 5)).toEqual([]);
+    expect(await service.chatHits('   ', 5)).toEqual([]);
+  });
+
+  test('caps hits at the requested limit', async () => {
+    const { service, db } = makeService();
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/a', title: 'rust a' });
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/b', title: 'rust b' });
+    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/c', title: 'rust c' });
+
+    const hits = await service.chatHits('rust', 2);
+
+    expect(hits).toHaveLength(2);
   });
 });
