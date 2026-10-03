@@ -75,6 +75,11 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   string matches, or filenames; don't jump to broad text searches first.
 - **Docs lookup:** context7 via the opencode plugin. **Ollaya has no Context7 coverage** — use
   <https://ollaya.dev/docs> instead.
+- **Icon search:** use **better-icons** (MCP in `.opencode/opencode.jsonc`, restart opencode to
+  load; also a CLI). 200k+ icons from 150+ Iconify collections — this project uses Lucide
+  (`lucide-react`), so prefer the `lucide` prefix. CLI: `npx better-icons search <query>
+  --prefix lucide`, `npx better-icons get lucide:home`, `npx better-icons sync_icon` writes icons
+  into the project. When a UI needs an icon, search this instead of guessing names.
 - **GitHub/npm research:** **octocode** — evidence-first search of GitHub repos, code, PRs, commits
   and npm packages, with token-compact output. Available as an MCP server
   (`.opencode/opencode.jsonc`; restart opencode to load it) and as a CLI driven directly
