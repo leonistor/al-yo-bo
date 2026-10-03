@@ -13,9 +13,9 @@ data_dir="${DATA_DIR:-}"
 
 # Parse `--profile=<name>` / `--profile <name>`; `--list-profiles` (alias
 # `--profiles`) prints the available profiles and exits; `--seed` (or
-# `--seed=<dataset>`) seeds before booting; `--annotate` also launches the
-# annotation server (agentation). Unknown args (including a stray
-# `--` bun may forward) are ignored.
+# `--seed=<dataset>`) seeds before booting; `--annotate` (alias `--annotation`)
+# also launches the annotation server (agentation). Unknown args (including a
+# stray `--` bun may forward) are ignored.
 list_profiles=0
 annotate=0
 seed=""
@@ -37,7 +37,7 @@ while [ $# -gt 0 ]; do
       list_profiles=1
       shift
       ;;
-    --annotate)
+    --annotate|--annotation)
       annotate=1
       shift
       ;;

@@ -46,7 +46,10 @@ agents over a shared store):
   — stdio MCP joins the dev-run store instead of binding its own port (no
   4747 conflict). Restart opencode after config changes.
 - **Workflow:** annotate in the browser, then ask the agent to list pending
-  feedback (`agentation-mcp doctor` checks node/server/config health).
+  feedback (`agentation-mcp doctor` checks node/server/config health). The
+  `/annotate` project command (`.opencode/command/annotate.md`) automates the
+  full loop: start `bun run dev -- --annotate`, capture annotations to
+  `.omo/evidence/`, fix and resolve them, and stop the stack when you say DONE.
 
 ## Alternatives considered
 
