@@ -33,3 +33,6 @@ data/
 
 # Deepwork session state (git-local)
 .slim/deepwork/
+
+# local development notes
+NOTES.md
