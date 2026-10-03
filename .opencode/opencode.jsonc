@@ -32,6 +32,14 @@
       ],
       "enabled": true,
     },
+    // Better-icons: agentic icon search (MCP + skill + CLI) over 200k+ icons
+    // from 150+ Iconify collections; auto-learns project-used collections
+    // (lucide-first here). CLI: `npx better-icons search <query> --prefix lucide`.
+    "better-icons": {
+      "type": "local",
+      "command": ["npx", "-y", "better-icons"],
+      "enabled": true,
+    },
     // Octocode: evidence-first GitHub/npm/local code research (docs/ARCHITECTURE note).
     // GitHub token is picked up automatically from the `gh` CLI (no env needed).
     "octocode": {
