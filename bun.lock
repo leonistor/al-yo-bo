@@ -44,6 +44,7 @@
         "@fontsource-variable/work-sans": "^5.3.0",
         "@tailwindcss/vite": "^4.3.3",
         "@tanstack/react-query": "^5.104.0",
+        "agentation": "^3.1.2",
         "ai": "^7.0.127",
         "class-variance-authority": "^0.7.1",
         "cn": "^0.4.0",
@@ -492,6 +493,8 @@
     "@workflow/serde": ["@workflow/serde@4.1.0", "", {}, "sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
+
+    "agentation": ["agentation@3.1.2", "", { "peerDependencies": { "react": ">=18.0.0", "react-dom": ">=18.0.0" }, "optionalPeers": ["react", "react-dom"] }, "sha512-ZZr6PRgX3ussGbvC9NVh5vFfKKFkQyHL6KuxOfBAAM/mJS3bM2XyhZ7wLPakDwU3pqkzq7u6vEfLikFsCOu5+Q=="],
 
     "ai": ["ai@7.0.127", "", { "dependencies": { "@ai-sdk/gateway": "4.0.103", "@ai-sdk/provider": "4.0.21", "@ai-sdk/provider-utils": "5.0.53" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-JNsNPk4ZvRGEJuqdVo2lYFkm7uAuf3p/RwKFWn1Wh/+IK3U1RyFWw2GXoFnhzqNfxEuj7XJB4WpIUhl1sHToWg=="],
 

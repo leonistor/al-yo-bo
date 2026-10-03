@@ -1,5 +1,5 @@
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { toast } from 'sonner';
 
@@ -7,6 +7,13 @@ import { App } from './App.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import './index.css';
+
+// Dev-only annotation toolbar (visual feedback for AI coding agents; see
+// docs/UI-ANNOTATION-TOOLING.md). The static DEV guard lets Vite fold the
+// dynamic import away in production builds, so it never ships.
+const Agentation = import.meta.env.DEV
+  ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
+  : null;
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -37,6 +44,11 @@ createRoot(root).render(
       <TooltipProvider>
         <App />
         <Toaster position="bottom-right" />
+        {Agentation && (
+          <Suspense fallback={null}>
+            <Agentation appName="al-yo-bo" />
+          </Suspense>
+        )}
       </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,
