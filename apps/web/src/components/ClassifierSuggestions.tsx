@@ -1,9 +1,10 @@
 import type { ReviewCandidate } from '@al-yo-bo/shared';
 import { CheckIcon, Settings2Icon } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { EditableRow } from '@/components/EditableRow';
 import { TagPill } from '@/components/TagPill';
+import { Button } from '@/components/ui/button';
 import {
   Empty,
   EmptyDescription,
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 
 interface ClassifierSuggestionsProps {
   candidates: ReviewCandidate[];
@@ -26,17 +28,23 @@ interface CandidateRowProps {
   candidateKey: string;
   /** Non-null while any row has an in-flight accept (one action at a time). */
   pendingKey: string | null;
+  index: number;
+  active: boolean;
   onAccept: (candidate: ReviewCandidate) => void;
   onPendingChange: (key: string | null) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
 }
 
 /** One suggestion row; owns the accept handler and its in-flight spinner. */
-function CandidateRow({
+const CandidateRow = memo(function CandidateRow({
   candidate,
   candidateKey,
   pendingKey,
+  index,
+  active,
   onAccept,
   onPendingChange,
+  onKeyDown,
 }: CandidateRowProps) {
   const pending = pendingKey === candidateKey;
 
@@ -49,30 +57,51 @@ function CandidateRow({
   }, [candidateKey, onAccept, candidate, onPendingChange]);
 
   return (
-    <div
-      className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3"
+    <EditableRow
+      asListItem
+      data-item-id={candidateKey}
+      data-index={index}
+      className="items-start sm:items-center"
     >
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm font-medium">
           {candidate.bookmarkTitle ?? candidate.bookmarkUrl}
         </span>
         <span className="truncate text-xs text-muted-foreground">{candidate.bookmarkUrl}</span>
       </div>
-      <TagPill variant="static">{candidate.tagName}</TagPill>
-      <span className="text-xs text-muted-foreground">
-        {Math.round(candidate.probability * 100)}%
-      </span>
+      <div className="flex min-w-0 flex-1 items-center gap-3 sm:justify-end">
+        <TagPill variant="static">{candidate.tagName}</TagPill>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {Math.round(candidate.probability * 100)}%
+        </span>
+      </div>
       <Button
         size="sm"
-        className="ml-auto"
         disabled={pendingKey !== null}
         aria-busy={pending}
         onClick={handleAccept}
+        onKeyDown={onKeyDown}
+        tabIndex={active ? 0 : -1}
+        data-row-focus
       >
         {pending ? <Spinner className="size-3" /> : <CheckIcon data-icon="inline-start" />}
         Accept
       </Button>
-    </div>
+    </EditableRow>
+  );
+});
+
+/** Skeleton mirroring the real row anatomy so loading doesn't shift layout. */
+function CandidateSkeleton() {
+  return (
+    <EditableRow aria-hidden>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-3 w-1/2" />
+      </div>
+      <Skeleton className="h-5 w-20 rounded-full" />
+      <Skeleton className="h-7 w-20 rounded-md" />
+    </EditableRow>
   );
 }
 
@@ -90,12 +119,22 @@ export function ClassifierSuggestions({
   // One in-flight action at a time: disables the row's buttons so a slow
   // mutation can't be double-submitted (toasts report the outcome).
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+
+  const { activeId, handleFocusIn, handleKeyDown } = useListKeyboardNav({
+    items: candidates,
+    getId: (candidate) => `candidate:${candidate.bookmarkId}:${candidate.tagId}`,
+    listRef,
+    onActivate: onAccept,
+    mode: 'list',
+    focusSelector: '[data-row-focus]',
+  });
 
   if (loading) {
     return (
       <div className="flex flex-col gap-2">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
+        <CandidateSkeleton />
+        <CandidateSkeleton />
       </div>
     );
   }
@@ -120,19 +159,29 @@ export function ClassifierSuggestions({
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-sm font-medium">Classifier suggestions</h2>
-      {candidates.map((candidate) => {
-        const key = `candidate:${candidate.bookmarkId}:${candidate.tagId}`;
-        return (
-          <CandidateRow
-            key={key}
-            candidate={candidate}
-            candidateKey={key}
-            pendingKey={pendingKey}
-            onAccept={onAccept}
-            onPendingChange={setPendingKey}
-          />
-        );
-      })}
+      <ul
+        ref={listRef}
+        aria-label="Classifier suggestions"
+        onFocusCapture={handleFocusIn}
+        className="flex flex-col gap-2"
+      >
+        {candidates.map((candidate, index) => {
+          const key = `candidate:${candidate.bookmarkId}:${candidate.tagId}`;
+          return (
+            <CandidateRow
+              key={key}
+              candidate={candidate}
+              candidateKey={key}
+              pendingKey={pendingKey}
+              index={index}
+              active={activeId === key}
+              onAccept={onAccept}
+              onPendingChange={setPendingKey}
+              onKeyDown={handleKeyDown}
+            />
+          );
+        })}
+      </ul>
     </div>
   );
 }

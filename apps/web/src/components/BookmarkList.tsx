@@ -8,9 +8,10 @@ import {
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 
 import { FilterTagPill } from '@/components/FilterTagPill';
+import { RowActions, type RowAction } from '@/components/RowActions';
 import { TagPill } from '@/components/TagPill';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { formatDate, hostOf } from '@/lib/format';
 import { resolveImageSrc } from '@/lib/image';
 import type { Layout } from '@/lib/useLayout';
@@ -138,12 +140,8 @@ interface BookmarkCardProps {
   index?: number;
   /** Render as a semantic `<li>` inside the list's `<ul>`. */
   listItem?: boolean;
-  /**
-   * List keyboard navigation (arrows/Home/End/Delete). Attached to the card's
-   * interactive controls — jsx-a11y requires handlers on interactive elements,
-   * so the list `<ul>` itself stays handler-free.
-   */
-  onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+  /** List keyboard navigation (arrows/Home/End/Delete). */
+  onKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 }
 
 interface ExternalLinkAnchorProps {
@@ -194,9 +192,29 @@ export const BookmarkCard = memo(function BookmarkCard({
     [isAnimated, cardIndex],
   );
 
+  const actions = useMemo<RowAction[]>(
+    () => [
+      {
+        id: 'open',
+        icon: <ExternalLinkIcon />,
+        label: `Open ${title} in a new tab`,
+        render: externalLinkRender,
+      },
+      {
+        id: 'delete',
+        icon: <Trash2Icon />,
+        label: `Delete ${title}`,
+        onClick: handleDelete,
+        destructive: true,
+      },
+    ],
+    [title, externalLinkRender, handleDelete],
+  );
+
   return (
     <Card
       data-bookmark-id={bookmark.id}
+      data-item-id={bookmark.id}
       data-index={cardIndex}
       render={listItem ? LIST_ITEM_ELEMENT : undefined}
       className={cn(
@@ -213,6 +231,7 @@ export const BookmarkCard = memo(function BookmarkCard({
           <button
             type="button"
             data-title-button
+            data-row-focus
             onClick={handleOpen}
             onKeyDown={onKeyDown}
             tabIndex={isActive ? 0 : -1}
@@ -220,28 +239,7 @@ export const BookmarkCard = memo(function BookmarkCard({
           >
             <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
           </button>
-          <div className="pointer-events-none flex items-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              tabIndex={isActive ? 0 : -1}
-              onKeyDown={onKeyDown}
-              render={externalLinkRender}
-            >
-              <ExternalLinkIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              tabIndex={isActive ? 0 : -1}
-              onKeyDown={onKeyDown}
-              aria-label={`Delete ${title}`}
-              className="text-muted-foreground hover:text-destructive"
-              onClick={handleDelete}
-            >
-              <Trash2Icon />
-            </Button>
-          </div>
+          <RowActions actions={actions} active={isActive} onKeyDown={onKeyDown} />
         </div>
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="flex min-w-0 items-center gap-1 truncate">
@@ -302,96 +300,18 @@ export function BookmarkList({
   selectedTagId,
   onTagClick,
 }: BookmarkListProps) {
-  const [activeId, setActiveId] = useState<string | null>(items[0]?.id ?? null);
   const listRef = useRef<HTMLUListElement | null>(null);
 
-  // Keep the roving focus target valid when the item set changes.
-  useEffect(() => {
-    const first = items[0];
-    if (!first) {
-      setActiveId(null);
-      return;
-    }
-    if (!items.some((item) => item.id === activeId)) {
-      setActiveId(first.id);
-    }
-  }, [items, activeId]);
-
-  const handleFocusIn = useCallback((event: React.FocusEvent<HTMLUListElement>) => {
-    const card = (event.target as HTMLElement).closest<HTMLElement>('[data-bookmark-id]');
-    if (!card) return;
-    const id = card.dataset.bookmarkId;
-    if (id) {
-      setActiveId((current) => (current === id ? current : id));
-    }
-  }, []);
-
-  // List keyboard nav, attached to each card's interactive controls (title +
-  // open/delete actions): handlers live on interactive elements only, so the
-  // <ul> itself stays handler-free (jsx-a11y).
-  const handleCardKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>) => {
-      const card = event.currentTarget.closest<HTMLElement>('[data-bookmark-id]');
-      if (!card) return;
-      const index = Number(card.dataset.index);
-      const bookmark = items[index];
-      if (!Number.isFinite(index) || !bookmark) return;
-
-      const lastIndex = items.length - 1;
-      let nextIndex = index;
-
-      switch (event.key) {
-        case 'Enter':
-          // The title button already opens on click; make the list keyboard
-          // model explicit and avoid falling through to the navigation keys.
-          if (event.currentTarget.hasAttribute('data-title-button')) {
-            onOpen(bookmark);
-            event.preventDefault();
-          }
-          return;
-        case 'Delete':
-        case 'Backspace':
-          // Route through the same confirm flow as the card's delete button.
-          onDelete(bookmark);
-          event.preventDefault();
-          return;
-        case 'Home':
-          nextIndex = 0;
-          break;
-        case 'End':
-          nextIndex = lastIndex;
-          break;
-        case 'ArrowUp':
-          nextIndex = layout === 'grid' ? index - getGridColumnCount() : index - 1;
-          break;
-        case 'ArrowDown':
-          nextIndex = layout === 'grid' ? index + getGridColumnCount() : index + 1;
-          break;
-        case 'ArrowLeft':
-          if (layout === 'grid') nextIndex = index - 1;
-          break;
-        case 'ArrowRight':
-          if (layout === 'grid') nextIndex = index + 1;
-          break;
-        default:
-          return;
-      }
-
-      nextIndex = Math.max(0, Math.min(lastIndex, nextIndex));
-      const nextBookmark = items[nextIndex];
-      if (nextIndex === index || !nextBookmark) return;
-      const nextCard = listRef.current
-        ?.querySelectorAll<HTMLElement>('[data-bookmark-id]')
-        .item(nextIndex);
-      const nextTitle = nextCard?.querySelector<HTMLButtonElement>('[data-title-button]');
-      if (nextTitle) {
-        nextTitle.focus();
-        setActiveId(nextBookmark.id);
-        event.preventDefault();
-      }
-    },
-    [items, layout, onDelete, onOpen],
-  );
+  const { activeId, handleFocusIn, handleKeyDown } = useListKeyboardNav({
+    items,
+    getId: (bookmark) => bookmark.id,
+    listRef,
+    onActivate: onOpen,
+    onDelete,
+    mode: layout === 'grid' ? 'grid' : 'list',
+    getColumnCount: getGridColumnCount,
+    focusSelector: '[data-title-button]',
+  });
 
   if (loading) {
     const skeletons = Array.from({ length: 6 }, (_, index) => (
@@ -475,7 +395,7 @@ export function BookmarkList({
           onDelete={onDelete}
           selectedTagId={selectedTagId}
           onTagClick={onTagClick}
-          onKeyDown={handleCardKeyDown}
+          onKeyDown={handleKeyDown}
         />
       ))}
     </ul>

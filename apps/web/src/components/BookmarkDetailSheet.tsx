@@ -12,18 +12,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
 import {
   Command,
   CommandEmpty,
@@ -66,7 +57,6 @@ import {
 } from '@/lib/client';
 import { formatDate, hostOf } from '@/lib/format';
 import { resolveImageSrc } from '@/lib/image';
-import { cn } from '@/lib/utils';
 
 /** Stable delete trigger element; avoids recreating the Button on every render. */
 const DELETE_TRIGGER_BUTTON = <Button variant="destructive" />;
@@ -582,31 +572,16 @@ export function BookmarkDetailSheet({
         </div>
 
         <SheetFooter className="sm:justify-between">
-          <AlertDialog>
-            <AlertDialogTrigger render={DELETE_TRIGGER_BUTTON}>
-              <Trash2Icon data-icon="inline-start" />
-              Delete
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete this bookmark?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This permanently removes the bookmark and its tag assignments.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogClose className={cn(buttonVariants({ variant: "outline" }))}>
-                  Cancel
-                </AlertDialogClose>
-                <AlertDialogClose
-                  onClick={handleDelete}
-                  className={cn(buttonVariants({ variant: "destructive" }))}
-                >
-                  Delete
-                </AlertDialogClose>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <ConfirmDeleteDialog
+            trigger={DELETE_TRIGGER_BUTTON}
+            title="Delete this bookmark?"
+            description="This permanently removes the bookmark and its tag assignments."
+            confirmLabel="Delete"
+            onConfirm={handleDelete}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete
+          </ConfirmDeleteDialog>
 
           <div className="flex gap-2">
             <Button variant="outline" onClick={closeSelf}>

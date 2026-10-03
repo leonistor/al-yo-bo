@@ -24,16 +24,8 @@ import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Topbar } from '@/components/Topbar';
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Sheet,
@@ -704,8 +696,13 @@ export function App() {
             <ImportPage onCommitted={onImportCommitted} />
           ) : route === 'vocabulary' ? (
             <VocabularyPage
+              tags={tags}
               categories={categories}
               sections={sections}
+              aggregates={aggregates}
+              tagsLoading={tagsQuery.isPending}
+              categoriesLoading={categoriesQuery.isPending}
+              sectionsLoading={sectionsQuery.isPending}
               onChanged={onVocabChanged}
             />
           ) : route === 'share' ? (
@@ -840,31 +837,14 @@ export function App() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog
+      <ConfirmDeleteDialog
         open={pendingDelete !== null}
         onOpenChange={closePendingDelete}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete bookmark?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{pendingDelete?.title ?? pendingDelete?.url}” and its tag assignments will be
-              permanently removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose className={cn(buttonVariants({ variant: "outline" }))}>
-              Cancel
-            </AlertDialogClose>
-            <AlertDialogClose
-              onClick={onDeleteConfirmed}
-              className={cn(buttonVariants({ variant: "destructive" }))}
-            >
-              Delete
-            </AlertDialogClose>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Delete bookmark?"
+        description={`“${pendingDelete?.title ?? pendingDelete?.url}” and its tag assignments will be permanently removed.`}
+        confirmLabel="Delete"
+        onConfirm={onDeleteConfirmed}
+      />
 
       <AddBookmarkSheet
         open={addOpen}

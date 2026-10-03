@@ -307,6 +307,98 @@ export function createSection(input: { name: string }): Promise<Section> {
     });
 }
 
+/** Renames/describes/re-scopes a tag; only supplied fields are sent. */
+export function updateTag(
+  id: string,
+  patch: { name?: string; description?: string | null; categoryId?: string | null },
+): Promise<Tag> {
+  const json = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.categoryId !== undefined ? { categoryId: patch.categoryId } : {}),
+  };
+  return api.api.tags[':id']
+    .$patch({ param: { id }, json })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** 204 routes have no body; the ok guard is all that's needed. */
+export function deleteTag(id: string): Promise<void> {
+  return api.api.tags[':id']
+    .$delete({ param: { id } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+    });
+}
+
+/** Renames/describes/re-sections a category; only supplied fields are sent. */
+export function updateCategory(
+  id: string,
+  patch: { name?: string; description?: string | null; sectionId?: string | null },
+): Promise<Category> {
+  const json = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.sectionId !== undefined ? { sectionId: patch.sectionId } : {}),
+  };
+  return api.api.categories[':id']
+    .$patch({ param: { id }, json })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** 204 routes have no body; the ok guard is all that's needed. */
+export function deleteCategory(id: string): Promise<void> {
+  return api.api.categories[':id']
+    .$delete({ param: { id } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+    });
+}
+
+/** Renames/describes a section; only supplied fields are sent. */
+export function updateSection(
+  id: string,
+  patch: { name?: string; description?: string | null },
+): Promise<Section> {
+  const json = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+  };
+  return api.api.sections[':id']
+    .$patch({ param: { id }, json })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** 204 routes have no body; the ok guard is all that's needed. */
+export function deleteSection(id: string): Promise<void> {
+  return api.api.sections[':id']
+    .$delete({ param: { id } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+    });
+}
+
 export function acceptCandidate(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
   return api.api.review.candidates.accept
     .$post({ json: { bookmarkId, tagId } })
