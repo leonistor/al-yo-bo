@@ -309,8 +309,8 @@ export function createApp(core: Core, config: ServerConfig) {
       );
     })
 
-    .delete('/api/categories/:id', (c) => {
-      core.vocabulary.deleteCategory(pathId(c, 'Category not found'));
+    .delete('/api/categories/:id', async (c) => {
+      await core.vocabulary.deleteCategory(pathId(c, 'Category not found'));
       return c.body(null, 204);
     })
 
@@ -375,8 +375,8 @@ export function createApp(core: Core, config: ServerConfig) {
       return c.json(core.vocabulary.setTagStatus(pathId(c, 'Tag not found'), status));
     })
 
-    .delete('/api/tags/:id', (c) => {
-      core.vocabulary.deleteTag(pathId(c, 'Tag not found'));
+    .delete('/api/tags/:id', async (c) => {
+      await core.vocabulary.deleteTag(pathId(c, 'Tag not found'));
       return c.body(null, 204);
     })
 

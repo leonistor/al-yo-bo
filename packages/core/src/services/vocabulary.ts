@@ -7,9 +7,14 @@ import {
   deleteCategory,
   deleteSection,
   deleteTag,
+  getBookmarksWithTagsByIds,
   getCategoryById,
+  getCategoryByName,
+  getSectionByName,
   getTagById,
+  getTagByName,
   listBookmarkIdsForCategoryScope,
+  listBookmarkIdsForTag,
   listCategories,
   listSections,
   listTags,
@@ -20,7 +25,9 @@ import {
 } from '@al-yo-bo/db';
 import type { Category, Section, Tag, TagStatus } from '@al-yo-bo/shared';
 
-import { NotFoundError, ValidationError } from '../errors.ts';
+import { ConflictError, NotFoundError, ValidationError } from '../errors.ts';
+import type { VectorProvider } from '../vector/provider.ts';
+import { syncVectorPayload } from '../vector/sync.ts';
 import type { JobScheduler } from './enrichment.ts';
 
 export interface SectionInput {
@@ -60,6 +67,7 @@ export interface TagPatch {
 export interface VocabularyServiceDeps {
   db: Database;
   jobs: JobScheduler;
+  vector: VectorProvider;
   /** Dataset the vocabulary operations are scoped to. */
   datasetId: string;
 }
@@ -72,11 +80,13 @@ export interface VocabularyService {
   listCategories(): Category[];
   createCategory(input: CategoryInput): Category;
   updateCategory(id: string, input: CategoryPatch): Category;
-  deleteCategory(id: string): void;
+  /** Async so the affected bookmarks' vector payloads can be resynced. */
+  deleteCategory(id: string): Promise<void>;
   listTags(): Tag[];
   createTag(input: TagInput): Tag;
   updateTag(id: string, input: TagPatch): Tag;
-  deleteTag(id: string): void;
+  /** Async so the affected bookmarks' vector payloads can be resynced. */
+  deleteTag(id: string): Promise<void>;
   /** Tag-only lifecycle hook: switch between `active` and `deprecated`. */
   setTagStatus(id: string, status: TagStatus): Tag;
 }
@@ -104,7 +114,22 @@ function assertCategoryInDataset(db: Database, categoryId: string, datasetId: st
  * chips both react to it.
  */
 export function createVocabularyService(deps: VocabularyServiceDeps): VocabularyService {
-  const { db, jobs, datasetId } = deps;
+  const { db, jobs, vector, datasetId } = deps;
+
+  /**
+   * Mirrors a vocabulary delete into the denormalized vector payloads: the FK
+   * cascade changes a bookmark's category/tag state immediately, but the index
+   * still holds the old ids until a full reindex. Reads the post-delete state
+   * and applies the shared sync rule (no-op on an empty index).
+   */
+  async function resyncBookmarkPayloads(bookmarkIds: string[]): Promise<void> {
+    if (bookmarkIds.length === 0) {
+      return;
+    }
+    for (const bookmark of getBookmarksWithTagsByIds(db, bookmarkIds)) {
+      await syncVectorPayload(vector.current(), bookmark.id, bookmark);
+    }
+  }
 
   return {
     listSections() {
@@ -112,6 +137,12 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     createSection(input) {
+      // The db create is an idempotent upsert, so without this pre-check the UI
+      // cannot tell "created" from "already existed"; renames collide with the
+      // unique index and would otherwise surface as a raw 500.
+      if (getSectionByName(db, datasetId, input.name)) {
+        throw new ConflictError(`A section named "${input.name}" already exists`);
+      }
       return createSection(db, {
         datasetId,
         name: input.name,
@@ -120,6 +151,12 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     updateSection(id, input) {
+      if (input.name !== undefined) {
+        const existing = getSectionByName(db, datasetId, input.name);
+        if (existing && existing.id !== id) {
+          throw new ConflictError(`A section named "${input.name}" already exists`);
+        }
+      }
       const updated = updateSection(db, id, {
         name: input.name,
         description: 'description' in input ? (input.description ?? null) : undefined,
@@ -141,6 +178,9 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     createCategory(input) {
+      if (getCategoryByName(db, datasetId, input.name)) {
+        throw new ConflictError(`A category named "${input.name}" already exists`);
+      }
       return createCategory(db, {
         datasetId,
         name: input.name,
@@ -150,6 +190,12 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     updateCategory(id, input) {
+      if (input.name !== undefined) {
+        const existing = getCategoryByName(db, datasetId, input.name);
+        if (existing && existing.id !== id) {
+          throw new ConflictError(`A category named "${input.name}" already exists`);
+        }
+      }
       const updated = updateCategory(db, id, {
         name: input.name,
         description: 'description' in input ? (input.description ?? null) : undefined,
@@ -161,10 +207,14 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       return updated;
     },
 
-    deleteCategory(id) {
+    async deleteCategory(id) {
+      // Capture before the delete: the FK sets `bookmarks.category_id` to NULL,
+      // so afterwards this query can no longer find the affected rows.
+      const affected = listBookmarkIdsForCategoryScope(db, datasetId, id);
       if (!deleteCategory(db, id)) {
         throw new NotFoundError('Category not found');
       }
+      await resyncBookmarkPayloads(affected);
     },
 
     listTags() {
@@ -174,6 +224,12 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     createTag(input) {
       if (input.categoryId) {
         assertCategoryInDataset(db, input.categoryId, datasetId);
+      }
+      // Name uniqueness is scoped per (dataset, category) when the tag is
+      // scoped, per dataset when unscoped; the db create hides that as an
+      // idempotent upsert, so surface the collision explicitly here.
+      if (getTagByName(db, datasetId, input.name, input.categoryId ?? null)) {
+        throw new ConflictError(`A tag named "${input.name}" already exists`);
       }
       return createTag(db, {
         datasetId,
@@ -187,12 +243,25 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       // The DB layer cannot reject a foreign `categoryId` without throwing a
       // transport-neutral error, so the boundary check lives here (SQL stays in
       // `@al-yo-bo/db`); the row's own dataset defines the allowed scope.
+      const current =
+        input.name !== undefined || ('categoryId' in input && Boolean(input.categoryId))
+          ? getTagById(db, id)
+          : null;
       if ('categoryId' in input && input.categoryId) {
-        const current = getTagById(db, id);
         if (!current) {
           throw new NotFoundError('Tag not found');
         }
         assertCategoryInDataset(db, input.categoryId, current.datasetId);
+      }
+      if (input.name !== undefined && current) {
+        // The collision scope is the *resulting* category, so a simultaneous
+        // rename + re-scope is checked against the new scope, not the old one.
+        const scopeCategoryId =
+          'categoryId' in input ? (input.categoryId ?? null) : current.categoryId;
+        const existing = getTagByName(db, current.datasetId, input.name, scopeCategoryId);
+        if (existing && existing.id !== id) {
+          throw new ConflictError(`A tag named "${input.name}" already exists`);
+        }
       }
       const updated = updateTag(db, id, {
         name: input.name,
@@ -205,10 +274,14 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       return updated;
     },
 
-    deleteTag(id) {
+    async deleteTag(id) {
+      // Capture before the delete: removing the tag cascades away its
+      // `bookmark_tags` rows, erasing the only record of which bookmarks held it.
+      const affected = listBookmarkIdsForTag(db, id);
       if (!deleteTag(db, id)) {
         throw new NotFoundError('Tag not found');
       }
+      await resyncBookmarkPayloads(affected);
     },
 
     setTagStatus(id, status) {

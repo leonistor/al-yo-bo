@@ -51,6 +51,20 @@ export function assignTag(db: Database, input: AssignTagInput): void {
   );
 }
 
+/**
+ * Bookmark ids carrying an effective assignment to this tag. Captured before a
+ * tag delete so callers can resync the denormalized vector payloads; the
+ * `bookmark_tags` rows themselves are removed by the FK cascade.
+ */
+export function listBookmarkIdsForTag(db: Database, tagId: string): string[] {
+  return prepared<{ bookmark_id: Uint8Array }, [Uint8Array]>(
+    db,
+    'SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?',
+  )
+    .all(uuidToBytes(tagId))
+    .map((row) => bytesToUuid(row.bookmark_id));
+}
+
 export function removeBookmarkTag(db: Database, bookmarkId: string, tagId: string): boolean {
   const result = prepared(db, 'DELETE FROM bookmark_tags WHERE bookmark_id = ? AND tag_id = ?').run(
     uuidToBytes(bookmarkId),

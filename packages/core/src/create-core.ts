@@ -91,7 +91,12 @@ export function createCore(deps: CoreDeps): Core {
   return {
     search: createSearchService({ db, config, vector, embeddings, datasetId: dataset.id }),
     bookmarks: createBookmarkService({ db, jobs: enrichment, vector, datasetId: dataset.id }),
-    vocabulary: createVocabularyService({ db, jobs: enrichment, datasetId: dataset.id }),
+    vocabulary: createVocabularyService({
+      db,
+      jobs: enrichment,
+      vector,
+      datasetId: dataset.id,
+    }),
     review: createReviewService({ db, config, vector, datasetId: dataset.id }),
     import: createImportService({ db, jobs: enrichment, extract: extract ?? null }),
     enrichment,
