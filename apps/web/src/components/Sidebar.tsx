@@ -5,6 +5,7 @@ import {
   InboxIcon,
   LibraryBigIcon,
   PanelLeftCloseIcon,
+  QrCodeIcon,
   Settings2Icon,
   TagsIcon,
   UploadIcon,
@@ -49,6 +50,7 @@ interface SidebarNavProps {
   onThemeChange: (theme: Theme) => void;
   onNavigateImport: () => void;
   onNavigateVocabulary: () => void;
+  onNavigateShare: () => void;
   /** Called after any selection; mobile sheet uses it to close itself. */
   onNavigate?: () => void;
   /** Render the Tools block inline (the mobile sheet); the full sidebar pins it. */
@@ -165,13 +167,15 @@ function CollapsibleGroup({
 interface SidebarToolsProps {
   onNavigateImport: () => void;
   onNavigateVocabulary: () => void;
+  onNavigateShare: () => void;
   onNavigate?: () => void;
 }
 
-/** Tools block (DESIGN.md §Sidebar info architecture): Import, Vocabulary. */
+/** Tools block (DESIGN.md §Sidebar info architecture): Import, Vocabulary, Share. */
 function SidebarTools({
   onNavigateImport,
   onNavigateVocabulary,
+  onNavigateShare,
   onNavigate,
 }: SidebarToolsProps) {
   const handleImport = useCallback(() => {
@@ -184,6 +188,11 @@ function SidebarTools({
     onNavigate?.();
   }, [onNavigateVocabulary, onNavigate]);
 
+  const handleShare = useCallback(() => {
+    onNavigateShare();
+    onNavigate?.();
+  }, [onNavigateShare, onNavigate]);
+
   return (
     <div className="flex flex-col gap-0.5">
       <Button variant="ghost" className={rowClass} onClick={handleImport}>
@@ -193,6 +202,10 @@ function SidebarTools({
       <Button variant="ghost" className={rowClass} onClick={handleVocabulary}>
         <TagsIcon />
         <span>Vocabulary</span>
+      </Button>
+      <Button variant="ghost" className={rowClass} onClick={handleShare}>
+        <QrCodeIcon />
+        <span>Share</span>
       </Button>
     </div>
   );
@@ -212,6 +225,7 @@ function SidebarNav({
   onSelectTag,
   onNavigateImport,
   onNavigateVocabulary,
+  onNavigateShare,
   onNavigate,
   showTools = true,
 }: SidebarNavProps) {
@@ -350,6 +364,7 @@ function SidebarNav({
           <SidebarTools
             onNavigateImport={onNavigateImport}
             onNavigateVocabulary={onNavigateVocabulary}
+            onNavigateShare={onNavigateShare}
             onNavigate={onNavigate}
           />
         </div>
@@ -411,6 +426,7 @@ export function Sidebar({
   onThemeChange,
   onNavigateImport,
   onNavigateVocabulary,
+  onNavigateShare,
   collapsed,
   width,
   onToggleCollapse,
@@ -614,6 +630,9 @@ export function Sidebar({
             <RailButton label="Vocabulary" onClick={onNavigateVocabulary}>
               <TagsIcon />
             </RailButton>
+            <RailButton label="Share" onClick={onNavigateShare}>
+              <QrCodeIcon />
+            </RailButton>
           </div>
         </>
       ) : (
@@ -665,6 +684,7 @@ export function Sidebar({
               onThemeChange={onThemeChange}
               onNavigateImport={onNavigateImport}
               onNavigateVocabulary={onNavigateVocabulary}
+              onNavigateShare={onNavigateShare}
               showTools={false}
             />
           </ScrollArea>
@@ -673,6 +693,7 @@ export function Sidebar({
             <SidebarTools
               onNavigateImport={onNavigateImport}
               onNavigateVocabulary={onNavigateVocabulary}
+              onNavigateShare={onNavigateShare}
             />
           </div>
         </>

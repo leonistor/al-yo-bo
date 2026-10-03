@@ -19,6 +19,7 @@ import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ImportPage } from '@/components/ImportPage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
+import { SharePage } from '@/components/SharePage';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -470,6 +471,7 @@ export function App() {
   const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
   const goImport = useCallback(() => navigate('import'), []);
   const goVocabulary = useCallback(() => navigate('vocabulary'), []);
+  const goShare = useCallback(() => navigate('share'), []);
 
   const onModeChange = useCallback((next: SearchMode) => {
     setMode(next);
@@ -622,6 +624,7 @@ export function App() {
     onThemeChange: setTheme,
     onNavigateImport: goImport,
     onNavigateVocabulary: goVocabulary,
+    onNavigateShare: goShare,
   };
 
   return (
@@ -659,6 +662,8 @@ export function App() {
               sections={sections}
               onChanged={onVocabChanged}
             />
+          ) : route === 'share' ? (
+            <SharePage />
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col gap-3">
