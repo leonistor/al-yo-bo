@@ -133,12 +133,15 @@ async function readCappedBuffer(response: Response, maxBytes: number): Promise<B
   const chunks: Uint8Array[] = [];
   let total = 0;
   while (true) {
+    // Streaming a capped download is inherently sequential.
+    // oxlint-disable-next-line no-await-in-loop
     const { done, value } = await reader.read();
     if (done) {
       break;
     }
     total += value.byteLength;
     if (total > maxBytes) {
+      // oxlint-disable-next-line no-await-in-loop
       await reader.cancel();
       return null;
     }

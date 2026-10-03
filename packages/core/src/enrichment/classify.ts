@@ -194,6 +194,9 @@ export async function classifyBookmark(
 
   for (let offset = 0; offset < allNames.length; offset += MAX_QUESTIONS_PER_CALL) {
     const batch = allNames.slice(offset, offset + MAX_QUESTIONS_PER_CALL);
+    // Batches run sequentially to pace the Ollaya daemon and keep run
+    // creation ordering deterministic (classification_runs is append-only).
+    // oxlint-disable-next-line no-await-in-loop
     const response = await classifier.decide({
       model: config.ollaya.model,
       state,

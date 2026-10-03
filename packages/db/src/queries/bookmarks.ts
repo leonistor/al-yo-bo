@@ -67,13 +67,16 @@ function hydrate(db: Database, rows: BookmarkRow[]): BookmarkWithTags[] {
     db,
     bookmarks.map((bookmark) => bookmark.id),
   );
-  return bookmarks.map((bookmark) => ({
-    ...bookmark,
-    tags: tags.get(bookmark.id) ?? [],
-    // Surfaced on every read path (list/search/detail) so the UI can render
-    // the screenshot → og:image → placeholder chain without touching metadata.
-    image: parseBookmarkImage(bookmark.metadata),
-  }));
+  // Object.assign instead of a spread (oxc/no-map-spread): the row objects are
+  // freshly created by mapBookmark above, so in-place extension is safe.
+  return bookmarks.map((bookmark) =>
+    Object.assign(bookmark, {
+      tags: tags.get(bookmark.id) ?? [],
+      // Surfaced on every read path (list/search/detail) so the UI can render
+      // the screenshot → og:image → placeholder chain without touching metadata.
+      image: parseBookmarkImage(bookmark.metadata),
+    }),
+  );
 }
 
 function sortColumn(sort: BookmarkSort = 'created_at'): string {

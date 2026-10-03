@@ -53,6 +53,9 @@ const bookmarks: SeedBookmark[] = [];
 let skipped = 0;
 
 for (const file of files) {
+  // One-off extraction script: sequential reads keep the dedupe/output order
+  // trivially predictable.
+  // oxlint-disable-next-line no-await-in-loop
   const content = await readFile(join(SOURCE_DIR, file), 'utf8');
   const parsed = parseCollection(content);
   skipped += parsed.skipped;

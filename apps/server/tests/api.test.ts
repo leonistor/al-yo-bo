@@ -132,6 +132,18 @@ function jsonRequest(body: unknown, method = 'POST'): RequestInit {
   };
 }
 
+/** Minimal ClassifierClient stub over the seeded vocabulary. */
+function stubClassifier(probabilities: Record<string, number>) {
+  return {
+    async decide(request: { questions: Record<string, unknown> }) {
+      const asked = Object.keys(request.questions);
+      return {
+        probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])),
+      };
+    },
+  };
+}
+
 /**
  * Compile-time guard for the frozen RPC contract `apps/web` builds against:
  * `POST /api/import` must accept `{ bookmarks: ImportedBookmark[] }` and return
@@ -165,7 +177,9 @@ describe('bookmark API', () => {
   });
 
   test('status filter hides invalid bookmarks from default views', async () => {
-    const { db, app } = makeApp();
+    // `testApp` (not the describe-level `app`): this test needs the instance
+    // paired with the db it mutates, not the fresh beforeEach one.
+    const { db, app: testApp } = makeApp();
     const invalid = createBookmark(db, {
       datasetId: db.datasetId,
       url: 'https://api-invalid.test',
@@ -174,7 +188,7 @@ describe('bookmark API', () => {
       scrapeAttempts: 3,
     });
 
-    const def = (await (await app.request('/api/bookmarks?limit=100')).json()) as {
+    const def = (await (await testApp.request('/api/bookmarks?limit=100')).json()) as {
       total: number;
       items: { id: string }[];
     };
@@ -182,12 +196,12 @@ describe('bookmark API', () => {
     expect(def.items.some((bookmark) => bookmark.id === invalid.id)).toBe(false);
 
     const onlyInvalid = (await (
-      await app.request('/api/bookmarks?limit=100&status=invalid')
+      await testApp.request('/api/bookmarks?limit=100&status=invalid')
     ).json()) as { total: number; items: { id: string }[] };
     expect(onlyInvalid.total).toBe(1);
     expect(onlyInvalid.items.map((bookmark) => bookmark.id)).toEqual([invalid.id]);
 
-    const all = (await (await app.request('/api/bookmarks?limit=100&status=all')).json()) as {
+    const all = (await (await testApp.request('/api/bookmarks?limit=100&status=all')).json()) as {
       total: number;
       items: { id: string }[];
     };
@@ -196,7 +210,8 @@ describe('bookmark API', () => {
   });
 
   test('changing a bookmark URL resets status and scrape attempts', async () => {
-    const { db, app } = makeApp();
+    // `testApp` (not the describe-level `app`): paired with the db this test mutates.
+    const { db, app: testApp } = makeApp();
     const invalid = createBookmark(db, {
       datasetId: db.datasetId,
       url: 'https://api-reset-old.test',
@@ -204,7 +219,7 @@ describe('bookmark API', () => {
       scrapeAttempts: 3,
     });
 
-    const response = await app.request(
+    const response = await testApp.request(
       `/api/bookmarks/${invalid.id}`,
       jsonRequest({ url: 'https://api-reset-new.test' }, 'PATCH'),
     );
@@ -444,18 +459,6 @@ describe('scrape API', () => {
 });
 
 describe('classify API', () => {
-  /** Minimal ClassifierClient stub over the seeded vocabulary. */
-  function stubClassifier(probabilities: Record<string, number>) {
-    return {
-      async decide(request: { questions: Record<string, unknown> }) {
-        const asked = Object.keys(request.questions);
-        return {
-          probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])),
-        };
-      },
-    };
-  }
-
   test('classifies inline and returns the updated bookmark with new tags', async () => {
     const { app } = makeApp({
       vector: new StubVectorIndex([]),

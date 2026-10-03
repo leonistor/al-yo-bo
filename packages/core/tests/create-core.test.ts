@@ -7,14 +7,14 @@ import { createDataset, getDatasetByName, openDatabase, setupDatabase, updatePro
 
 import { StubVectorIndex, testConfig } from './support.ts';
 
+function makeDb(): Database {
+  const db = openDatabase(':memory:');
+  setupDatabase(db);
+  return db;
+}
+
 /** Boot-time active-dataset resolution is the one thing createCore owns. */
 describe('createCore active-dataset resolution', () => {
-  function makeDb(): Database {
-    const db = openDatabase(':memory:');
-    setupDatabase(db);
-    return db;
-  }
-
   test('the profile pointer wins over the config fallback name', () => {
     const db = makeDb();
     const grimoire = createDataset(db, 'grimoire');

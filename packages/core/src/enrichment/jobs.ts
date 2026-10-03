@@ -1,3 +1,11 @@
+// Awaiting inside loops is deliberate throughout this module: the pump drains
+// one job at a time, retries sleep with exponential backoff, and embed batches
+// write SQLite-first then the vector index. Parallelizing would change the
+// sidecar load profile and per-job failure semantics. (A block disable without
+// a matching enable covers the rest of the file; `oxlint-disable-file` proved
+// unreliable with preceding comments.)
+// oxlint-disable eslint/no-await-in-loop
+
 /**
  * In-process job loop (ARCHITECTURE §8, MVP decision): sequential, idempotent
  * jobs with bounded retries, deduplicated per (bookmark, type). The queue is
@@ -506,6 +514,9 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
     }
     running = true;
     try {
+      // `stopped` is flipped by queue.stop() while a job is still awaiting, so
+      // the condition legitimately changes between iterations.
+      // oxlint-disable-next-line no-unmodified-loop-condition
       while (!stopped) {
         const key = order.shift();
         if (!key) {

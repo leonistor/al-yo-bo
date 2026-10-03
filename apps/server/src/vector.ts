@@ -33,6 +33,7 @@ async function bootSyncWithRetry(sync: () => Promise<SyncReport>): Promise<SyncR
   let lastError: unknown;
   for (let attempt = 1; attempt <= QDRANT_BOOT_SYNC_ATTEMPTS; attempt++) {
     try {
+      // oxlint-disable-next-line no-await-in-loop
       return await sync();
     } catch (error) {
       lastError = error;
@@ -40,6 +41,8 @@ async function bootSyncWithRetry(sync: () => Promise<SyncReport>): Promise<SyncR
         console.warn(
           `[vector] Qdrant not ready (attempt ${attempt}/${QDRANT_BOOT_SYNC_ATTEMPTS}); retrying in ${QDRANT_BOOT_SYNC_DELAY_MS}ms`,
         );
+        // Backoff between boot-sync attempts is inherently sequential.
+        // oxlint-disable-next-line no-await-in-loop
         await sleep(QDRANT_BOOT_SYNC_DELAY_MS);
       }
     }

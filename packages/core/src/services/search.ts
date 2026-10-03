@@ -69,9 +69,11 @@ function filterCandidatesByStatus(
     db,
     candidates.map((candidate) => candidate.bookmarkId),
   );
+  // Object.assign instead of a spread (oxc/no-map-spread): fresh copies, so the
+  // fused candidates the caller still holds are never mutated.
   return candidates
     .filter((candidate) => statuses.get(candidate.bookmarkId) === status)
-    .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+    .map((candidate, index) => Object.assign({}, candidate, { rank: index + 1 }));
 }
 
 /**

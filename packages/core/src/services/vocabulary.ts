@@ -127,7 +127,10 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       return;
     }
     for (const bookmark of getBookmarksWithTagsByIds(db, bookmarkIds)) {
-      await syncVectorPayload(vector.current(), bookmark.id, bookmark);
+      // Sequential on purpose: the vector adapter is not assumed to be
+    // concurrency-safe, and a delete resync is small.
+    // oxlint-disable-next-line no-await-in-loop
+    await syncVectorPayload(vector.current(), bookmark.id, bookmark);
     }
   }
 
