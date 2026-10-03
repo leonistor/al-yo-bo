@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json",
+  // Project-local plugin config. The plugin merges this over the global
+  // ~/.config/opencode/oh-my-opencode-slim.json — project wins. `presets`
+  // and `agents` merge per-key; everything else deep-merges.
+  // The OH_MY_OPENCODE_SLIM_PRESET env var (if set) overrides `preset`.
+  //
+  // Examples of per-project overrides (uncomment to apply):
+  // "disabled_agents": ["observer"],
+  // "multiplexer": { "type": "cmux-tui", "layout": "main-vertical" },
+  // "agents": { "oracle": { "model": "synthetic/hf:moonshotai/Kimi-K3" } },
+  // "presets": { "synthetic": { "designer": { "mcps": ["*", "!crawlberg", "!shadcn"] } } },
+  "preset": "synthetic"
+}
