@@ -32,5 +32,16 @@
       ],
       "enabled": true,
     },
+    // Octocode: evidence-first GitHub/npm/local code research (docs/ARCHITECTURE note).
+    // GitHub token is picked up automatically from the `gh` CLI (no env needed).
+    "octocode": {
+      "type": "local",
+      "command": ["npx", "-y", "octocode-mcp@latest"],
+      "enabled": true,
+      "environment": {
+        "ENABLE_LOCAL": "true",
+        "ENABLE_CLONE": "true",
+      },
+    },
   },
 }

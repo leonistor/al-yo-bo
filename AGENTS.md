@@ -75,6 +75,13 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   string matches, or filenames; don't jump to broad text searches first.
 - **Docs lookup:** context7 via the opencode plugin. **Ollaya has no Context7 coverage** — use
   <https://ollaya.dev/docs> instead.
+- **GitHub/npm research:** **octocode** — evidence-first search of GitHub repos, code, PRs, commits
+  and npm packages, with token-compact output. Available as an MCP server
+  (`.opencode/opencode.jsonc`; restart opencode to load it) and as a CLI driven directly
+  (`npx octocode tools <name> --queries '<json>' --compact`) or via the globally installed
+  `octocode-research` skill. Repo discovery example:
+  `npx octocode tools ghSearch --queries '{"operation":"repositories","keywords":["lucide icons mcp"],"sort":"stars"}' --compact`.
+  Auth reuses the `gh` CLI token automatically — no extra env needed.
 
 ## Hard constraints (ARCHITECTURE §1)
 
