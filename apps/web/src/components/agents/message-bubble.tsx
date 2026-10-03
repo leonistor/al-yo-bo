@@ -339,7 +339,7 @@ export function MessageBubbleCollapsible({
           "transition-[mask-image] duration-200",
           !currentOpen && LINE_CLAMP_CLASS[collapsedLines],
           !currentOpen &&
-            "[mask-image:linear-gradient(to_bottom,#000_68%,transparent_100%)]",
+            "[mask-image:linear-gradient(to_bottom,var(--color-black)_68%,transparent_100%)]",
           contentClassName,
         )}
       >
