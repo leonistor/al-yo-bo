@@ -12,9 +12,11 @@ profile="${PROFILE:-}"
 data_dir="${DATA_DIR:-}"
 
 # Parse `--profile=<name>` / `--profile <name>`; `--list-profiles` (alias
-# `--profiles`) prints the available profiles and exits. Unknown args
-# (including a stray `--` bun may forward) are ignored.
+# `--profiles`) prints the available profiles and exits; `--seed` (or
+# `--seed=<dataset>`) seeds before booting. Unknown args (including a stray
+# `--` bun may forward) are ignored.
 list_profiles=0
+seed=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile=*)
@@ -31,6 +33,16 @@ while [ $# -gt 0 ]; do
       ;;
     --list-profiles|--profiles)
       list_profiles=1
+      shift
+      ;;
+    --seed)
+      seed="1"
+      shift
+      ;;
+    --seed=*)
+      # `--seed=leo` overrides SEED_DATASET for this run (dataset names are
+      # validated by packages/db/src/seed.ts, so no path-segment guard here).
+      seed="${1#--seed=}"
       shift
       ;;
     *)
@@ -72,6 +84,17 @@ if [ -n "$profile" ]; then
     export PROFILE="$profile"
   fi
   echo "[dev] profile '$profile' → DATA_DIR=$data_dir"
+fi
+
+if [ -n "$seed" ]; then
+  # Seed against the resolved data root BEFORE booting: seeding activates the
+  # dataset (profile.active_dataset_id), so the server scopes to it on boot.
+  # `set -e` aborts here if the seed fails (e.g. unregistered dataset name).
+  if [ "$seed" != "1" ]; then
+    export SEED_DATASET="$seed"
+  fi
+  echo "[dev] seeding into ${DATA_DIR:-data} ..."
+  bun run db:seed
 fi
 
 exec bun run --parallel dev:server dev:web dev:qdrant dev:ollaya dev:agentation

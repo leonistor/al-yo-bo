@@ -61,6 +61,7 @@ export EXTRACT_MODEL=deepseek/deepseek-v4.1-flash   # OpenRouter extraction (nee
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
 bun run dev -- --profile=leo  # same, isolated under data/profiles/leo (DB, seeds, vectors)
+bun run dev -- --profile=octocat --seed  # fresh profile, seed it (dataset via --seed=<name>), then boot
 bun run dev -- --list-profiles  # list profiles created by previous --profile runs
 bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: leo)
 bun run db:clear  # wipe one dataset's content (asks first; --yes to skip)
