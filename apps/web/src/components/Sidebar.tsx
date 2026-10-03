@@ -1,5 +1,6 @@
 import type { Aggregates, CategoryAggregate, Profile } from '@al-yo-bo/shared';
 import {
+  DownloadIcon,
   FolderIcon,
   HashIcon,
   InboxIcon,
@@ -50,6 +51,7 @@ interface SidebarNavProps {
   onSelectTag: (id: string | null) => void;
   onThemeChange: (theme: Theme) => void;
   onNavigateImport: () => void;
+  onNavigateExport: () => void;
   onNavigateVocabulary: () => void;
   onNavigateShare: () => void;
   onNavigateProfile: () => void;
@@ -149,14 +151,16 @@ function CollapsibleGroup({
 
 interface SidebarToolsProps {
   onNavigateImport: () => void;
+  onNavigateExport: () => void;
   onNavigateVocabulary: () => void;
   onNavigateShare: () => void;
   onNavigate?: () => void;
 }
 
-/** Tools block (DESIGN.md §Sidebar info architecture): Import, Vocabulary, Share. */
+/** Tools block (DESIGN.md §Sidebar info architecture): Import, Export, Vocabulary, Share. */
 function SidebarTools({
   onNavigateImport,
+  onNavigateExport,
   onNavigateVocabulary,
   onNavigateShare,
   onNavigate,
@@ -165,6 +169,11 @@ function SidebarTools({
     onNavigateImport();
     onNavigate?.();
   }, [onNavigateImport, onNavigate]);
+
+  const handleExport = useCallback(() => {
+    onNavigateExport();
+    onNavigate?.();
+  }, [onNavigateExport, onNavigate]);
 
   const handleVocabulary = useCallback(() => {
     onNavigateVocabulary();
@@ -181,6 +190,10 @@ function SidebarTools({
       <Button variant="ghost" className={rowClass} onClick={handleImport}>
         <UploadIcon />
         <span>Import</span>
+      </Button>
+      <Button variant="ghost" className={rowClass} onClick={handleExport}>
+        <DownloadIcon />
+        <span>Export</span>
       </Button>
       <Button variant="ghost" className={rowClass} onClick={handleVocabulary}>
         <TagsIcon />
@@ -207,6 +220,7 @@ function SidebarNav({
   onSelectCategory,
   onSelectTag,
   onNavigateImport,
+  onNavigateExport,
   onNavigateVocabulary,
   onNavigateShare,
   onNavigate,
@@ -346,6 +360,7 @@ function SidebarNav({
         <div className="mt-4 border-t border-sidebar-border pt-2">
           <SidebarTools
             onNavigateImport={onNavigateImport}
+            onNavigateExport={onNavigateExport}
             onNavigateVocabulary={onNavigateVocabulary}
             onNavigateShare={onNavigateShare}
             onNavigate={onNavigate}
@@ -429,6 +444,7 @@ export function Sidebar({
   onSelectTag,
   onThemeChange,
   onNavigateImport,
+  onNavigateExport,
   onNavigateVocabulary,
   onNavigateShare,
   onNavigateProfile,
@@ -636,6 +652,9 @@ export function Sidebar({
             <RailButton label="Import" onClick={onNavigateImport}>
               <UploadIcon />
             </RailButton>
+            <RailButton label="Export" onClick={onNavigateExport}>
+              <DownloadIcon />
+            </RailButton>
             <RailButton label="Vocabulary" onClick={onNavigateVocabulary}>
               <TagsIcon />
             </RailButton>
@@ -691,6 +710,7 @@ export function Sidebar({
               onSelectTag={onSelectTag}
               onThemeChange={onThemeChange}
               onNavigateImport={onNavigateImport}
+              onNavigateExport={onNavigateExport}
               onNavigateVocabulary={onNavigateVocabulary}
               onNavigateShare={onNavigateShare}
               onNavigateProfile={onNavigateProfile}
@@ -701,6 +721,7 @@ export function Sidebar({
           <div className="border-t border-sidebar-border px-2 py-2">
             <SidebarTools
               onNavigateImport={onNavigateImport}
+              onNavigateExport={onNavigateExport}
               onNavigateVocabulary={onNavigateVocabulary}
               onNavigateShare={onNavigateShare}
             />

@@ -58,6 +58,9 @@ export interface BookmarkSearchParams {
   categoryId?: string;
   tagId?: string;
   status?: BookmarkListStatus;
+  /** ISO date (`YYYY-MM-DD`); expanded to inclusive UTC day bounds server-side. */
+  dateFrom?: string;
+  dateTo?: string;
   sort?: BookmarkSort;
   direction?: 'asc' | 'desc';
   limit?: number;
@@ -71,6 +74,8 @@ export function fetchBookmarks(params: BookmarkSearchParams = {}): Promise<Searc
     ...(params.categoryId ? { categoryId: params.categoryId } : {}),
     ...(params.tagId ? { tagId: params.tagId } : {}),
     ...(params.status ? { status: params.status } : {}),
+    ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
+    ...(params.dateTo ? { dateTo: params.dateTo } : {}),
     ...(params.sort ? { sort: params.sort } : {}),
     ...(params.direction ? { direction: params.direction } : {}),
     ...(params.limit !== undefined ? { limit: params.limit } : {}),

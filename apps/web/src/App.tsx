@@ -17,6 +17,7 @@ import { BookmarkDetailSheet } from '@/components/BookmarkDetailSheet';
 import { BookmarkList } from '@/components/BookmarkList';
 import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
 import { CommandPalette } from '@/components/CommandPalette';
+import { ExportPage } from '@/components/ExportPage';
 import { ImportPage } from '@/components/ImportPage';
 import { ProfilePage } from '@/components/ProfilePage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
@@ -511,6 +512,7 @@ export function App() {
   const closeNav = useCallback(() => setNavOpen(false), []);
   const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
   const goImport = useCallback(() => navigate('import'), []);
+  const goExport = useCallback(() => navigate('export'), []);
   const goVocabulary = useCallback(() => navigate('vocabulary'), []);
   const goShare = useCallback(() => navigate('share'), []);
   const goProfile = useCallback(() => navigate('profile'), []);
@@ -665,6 +667,7 @@ export function App() {
     onSelectTag,
     onThemeChange: setTheme,
     onNavigateImport: goImport,
+    onNavigateExport: goExport,
     onNavigateVocabulary: goVocabulary,
     onNavigateShare: goShare,
     onNavigateProfile: goProfile,
@@ -699,6 +702,8 @@ export function App() {
         <main className="flex min-h-0 flex-1 gap-3 p-4">
           {route === 'import' ? (
             <ImportPage onCommitted={onImportCommitted} />
+          ) : route === 'export' ? (
+            <ExportPage categories={categories} tags={tags} />
           ) : route === 'vocabulary' ? (
             <VocabularyPage
               tags={tags}
