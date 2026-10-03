@@ -60,7 +60,7 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Seed demo data           | `bun run db:seed`      |
 | Install Qdrant binary    | `bun run qdrant:install` |
 | Start Qdrant sidecar     | `bun run qdrant:start` |
-| Lint                     | `bun run lint`         |
+| Lint                     | `bun run lint` (also in `apps/*`) |
 | Format                   | `bun run format`       |
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
@@ -73,7 +73,12 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   `bun run browser:start`, log in by hand, then quit with **Cmd+Q** (clean shutdown releases the
   profile lock; avoid killing the process) — later `browser:start` runs and automation sessions
   reuse those sessions. `bun run browser:start:clean` launches a throwaway temp profile for
-  pristine no-cookie runs.
+  pristine no-cookie runs. The `playwriter` CLI is installed **globally** (`~/.bun/bin/playwriter`)
+  — invoke it directly; never reach for `bunx playwriter` (it re-resolves deps on every call). For
+  agentic QA prefer a disposable headless browser: `playwriter session new --browser headless` (no
+  profile-lock contention with a headed browser). If code execution fails with "The Playwriter
+  Chrome extension is not connected" right after a CLI upgrade, the relay daemon is stale:
+  `pkill -f playwriter-ws-server` and retry.
 - **Behavioral code questions:** start with **jevgrep** (`jg`) — how/why/where something works,
   even when a function or setting is named. Use plain grep/glob only for exact symbol definitions,
   string matches, or filenames; don't jump to broad text searches first.
