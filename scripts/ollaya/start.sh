@@ -18,4 +18,7 @@ if curl -fsS --max-time 2 "http://$HOST/api/version" >/dev/null 2>&1; then
   exit 0
 fi
 
-exec ollaya serve --host "$HOST"
+# Ollaya's CLI takes no --host flag; the daemon reads OLLAYA_HOST from the
+# environment, so export it instead of passing it as an argument.
+export OLLAYA_HOST="$HOST"
+exec ollaya serve
