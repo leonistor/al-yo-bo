@@ -1,13 +1,5 @@
 import { OllayaClassifierClient } from '@al-yo-bo/classifier';
-import {
-  createCore,
-  createVectorProvider,
-  drainImportBatches,
-  makeScraper,
-  startJobQueue,
-  type AvatarStore,
-  type JobScheduler,
-} from '@al-yo-bo/core';
+import { createCore, createVectorProvider, makeScraper, type AvatarStore } from '@al-yo-bo/core';
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono, type Context } from 'hono';
@@ -27,18 +19,6 @@ import { initVectorIndex } from './vector.ts';
 
 const config = loadConfig();
 const db = openDatabase(config.dbPath);
-
-// One-time drain (2026-10-01 import simplification plan): commit any rows that
-// were staged in the now-removed `import_batches` table BEFORE setupDatabase
-// runs migration 0004, which drops the table. No-op when the table is already
-// gone or no rows are staged.
-const drainJobs = buildDrainJobs(db, config);
-const drainReport = drainImportBatches(db, drainJobs);
-if (drainReport.inspected > 0) {
-  console.log(
-    `[drain] import_batches: inspected=${drainReport.inspected} committed=${drainReport.committed} discarded=${drainReport.discarded} failed=${drainReport.failed}`,
-  );
-}
 
 setupDatabase(db);
 
@@ -171,36 +151,6 @@ if (
 export type { AppType } from './app.ts';
 
 export default { port: config.port, hostname: config.host, fetch: app.fetch };
-
-/**
- * Minimal scheduler that the staged-batch drain uses to enqueue scrape jobs
- * for newly committed rows. Real work (including the actual scrape) is
- * re-enqueued later by the full enrichment service after migrations run.
- */
-function buildDrainJobs(
-  db: import('bun:sqlite').Database,
-  config: import('./env.ts').ServerConfig,
-): JobScheduler {
-  const queue = startJobQueue({
-    db,
-    vector: {
-      get size() {
-        return 0;
-      },
-      upsert: () => Promise.resolve(),
-      updatePayload: () => Promise.resolve(),
-      delete: () => Promise.resolve(),
-      search: () => Promise.resolve([]),
-    },
-    scrape: async () => {
-      throw new Error('Scrape is not wired during drain');
-    },
-    config,
-  });
-  return {
-    enqueue: (bookmarkId, type) => queue.enqueue(bookmarkId, type),
-  };
-}
 
 async function serveScreenshot(c: Context, dir: string): Promise<Response> {
   const filename = c.req.param('filename') ?? '';

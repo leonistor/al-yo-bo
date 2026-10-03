@@ -26,7 +26,6 @@ export type { BookmarkHit } from './dto.ts';
 
 export { createVectorProvider, type VectorProvider } from './vector/provider.ts';
 export { syncVectorPayload } from './vector/sync.ts';
-export { drainImportBatches, type DrainReport } from './drain.ts';
 
 export {
   createSearchService,
