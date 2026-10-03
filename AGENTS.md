@@ -41,6 +41,7 @@ packages/
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
   importer/        markdown collection-file parser and ingest
+  exporter/        bookmark export serializers (Netscape HTML, JSON, CSV, markdown collection)
   core/            domain/application services (transport-neutral); orchestrates db/search/importer
   shared/          domain types + utilities (no framework imports)
 ```

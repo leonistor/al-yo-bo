@@ -154,6 +154,7 @@ packages/
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
   importer/        markdown collection-file parser, LLM extraction port, and ingest
+  exporter/        bookmark export serializers (Netscape HTML, JSON, CSV, markdown collection)
   core/            domain/application services (search, bookmarks, enrichment, ...); no HTTP
   shared/          domain types + utilities (no framework imports)
 ```
@@ -163,8 +164,9 @@ packages/
 ```
 web ─▶ shared
 server ─▶ core, db, search, vectordb, embeddings, classifier, shared
-core ─▶ db, importer, search, embeddings, classifier, shared
+core ─▶ db, importer, exporter, search, embeddings, classifier, shared
 db, search, vectordb, embeddings, classifier, importer ─▶ shared
+exporter ─▶ shared
 importer ─▶ db
 ```
 
@@ -184,6 +186,9 @@ Rules:
   and a vector provider; only `apps/server` constructs the concrete implementations.
 - `search`, `vectordb`, `embeddings`, and `classifier` take and return plain data, so they are
   testable without a running server.
+- `exporter` holds the pure export serializers — string in, string out, no I/O. Its tests import
+  `importer` to prove the markdown export round-trips; that dependency is test-only, keeping the
+  runtime graph acyclic.
 - No cycles. `server` is the only package allowed to depend on a concrete implementation of each
   subsystem; `web` depends on `server` only through its exported route type (type-only).
 
@@ -396,6 +401,36 @@ import** — they are managed through the vocabulary UI only. On the LLM path th
 categories/tags that were not literally in the input when it can derive them plainly, so extraction
 is the vocabulary source, not the markdown structure alone. `metadata.import` preserves provenance
 (`{ file, category, priority }`). Inline-token tag syntax inside a note remains deferred; see §11.
+
+### Export (synchronous request/response)
+
+Export is the inverse of ingest: a filtered, lossless view of the current dataset in a portable
+format. It is a plain synchronous `GET /api/export` request/response — **not** a background job
+(§8 jobs are bookmark-scoped enrichment only).
+
+- **Formats** (`packages/exporter`, pure serializers over `ExportBookmarkRow`):
+  **Netscape HTML** — the universal browser/manager interchange format (folder tree =
+  Section ▸ Category, `ADD_DATE` in Unix seconds, comma-joined `TAGS`, `<DD>` description; the
+  domain has no favicon data, so `ICON`/`ICON_URI` are omitted); **JSON** — full-fidelity backup
+  (`format: 'al-yo-bo/export', version: 1`, epoch-ms timestamps, resolved category/section names);
+  **CSV** — Raindrop-compatible header `folder,url,title,note,tags,created`, RFC 4180 quoting;
+  **Markdown** — this app's own collection format, mirroring `parseCollection`, so an export
+  round-trips through import (within the parser's fidelity limits: tag sets are per-file unions,
+  and a bullet's note feeds both title and description on re-import). OPML and XBEL were evaluated
+  and dropped (no tag/description fidelity, no consumer demand); the serializer seams make adding a
+  format cheap if that changes.
+- **No pagination clamp.** Export reads through a dedicated uncapped query
+  (`listBookmarksForExport`) — the 100-row `clampPagination` cap exists for page responses and
+  must never silently truncate an export.
+- **Packaging.** A single selected format streams that file with `Content-Disposition: attachment`;
+  multiple formats are zipped at the server edge with `fflate` (`server` is the package allowed to
+  touch concrete subsystems, §4). Core only orchestrates query + serialization; serializers stay
+  transport-neutral in `packages/exporter`.
+- **Filters** mirror the search surface (category, tag, status, `created_at` date range, `q`);
+  date-bounded searches run keyword-only (§6). Export is read-only over the existing tables —
+  no schema changes, so [MODEL.md](./MODEL.md) is unaffected.
+- **Memory posture.** Serialized files buffer in memory before the response. Fine at personal
+  scale; see §11 for the streaming revisit trigger.
 
 ### Stage 2 — Enrich (background jobs)
 
@@ -656,6 +691,7 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
+| Export memory buffering (§7)     | Exports get slow or memory-heavy at real collection sizes; then stream each format and zip incrementally instead of buffering files in memory.                                        |
 | `Bun.WebView` screenshots (§8)   | The experimental `Bun.WebView` API changes or is removed; then pin/replace the capture client — the `ScreenshotClient` boundary keeps the `og:image` fallback path intact.            |
 | In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then re-evaluate the job architecture.                                                                                                              |
 | Active dataset resolved at boot (§5/MODEL.md 8) | A dataset-switch UI (or any per-request dataset selection) is built; then the boot-time `resolveActiveDataset` moves to per-request resolution and the route surface grows a `datasetId` param. |
