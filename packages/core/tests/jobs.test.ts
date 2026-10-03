@@ -645,6 +645,67 @@ describe('job queue', () => {
     expect(scrapes).toBe(1);
     queue.stop();
   });
+
+  test('batches embed jobs and retries only the failed bookmark', async () => {
+    const db = makeDb();
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      ids.push(
+        createBookmark(db, {
+          datasetId: db.datasetId,
+          url: `https://example.com/batch-${i}`,
+          title: `B${i}`,
+          content: 'body',
+        }).id,
+      );
+    }
+    const poison = ids[3]!;
+    let embedCalls = 0;
+    const vector = new RecordingVector();
+    const recordingUpsert = vector.upsert.bind(vector);
+    let poisonFailures = 0;
+    vector.upsert = async (point) => {
+      if (point.bookmarkId === poison && poisonFailures === 0) {
+        poisonFailures += 1;
+        throw new Error('vector write failed');
+      }
+      await recordingUpsert(point);
+    };
+
+    const queue = startJobQueue({
+      db,
+      vector,
+      embeddings: {
+        async embed(texts: string[]) {
+          embedCalls += 1;
+          return {
+            vectors: texts.map(() => Float32Array.from([1, 2, 3])),
+            dims: 3,
+            model: 'stub',
+          };
+        },
+      },
+      scrape: async () => {
+        throw new ScrapeError('unused');
+      },
+      config: testConfig(),
+      maxAttempts: 3,
+      baseDelayMs: 1,
+    });
+
+    for (const id of ids) {
+      queue.enqueue(id, 'embed');
+    }
+    await queue.waitForIdle();
+    queue.stop();
+
+    // 20 bookmarks / EMBED_BATCH_SIZE (16) = 2 HTTP calls on the first pass,
+    // plus one retry call for the single failed write.
+    expect(embedCalls).toBe(3);
+    expect(vector.ids).toHaveLength(20);
+    expect(vector.ids).toContain(poison);
+    expect(poisonFailures).toBe(1);
+  });
 });
 
 describe('reconcileEnrichment', () => {

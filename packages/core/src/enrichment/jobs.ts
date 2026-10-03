@@ -36,7 +36,7 @@ import {
   upsertEmbedding,
 } from '@al-yo-bo/db';
 import type { EmbeddingClient } from '@al-yo-bo/embeddings';
-import { packFloat32, type VectorIndex } from '@al-yo-bo/shared';
+import { packFloat32, type BookmarkWithTags, type VectorIndex } from '@al-yo-bo/shared';
 
 import { ScrapeError, type ScrapeFn, type ScrapeResult } from '../scrape.ts';
 import type { ScreenshotClient, ScreenshotResult } from '../screenshot.ts';
@@ -179,23 +179,53 @@ export async function scrapeAndStore(deps: JobDeps, bookmarkId: string): Promise
 export type EmbedOutcome = 'embedded' | 'skipped' | 'missing';
 
 /**
- * Embeds one bookmark (title + description + content) and write-throughs the
- * vector into the index (Qdrant primary + warm KNN fallback). Skipped without
- * an embedding client or with nothing to embed — a normal degraded state, not
- * an error (ARCHITECTURE §6/§10).
+ * Chunk size for batched embedding requests. Conservative: a model-change
+ * re-embed of N bookmarks costs ceil(N/16) HTTP round-trips instead of N, while
+ * a single chunk failure never invalidates more than 16 bookmarks' worth of work.
  */
-export async function embedBookmark(deps: JobDeps, bookmarkId: string): Promise<EmbedOutcome> {
+export const EMBED_BATCH_SIZE = 16;
+
+export interface EmbedBatchEntry {
+  bookmarkId: string;
+  outcome: EmbedOutcome | 'failed';
+  /** Populated when `outcome` is `failed`; the original error for logging/retry. */
+  error?: unknown;
+}
+
+/**
+ * Embeds a batch of bookmarks in chunks of `EMBED_BATCH_SIZE`, preserving
+ * per-bookmark outcomes. Each bookmark is independent: a missing/skipped row
+ * never enters a request, and a chunk-level request failure or a single write
+ * failure marks only the affected bookmarks `failed`. Writes keep the §6 order
+ * (SQLite canonical first, serving index after) on a per-bookmark basis, so a
+ * vector write failure leaves the durable row present and the job retryable.
+ */
+export async function embedBookmarks(
+  deps: JobDeps,
+  bookmarkIds: string[],
+): Promise<EmbedBatchEntry[]> {
   const { db, vector, embeddings } = deps;
   if (!embeddings) {
-    return 'skipped';
+    return bookmarkIds.map((bookmarkId) => ({ bookmarkId, outcome: 'skipped' }));
   }
-  const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
-  if (!bookmark) {
-    return 'missing';
+
+  const entries: EmbedBatchEntry[] = [];
+  const pending: Array<{ bookmark: BookmarkWithTags; text: string }> = [];
+  const wanted = new Set(bookmarkIds);
+  for (const bookmark of getBookmarksWithTagsByIds(db, bookmarkIds)) {
+    wanted.delete(bookmark.id);
+    const text = composeEmbedText(bookmark);
+    if (text) {
+      pending.push({ bookmark, text });
+    } else {
+      entries.push({ bookmarkId: bookmark.id, outcome: 'skipped' });
+    }
   }
-  const text = composeEmbedText(bookmark);
-  if (!text) {
-    return 'skipped';
+  // Any requested id the lookup did not return no longer exists.
+  for (const bookmarkId of bookmarkIds) {
+    if (wanted.has(bookmarkId)) {
+      entries.push({ bookmarkId, outcome: 'missing' });
+    }
   }
 
   // The configured EMBEDDING_MODEL is the row's identity (ARCHITECTURE §6: rows
@@ -203,29 +233,78 @@ export async function embedBookmark(deps: JobDeps, bookmarkId: string): Promise<
   // The client's response model is provider-normalized and may differ cosmetically
   // (e.g. `text-embedding-3-small` vs `openai/text-embedding-3-small`); storing it
   // would flag every row as stale on every startup and re-embed forever.
-  const { vectors, dims } = await embeddings.embed([text]);
-  const vectorValue = vectors[0];
-  if (!vectorValue) {
-    return 'skipped';
-  }
   const model = deps.config.embeddings.model ?? 'unknown';
 
-  // SQLite first (canonical), then the serving index (§6 write-through order).
-  upsertEmbedding(db, { bookmarkId, model, dims, embedding: packFloat32(vectorValue) });
-  await vector.upsert({
-    bookmarkId,
-    vector: vectorValue,
-    payload: {
-      model,
-      dims,
-      // The dataset boundary must hold in the vector engine too (MODEL.md
-      // principle 1): points are filtered by dataset at query time.
-      datasetId: bookmark.datasetId,
-      categoryId: bookmark.categoryId,
-      tagIds: bookmark.tags.map((tag) => tag.tagId),
-    },
-  });
-  return 'embedded';
+  for (let offset = 0; offset < pending.length; offset += EMBED_BATCH_SIZE) {
+    const chunk = pending.slice(offset, offset + EMBED_BATCH_SIZE);
+    let vectors: Float32Array[];
+    let dims: number;
+    try {
+      const result = await embeddings.embed(chunk.map((item) => item.text));
+      vectors = result.vectors;
+      dims = result.dims;
+    } catch (error) {
+      // The request failed as a unit; each bookmark keeps an independent retry.
+      for (const item of chunk) {
+        entries.push({ bookmarkId: item.bookmark.id, outcome: 'failed', error });
+      }
+      continue;
+    }
+
+    for (let i = 0; i < chunk.length; i += 1) {
+      const item = chunk[i]!;
+      const vectorValue = vectors[i];
+      if (!vectorValue) {
+        entries.push({ bookmarkId: item.bookmark.id, outcome: 'skipped' });
+        continue;
+      }
+      try {
+        // SQLite first (canonical), then the serving index (§6 write-through order).
+        upsertEmbedding(db, {
+          bookmarkId: item.bookmark.id,
+          model,
+          dims,
+          embedding: packFloat32(vectorValue),
+        });
+        await vector.upsert({
+          bookmarkId: item.bookmark.id,
+          vector: vectorValue,
+          payload: {
+            model,
+            dims,
+            // The dataset boundary must hold in the vector engine too (MODEL.md
+            // principle 1): points are filtered by dataset at query time.
+            datasetId: item.bookmark.datasetId,
+            categoryId: item.bookmark.categoryId,
+            tagIds: item.bookmark.tags.map((tag) => tag.tagId),
+          },
+        });
+        entries.push({ bookmarkId: item.bookmark.id, outcome: 'embedded' });
+      } catch (error) {
+        entries.push({ bookmarkId: item.bookmark.id, outcome: 'failed', error });
+      }
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Embeds one bookmark (title + description + content) and write-throughs the
+ * vector into the index (Qdrant primary + warm KNN fallback). Skipped without
+ * an embedding client or with nothing to embed — a normal degraded state, not
+ * an error (ARCHITECTURE §6/§10). Delegates to `embedBookmarks` so the single
+ * and batched paths share one write-through implementation.
+ */
+export async function embedBookmark(deps: JobDeps, bookmarkId: string): Promise<EmbedOutcome> {
+  const [entry] = await embedBookmarks(deps, [bookmarkId]);
+  if (!entry || entry.outcome === 'missing') {
+    return 'missing';
+  }
+  if (entry.outcome === 'failed') {
+    throw entry.error instanceof Error ? entry.error : new Error(String(entry.error));
+  }
+  return entry.outcome;
 }
 
 export type ScreenshotOutcome = 'captured' | 'failed' | 'skipped' | 'missing';
@@ -366,6 +445,61 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
     }
   }
 
+  /**
+   * Pulls up to `EMBED_BATCH_SIZE` pending embed jobs (including `seedId`) out
+   * of the queue so one HTTP round-trip covers many re-embeds. Other job types
+   * stay in place — embed is independent of scrape/screenshot.
+   */
+  function collectEmbedBatch(seedId: string): string[] {
+    const ids = [seedId];
+    while (ids.length < EMBED_BATCH_SIZE) {
+      const index = order.findIndex((key) => pending.get(key) === 'embed');
+      if (index === -1) {
+        break;
+      }
+      const [nextKey] = order.splice(index, 1);
+      if (!nextKey) {
+        break;
+      }
+      pending.delete(nextKey);
+      ids.push(nextKey.slice('embed:'.length));
+    }
+    return ids;
+  }
+
+  /**
+   * Batched embed handling with the same retry/cooldown contract as
+   * `runWithRetries`, but per bookmark: only rows whose write failed are retried,
+   * and each successful embed fires `onEmbedded` exactly once.
+   */
+  async function runEmbedBatch(ids: string[]): Promise<void> {
+    let remaining = ids;
+    for (let attempt = 1; remaining.length > 0; attempt += 1) {
+      if (stopped) {
+        return;
+      }
+      const results = await embedBookmarks(deps, remaining);
+      const failed: string[] = [];
+      for (const entry of results) {
+        if (entry.outcome === 'embedded') {
+          options.onEmbedded?.(entry.bookmarkId);
+        } else if (entry.outcome === 'failed') {
+          failed.push(entry.bookmarkId);
+        }
+      }
+      remaining = failed;
+      if (remaining.length === 0 || attempt === maxAttempts) {
+        break;
+      }
+      await Bun.sleep(baseDelayMs * 2 ** (attempt - 1));
+    }
+    if (remaining.length > 0) {
+      console.warn(
+        `[jobs] embed failed after ${maxAttempts} attempts for ${remaining.length} bookmark(s)`,
+      );
+    }
+  }
+
   async function pump(): Promise<void> {
     if (running || stopped) {
       return;
@@ -382,7 +516,11 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
         if (!type) {
           continue;
         }
-        await runWithRetries(type, key.slice(type.length + 1));
+        if (type === 'embed') {
+          await runEmbedBatch(collectEmbedBatch(key.slice('embed:'.length)));
+        } else {
+          await runWithRetries(type, key.slice(type.length + 1));
+        }
       }
     } finally {
       running = false;

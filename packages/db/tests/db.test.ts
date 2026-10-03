@@ -76,6 +76,39 @@ describe('schema & triggers', () => {
     expect(category?.createdAt).toBeGreaterThan(1_000_000_000_000);
   });
 
+  test('bumps bookmark_embeddings.updated_at on re-upsert', () => {
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://example.com/embed-fresh',
+      content: 'body',
+    });
+    upsertEmbedding(db, {
+      bookmarkId: bookmark.id,
+      model: 'model-a',
+      dims: 1,
+      embedding: new Uint8Array([0, 0, 0, 0]),
+    });
+    // Force a naive timestamp so the re-upsert bump is observable without sleeping.
+    db.query('UPDATE bookmark_embeddings SET updated_at = 1 WHERE bookmark_id = ?').run(
+      uuidToBytes(bookmark.id),
+    );
+
+    upsertEmbedding(db, {
+      bookmarkId: bookmark.id,
+      model: 'model-b',
+      dims: 1,
+      embedding: new Uint8Array([1, 1, 1, 1]),
+    });
+
+    const row = db
+      .query<{ updated_at: number; model: string }, [Uint8Array]>(
+        'SELECT updated_at, model FROM bookmark_embeddings WHERE bookmark_id = ?',
+      )
+      .get(uuidToBytes(bookmark.id));
+    expect(row?.model).toBe('model-b');
+    expect(row?.updated_at).toBeGreaterThan(1_000_000_000_000);
+  });
+
   test('keeps the FTS index in sync across insert, update and delete', () => {
     const bookmark = createBookmark(db, {
       datasetId: db.datasetId,
