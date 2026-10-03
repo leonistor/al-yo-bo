@@ -23,7 +23,11 @@ stale single-version republish).
 Mounted in `apps/web/src/main.tsx` behind `import.meta.env.DEV` via a dynamic
 import, so Vite tree-shakes it (and everything it pulls in) out of production
 builds. Toolbar behavior is default; `appName="al-yo-bo"` is included in output.
-Click an element, type a note, Copy — paste the markdown into the agent session.
+
+Entry point: the floating toolbar (FAB) in the bottom-right corner. Click it to
+activate feedback mode, then click any element, type a note, Add. The expanded
+controls offer Copy feedback, Clear all, Settings, animation pause, and layout
+mode; Esc exits. Paste the copied markdown into the agent session.
 
 ## Alternatives considered
 
