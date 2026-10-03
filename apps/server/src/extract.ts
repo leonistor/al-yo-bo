@@ -108,44 +108,13 @@ export function ollamaExtractionClient(config: ExtractConfig): ExtractionClient 
 }
 
 /**
- * Resolves the ExtractionClient from server config. Preference order:
- * `EXTRACT_MODEL` env -> OpenRouter when an OpenRouter key is set, else Ollama.
- * Returns `null` when no provider is configured — the import service then uses
- * the deterministic parser.
+ * Resolves the extraction model id from server config (ARCHITECTURE §7).
+ * Precedence: `EXTRACT_MODEL` (config.extract.model) wins when set; otherwise
+ * the OpenRouter default when a key is configured; otherwise the Ollama chat
+ * model; otherwise `null` (the deterministic parser).
  */
-export function buildExtractionClient(
-  config: ServerConfig,
-): ExtractionClient | null {
-  const modelId = resolveExtractModel(config);
-  const extractConfig: ExtractConfig = {
-    openrouter: {
-      apiKey: config.embeddings.apiKey ?? null,
-      model: modelId ?? '',
-      baseUrl: config.embeddings.baseUrl ?? 'https://openrouter.ai/api/v1',
-    },
-    ollama: {
-      baseUrl: config.chat.ollamaUrl,
-      model: config.chat.model ?? null,
-    },
-  };
-
-  // If EXTRACT_MODEL names an OpenRouter-style id (contains a provider slash),
-  // prefer OpenRouter; otherwise prefer Ollama when the chat model is set.
-  const prefersOpenRouter = modelId?.includes('/');
-  const candidates = prefersOpenRouter
-    ? [openRouterExtractionClient(extractConfig), ollamaExtractionClient(extractConfig)]
-    : [ollamaExtractionClient(extractConfig), openRouterExtractionClient(extractConfig)];
-
-  for (const client of candidates) {
-    if (client) {
-      return client;
-    }
-  }
-  return null;
-}
-
-function resolveExtractModel(config: ServerConfig): string | null {
-  const envModel = process.env['EXTRACT_MODEL'];
+export function resolveExtractModel(config: ServerConfig): string | null {
+  const envModel = config.extract.model;
   if (envModel && envModel.length > 0) {
     return envModel;
   }
@@ -154,6 +123,51 @@ function resolveExtractModel(config: ServerConfig): string | null {
   }
   if (config.chat.model) {
     return config.chat.model;
+  }
+  return null;
+}
+
+/**
+ * Maps the resolved model id onto both provider shapes. A `/`-containing id
+ * targets OpenRouter (the Ollama slot keeps `OLLAMA_CHAT_MODEL` as a fallback);
+ * any other id targets Ollama and takes precedence over `OLLAMA_CHAT_MODEL`
+ * there, while the OpenRouter slot stays empty so a local id is never sent to
+ * OpenRouter.
+ */
+export function resolveExtractConfig(config: ServerConfig): ExtractConfig {
+  const modelId = resolveExtractModel(config);
+  const openRouterModel = modelId && modelId.includes('/') ? modelId : '';
+  const prefersOpenRouter = openRouterModel.length > 0;
+  return {
+    openrouter: {
+      apiKey: config.embeddings.apiKey ?? null,
+      model: openRouterModel,
+      baseUrl: config.embeddings.baseUrl ?? 'https://openrouter.ai/api/v1',
+    },
+    ollama: {
+      baseUrl: config.chat.ollamaUrl,
+      model: prefersOpenRouter ? (config.chat.model ?? null) : modelId,
+    },
+  };
+}
+
+/**
+ * Resolves the ExtractionClient from server config. Preference order follows
+ * `resolveExtractConfig`: a `/`-containing id prefers OpenRouter, any other id
+ * (or the chat-model fallback) prefers Ollama. Returns `null` when no provider
+ * is configured — the import service then uses the deterministic parser.
+ */
+export function buildExtractionClient(config: ServerConfig): ExtractionClient | null {
+  const extractConfig = resolveExtractConfig(config);
+  const prefersOpenRouter = extractConfig.openrouter.model.length > 0;
+  const candidates = prefersOpenRouter
+    ? [openRouterExtractionClient(extractConfig), ollamaExtractionClient(extractConfig)]
+    : [ollamaExtractionClient(extractConfig), openRouterExtractionClient(extractConfig)];
+
+  for (const client of candidates) {
+    if (client) {
+      return client;
+    }
   }
   return null;
 }

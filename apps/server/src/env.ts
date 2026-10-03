@@ -36,6 +36,14 @@ export interface ServerConfig extends CoreConfig {
     ollamaUrl: string;
     model?: string;
   };
+  /**
+   * Import extraction (ARCHITECTURE §7). A `/`-containing `model` selects the
+   * OpenRouter path; any other id selects the local Ollama path. Unset falls
+   * back to the OpenRouter default (key present) or the chat model.
+   */
+  extract: {
+    model?: string;
+  };
   /** Screenshot enrichment (ARCHITECTURE §8). */
   screenshot: {
     width: number;
@@ -94,6 +102,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       ollamaUrl: env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
       // Chat is off until a model is chosen (degrades to a 503, never an error).
       model: env.OLLAMA_CHAT_MODEL || undefined,
+    },
+    extract: {
+      model: env.EXTRACT_MODEL || undefined,
     },
     screenshot: {
       width: numberFromEnv(env.SCREENSHOT_WIDTH, 1280),
