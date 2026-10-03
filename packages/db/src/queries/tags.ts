@@ -1,8 +1,9 @@
 import type { Database } from 'bun:sqlite';
 
-import { bytesToUuid, newIdBytes, uuidToBytes, type Tag, type TagStatus } from '@al-yo-bo/shared';
+import { bytesToUuid, uuidToBytes, type Tag, type TagStatus } from '@al-yo-bo/shared';
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
+import { newIdBytes } from '../uuid.ts';
 import { prepared } from './statements.ts';
 
 const COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';

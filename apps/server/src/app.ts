@@ -134,6 +134,26 @@ function optionalString(body: Record<string, unknown>, field: string): string | 
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
+/** A required UUID-valued body field; malformed ids are a 400, not a codec 500. */
+function requiredUuid(body: Record<string, unknown>, field: string): string {
+  const value = requiredString(body, field);
+  if (!isUuid(value)) {
+    throw new ValidationError(`"${field}" must be a valid UUID`);
+  }
+  return value;
+}
+
+/** An optional UUID query param; absent is `undefined`, malformed is a 400. */
+function queryUuid(value: string | undefined, field: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (!isUuid(value)) {
+    throw new ValidationError(`"${field}" must be a valid UUID`);
+  }
+  return value;
+}
+
 function optionalId(body: Record<string, unknown>, field: string): string | null {
   const value = body[field];
   if (value === null || value === undefined) {
@@ -188,8 +208,8 @@ export function createApp(core: Core, config: ServerConfig) {
         await core.search.search({
           q: c.req.query('q')?.trim() ?? '',
           mode: parseMode(c.req.query('mode')),
-          categoryId: c.req.query('categoryId') || undefined,
-          tagId: c.req.query('tagId') || undefined,
+          categoryId: queryUuid(c.req.query('categoryId'), 'categoryId'),
+          tagId: queryUuid(c.req.query('tagId'), 'tagId'),
           status: parseStatus(c.req.query('status')),
           sort: parseSort(c.req.query('sort')),
           direction: parseDirection(c.req.query('direction')),
@@ -253,7 +273,7 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .post('/api/bookmarks/:id/tags', jsonBody, async (c) => {
       const bookmarkId = pathId(c, 'Bookmark not found');
-      const tagId = requiredString(c.req.valid('json'), 'tagId');
+      const tagId = requiredUuid(c.req.valid('json'), 'tagId');
       return c.json(await core.bookmarks.assignTag(bookmarkId, tagId));
     })
 
@@ -406,8 +426,8 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .post('/api/review/candidates/accept', jsonBody, async (c) => {
       const body = c.req.valid('json');
-      const bookmarkId = requiredString(body, 'bookmarkId');
-      const tagId = requiredString(body, 'tagId');
+      const bookmarkId = requiredUuid(body, 'bookmarkId');
+      const tagId = requiredUuid(body, 'tagId');
       return c.json(await core.review.acceptCandidate(bookmarkId, tagId));
     })
 

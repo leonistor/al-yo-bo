@@ -13,13 +13,16 @@ import type { Database } from 'bun:sqlite';
 
 import {
   assignTag,
+  getBookmarkById,
   getBookmarksWithTagsByIds,
+  getTagById,
   listBelowThresholdCandidates,
   listTagsByStatus,
 } from '@al-yo-bo/db';
 import type { BookmarkWithTags, ReviewCandidate, Tag } from '@al-yo-bo/shared';
 
 import type { CoreConfig } from '../config.ts';
+import { NotFoundError, ValidationError } from '../errors.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
@@ -53,6 +56,19 @@ export function createReviewService(deps: ReviewServiceDeps): ReviewService {
     },
 
     async acceptCandidate(bookmarkId, tagId) {
+      // Accepting is an assignment path, so the same dataset boundary applies:
+      // both ids must resolve and belong to the review service's dataset.
+      const bookmark = getBookmarkById(db, bookmarkId);
+      if (!bookmark) {
+        throw new NotFoundError('Bookmark not found');
+      }
+      const tag = getTagById(db, tagId);
+      if (!tag) {
+        throw new NotFoundError('Tag not found');
+      }
+      if (bookmark.datasetId !== datasetId || tag.datasetId !== datasetId) {
+        throw new ValidationError('Candidate is outside this dataset');
+      }
       assignTag(db, { bookmarkId, tagId, source: 'user' });
       const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
       await syncVectorPayload(vector.current(), bookmarkId, fresh);

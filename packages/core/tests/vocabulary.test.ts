@@ -1,10 +1,35 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createBookmark, createCategory, createTag, setTagStatus } from '@al-yo-bo/db';
+import {
+  createBookmark,
+  createCategory,
+  createDataset,
+  createTag,
+  setTagStatus,
+} from '@al-yo-bo/db';
 
-import { NotFoundError } from '../src/errors.ts';
+import { NotFoundError, ValidationError } from '../src/errors.ts';
 import { createVocabularyService } from '../src/services/vocabulary.ts';
 import { makeDb, recordingJobs } from './support.ts';
+
+describe('VocabularyService — dataset boundary', () => {
+  test('createTag and updateTag reject a category from another dataset', () => {
+    const db = makeDb();
+    const jobs = recordingJobs();
+    const service = createVocabularyService({ db, jobs, datasetId: db.datasetId });
+    const other = createDataset(db, 'other');
+    const foreignCategory = createCategory(db, { datasetId: other.id, name: 'Foreign' });
+
+    expect(() => service.createTag({ name: 'leaky', categoryId: foreignCategory.id })).toThrow(
+      ValidationError,
+    );
+
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'scoped' });
+    expect(() => service.updateTag(tag.id, { categoryId: foreignCategory.id })).toThrow(
+      ValidationError,
+    );
+  });
+});
 
 describe('VocabularyService.setTagStatus', () => {
   test('activating a tag fans out classify jobs for its category scope only', () => {

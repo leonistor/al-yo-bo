@@ -7,6 +7,7 @@ import {
   deleteCategory,
   deleteSection,
   deleteTag,
+  getCategoryById,
   getTagById,
   listBookmarkIdsForCategoryScope,
   listCategories,
@@ -19,7 +20,7 @@ import {
 } from '@al-yo-bo/db';
 import type { Category, Section, Tag, TagStatus } from '@al-yo-bo/shared';
 
-import { NotFoundError } from '../errors.ts';
+import { NotFoundError, ValidationError } from '../errors.ts';
 import type { JobScheduler } from './enrichment.ts';
 
 export interface SectionInput {
@@ -78,6 +79,21 @@ export interface VocabularyService {
   deleteTag(id: string): void;
   /** Tag-only lifecycle hook: switch between `active` and `deprecated`. */
   setTagStatus(id: string, status: TagStatus): Tag;
+}
+
+/**
+ * A tag's classification scope must stay inside its own dataset: a category from
+ * another dataset would leak vocabulary across the boundary (MODEL.md
+ * principle 1). Missing categories are NotFound; foreign ones are Validation.
+ */
+function assertCategoryInDataset(db: Database, categoryId: string, datasetId: string): void {
+  const category = getCategoryById(db, categoryId);
+  if (!category) {
+    throw new NotFoundError('Category not found');
+  }
+  if (category.datasetId !== datasetId) {
+    throw new ValidationError('Category belongs to a different dataset');
+  }
 }
 
 /**
@@ -156,6 +172,9 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     createTag(input) {
+      if (input.categoryId) {
+        assertCategoryInDataset(db, input.categoryId, datasetId);
+      }
       return createTag(db, {
         datasetId,
         name: input.name,
@@ -165,6 +184,16 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     updateTag(id, input) {
+      // The DB layer cannot reject a foreign `categoryId` without throwing a
+      // transport-neutral error, so the boundary check lives here (SQL stays in
+      // `@al-yo-bo/db`); the row's own dataset defines the allowed scope.
+      if ('categoryId' in input && input.categoryId) {
+        const current = getTagById(db, id);
+        if (!current) {
+          throw new NotFoundError('Tag not found');
+        }
+        assertCategoryInDataset(db, input.categoryId, current.datasetId);
+      }
       const updated = updateTag(db, id, {
         name: input.name,
         description: 'description' in input ? (input.description ?? null) : undefined,

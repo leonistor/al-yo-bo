@@ -6,6 +6,7 @@ import {
   deleteBookmark,
   getBookmarkById,
   getBookmarksWithTagsByIds,
+  getCategoryById,
   getTagById,
   removeBookmarkTag,
   updateBookmark,
@@ -53,6 +54,21 @@ export interface BookmarkService {
 }
 
 /**
+ * Rejects a category that is missing or lives in another dataset. Datasets are
+ * the runtime scoping boundary (MODEL.md principle 1): a bookmark may only be
+ * filed under a category from its own dataset.
+ */
+function assertCategoryInDataset(db: Database, categoryId: string, datasetId: string): void {
+  const category = getCategoryById(db, categoryId);
+  if (!category) {
+    throw new NotFoundError('Category not found');
+  }
+  if (category.datasetId !== datasetId) {
+    throw new ValidationError('Category belongs to a different dataset');
+  }
+}
+
+/**
  * Bookmark CRUD plus its enrichment side effects. The re-run triggers live here
  * (ARCHITECTURE §8): a URL change invalidates the old evidence and re-scrapes, a
  * title/description change re-embeds, and a category move only shifts the vector
@@ -75,8 +91,12 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (!isHttpUrl(input.url)) {
         throw new ValidationError('Only HTTP(S) URLs can be saved');
       }
+      const targetDatasetId = input.datasetId ?? datasetId;
+      if (input.categoryId) {
+        assertCategoryInDataset(db, input.categoryId, targetDatasetId);
+      }
       const bookmark = createBookmark(db, {
-        datasetId: input.datasetId ?? datasetId,
+        datasetId: targetDatasetId,
         url: input.url,
         title: input.title ?? null,
         description: input.description ?? null,
@@ -107,6 +127,9 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
         patch.description = input.description ?? null;
       }
       if ('categoryId' in input) {
+        if (input.categoryId) {
+          assertCategoryInDataset(db, input.categoryId, current.datasetId);
+        }
         patch.categoryId = input.categoryId ?? null;
       }
       // A new URL gets a clean slate: old dead-link evidence no longer applies.
@@ -143,11 +166,18 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
     },
 
     async assignTag(bookmarkId, tagId) {
-      if (!getBookmarkById(db, bookmarkId)) {
+      const bookmark = getBookmarkById(db, bookmarkId);
+      if (!bookmark) {
         throw new NotFoundError('Bookmark not found');
       }
-      if (!getTagById(db, tagId)) {
+      const tag = getTagById(db, tagId);
+      if (!tag) {
         throw new NotFoundError('Tag not found');
+      }
+      // The dataset boundary is enforced here, not in SQL: a tag from another
+      // dataset must never attach to this bookmark (MODEL.md principle 1).
+      if (tag.datasetId !== bookmark.datasetId) {
+        throw new ValidationError('Tag belongs to a different dataset');
       }
       assignBookmarkTag(db, { bookmarkId, tagId, source: 'user' });
       await syncPayload(bookmarkId);

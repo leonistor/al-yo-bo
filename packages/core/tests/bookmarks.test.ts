@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createBookmark, createCategory, getBookmarkById, updateBookmark } from '@al-yo-bo/db';
+import {
+  createBookmark,
+  createCategory,
+  createDataset,
+  createTag,
+  getBookmarkById,
+  updateBookmark,
+} from '@al-yo-bo/db';
 
 import { NotFoundError, ValidationError } from '../src/errors.ts';
 import { createBookmarkService } from '../src/services/bookmarks.ts';
@@ -104,6 +111,43 @@ describe('BookmarkService.update — re-run triggers', () => {
     expect(vector.payloads.length).toBe(1);
     expect(vector.payloads[0]!.bookmarkId).toBe(id);
     expect(vector.payloads[0]!.patch.categoryId).toBe(to.id);
+  });
+});
+
+describe('BookmarkService — dataset boundary', () => {
+  test('assignTag rejects a tag from another dataset', async () => {
+    const { service, db } = makeService();
+    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://bound.test/a' });
+    const other = createDataset(db, 'other');
+    const foreignTag = createTag(db, { datasetId: other.id, name: 'foreign' });
+
+    await expect(service.assignTag(id, foreignTag.id)).rejects.toThrow(ValidationError);
+  });
+
+  test('create and update reject a category from another dataset', async () => {
+    const { service, db } = makeService();
+    const other = createDataset(db, 'other');
+    const foreignCategory = createCategory(db, { datasetId: other.id, name: 'Foreign' });
+
+    expect(() =>
+      service.create({ url: 'https://bound.test/b', categoryId: foreignCategory.id }),
+    ).toThrow(ValidationError);
+
+    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://bound.test/c' });
+    await expect(service.update(id, { categoryId: foreignCategory.id })).rejects.toThrow(
+      ValidationError,
+    );
+  });
+
+  test('a same-dataset category and tag are accepted', async () => {
+    const { service, db } = makeService();
+    const category = createCategory(db, { datasetId: db.datasetId, name: 'Local' });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'local' });
+
+    const created = service.create({ url: 'https://bound.test/d', categoryId: category.id });
+    expect(created.categoryId).toBe(category.id);
+    const assigned = await service.assignTag(created.id, tag.id);
+    expect(assigned.tags.map((view) => view.tagId)).toContain(tag.id);
   });
 });
 
