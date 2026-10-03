@@ -69,7 +69,11 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   Chrome for Testing into `~/.playwriter/browsers`; `bun run browser:start` launches it **headed**
   with the project profile `./.playwriter-profile` (gitignored) and the Playwriter extension
   auto-loaded — connect with `playwriter session new`. No extension in your personal browser is
-  needed for project QA.
+  needed for project QA. The profile is **persistent**: to seed logins/cookies manually, run
+  `bun run browser:start`, log in by hand, then quit with **Cmd+Q** (clean shutdown releases the
+  profile lock; avoid killing the process) — later `browser:start` runs and automation sessions
+  reuse those sessions. `bun run browser:start:clean` launches a throwaway temp profile for
+  pristine no-cookie runs.
 - **Behavioral code questions:** start with **jevgrep** (`jg`) — how/why/where something works,
   even when a function or setting is named. Use plain grep/glob only for exact symbol definitions,
   string matches, or filenames; don't jump to broad text searches first.

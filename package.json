@@ -22,7 +22,8 @@
     "qdrant:start": "bash scripts/qdrant/start.sh",
     "chrome:install": "bash scripts/chrome/install.sh",
     "browser:install": "bunx playwriter@latest browser install",
-    "browser:start": "bunx playwriter@latest browser start --user-data-dir ./.playwriter-profile --headed"
+    "browser:start": "bunx playwriter@latest browser start --user-data-dir ./.playwriter-profile --headed",
+    "browser:start:clean": "bunx playwriter@latest browser start --user-data-dir \"$(mktemp -d)/profile\" --headed"
   },
   "devDependencies": {
     "@types/bun": "latest",
