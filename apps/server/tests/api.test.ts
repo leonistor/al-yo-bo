@@ -11,6 +11,7 @@ import {
 } from '@al-yo-bo/core';
 import {
   createBookmark,
+  createDataset,
   getBookmarkById,
   getDatasetByName,
   openDatabase,
@@ -642,9 +643,12 @@ describe('profile API', () => {
   test('accepts an avatar upload through the injected store', async () => {
     const stored: string[] = [];
     const { app, db } = makeApp({
-      avatarStore: async (file) => {
-        stored.push(file.ext);
-        return `avatar.${file.ext}`;
+      avatarStore: {
+        save: async (file) => {
+          stored.push(file.ext);
+          return `avatar.${file.ext}`;
+        },
+        remove: async () => {},
       },
     });
 
@@ -662,8 +666,13 @@ describe('profile API', () => {
 
   test('rejects uploads that are not JPEG/PNG images', async () => {
     const { app } = makeApp({
-      avatarStore: async () => {
-        throw new Error('store must not be called');
+      avatarStore: {
+        save: async () => {
+          throw new Error('store must not be called');
+        },
+        remove: async () => {
+          throw new Error('store must not be called');
+        },
       },
     });
 
@@ -678,6 +687,64 @@ describe('profile API', () => {
       body: new FormData(),
     });
     expect(missing.status).toBe(400);
+  });
+
+  test('removes an uploaded avatar and clears the stored path', async () => {
+    const removed: string[] = [];
+    const { app, db } = makeApp({
+      avatarStore: {
+        save: async (file) => `avatar.${file.ext}`,
+        remove: async (filename) => {
+          removed.push(filename);
+        },
+      },
+    });
+
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const form = new FormData();
+    form.append('avatar', new File([png], 'me.png', { type: 'image/png' }));
+    await app.request('/api/profile/avatar', { method: 'POST', body: form });
+
+    const response = await app.request('/api/profile/avatar', { method: 'DELETE' });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Profile;
+    expect(body.avatarPath).toBeNull();
+    // The stored file is removed by the name the profile pointed at, and the
+    // row no longer points at it (the `/data/profile/avatar` route is mounted by
+    // index.ts, outside this app-only harness, so assert via the API + row).
+    expect(removed).toEqual(['avatar.png']);
+    expect(db.query('SELECT avatar_path FROM profile').get()).toEqual({ avatar_path: null });
+    const reread = (await (await app.request('/api/profile')).json()) as Profile;
+    expect(reread.avatarPath).toBeNull();
+  });
+
+  test('returns 404 when deleting an avatar that is not set', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/profile/avatar', { method: 'DELETE' });
+    expect(response.status).toBe(404);
+  });
+
+  test('returns null when no dataset is active', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/profile/dataset');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBeNull();
+  });
+
+  test('returns the dataset the active-dataset pointer names', async () => {
+    const { app, db } = makeApp();
+    const dataset = createDataset(db, 'Work');
+
+    const patched = await app.request(
+      '/api/profile',
+      jsonRequest({ activeDatasetId: dataset.id }, 'PATCH'),
+    );
+    expect(patched.status).toBe(200);
+
+    const response = await app.request('/api/profile/dataset');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(dataset);
   });
 });
 

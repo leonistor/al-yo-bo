@@ -8,7 +8,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { getDatasetById, getProfile, updateProfile } from '@al-yo-bo/db';
-import type { Profile } from '@al-yo-bo/shared';
+import type { Dataset, Profile } from '@al-yo-bo/shared';
 
 import { NotFoundError, ValidationError } from '../errors.ts';
 
@@ -18,12 +18,20 @@ export interface AvatarFile {
   ext: 'jpg' | 'png';
 }
 
-/** Writes avatar bytes under the data root; returns the stored file name. */
-export type AvatarStore = (file: AvatarFile) => Promise<string>;
+/**
+ * Avatar file port: bytes go in, a stored file name comes out, and removal is
+ * by that same name. Absent = avatar upload is rejected and clearing only drops
+ * the DB pointer (profile still usable).
+ */
+export interface AvatarStore {
+  /** Writes avatar bytes under the data root; returns the stored file name. */
+  save(file: AvatarFile): Promise<string>;
+  /** Removes a previously stored avatar; deleting a missing file is not an error. */
+  remove(filename: string): Promise<void>;
+}
 
 export interface ProfileServiceDeps {
   db: Database;
-  /** Avatar write port; absent = avatar upload is rejected, profile still usable. */
   avatarStore?: AvatarStore;
 }
 
@@ -36,8 +44,17 @@ export interface ProfilePatchInput {
 export interface ProfileService {
   /** The singleton row, or null only when the schema was tampered with. */
   get(): Profile | null;
+  /** The dataset the pointer names, or null when unset (callers fall back to the boot default). */
+  getActiveDataset(): Dataset | null;
   update(patch: ProfilePatchInput): Profile;
   saveAvatar(file: AvatarFile): Promise<Profile>;
+  /** Drops the stored avatar file (if any) and the profile's pointer to it. */
+  clearAvatar(): Promise<Profile>;
+}
+
+/** `ENOENT` from the store means the file is already gone — not a failure. */
+function isMissingFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
 
 export function createProfileService(deps: ProfileServiceDeps): ProfileService {
@@ -55,6 +72,14 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
 
   return {
     get: () => getProfile(db),
+
+    getActiveDataset() {
+      const activeDatasetId = getProfile(db)?.activeDatasetId;
+      // Read through the pointer at call time, not the boot-resolved dataset:
+      // PATCH can move the pointer while the running services keep their
+      // boot-time scope (known limitation, see create-core).
+      return activeDatasetId ? (getDatasetById(db, activeDatasetId) ?? null) : null;
+    },
 
     update(patch) {
       requireProfile();
@@ -77,8 +102,28 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
       if (!avatarStore) {
         throw new ValidationError('Avatar storage is not configured');
       }
-      const avatarPath = await avatarStore(file);
+      const avatarPath = await avatarStore.save(file);
       updateProfile(db, { avatarPath });
+      return requireProfile();
+    },
+
+    async clearAvatar() {
+      const profile = requireProfile();
+      if (!profile.avatarPath) {
+        throw new NotFoundError('No avatar to remove');
+      }
+      if (avatarStore) {
+        try {
+          await avatarStore.remove(profile.avatarPath);
+        } catch (error) {
+          // A manually removed file still needs its dangling pointer cleared;
+          // any other store failure (I/O, permissions) must surface.
+          if (!isMissingFile(error)) {
+            throw error;
+          }
+        }
+      }
+      updateProfile(db, { avatarPath: null });
       return requireProfile();
     },
   };

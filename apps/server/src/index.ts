@@ -4,7 +4,7 @@ import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
 import { Hono, type Context } from 'hono';
 import { serveStatic } from 'hono/bun';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { createApp } from './app.ts';
@@ -62,11 +62,16 @@ const screenshotClient = compositeScreenshotClient({
 // root, one file per upload (overwritten), never a BLOB in the single backup
 // file. The port keeps core free of paths.
 const profileDir = join(config.dataDir, 'profile');
-const avatarStore: AvatarStore = async (file) => {
-  await mkdir(profileDir, { recursive: true });
-  const filename = `avatar.${file.ext}`;
-  await writeFile(join(profileDir, filename), file.bytes);
-  return filename;
+const avatarStore: AvatarStore = {
+  async save(file) {
+    await mkdir(profileDir, { recursive: true });
+    const filename = `avatar.${file.ext}`;
+    await writeFile(join(profileDir, filename), file.bytes);
+    return filename;
+  },
+  async remove(filename) {
+    await unlink(join(profileDir, filename));
+  },
 };
 
 const core = createCore({

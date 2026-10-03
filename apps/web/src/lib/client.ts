@@ -4,6 +4,7 @@ import type {
   BookmarkSort,
   BookmarkWithTags,
   Category,
+  Dataset,
   ImportedBookmark,
   ImportReport,
   Profile,
@@ -95,6 +96,69 @@ export function fetchAggregates(): Promise<Aggregates> {
 /** The singleton profile row; null only when the schema was tampered with. */
 export function fetchProfile(): Promise<Profile | null> {
   return api.api.profile.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
+}
+
+/** The dataset the profile's active-dataset pointer names; null when unset. */
+export function fetchActiveDataset(): Promise<Dataset | null> {
+  return api.api.profile.dataset.$get().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
+}
+
+/** Partial update of the singleton profile. Only name/githubUsername are exposed to the web app. */
+export function updateProfile(patch: {
+  name?: string | null;
+  githubUsername?: string | null;
+}): Promise<Profile> {
+  return api.api.profile
+    .$patch({ json: patch })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** Upload a JPEG/PNG avatar (max 2 MB). The server returns the updated profile. */
+export function uploadAvatar(file: File): Promise<Profile> {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  return api.api.profile.avatar
+    .$post({}, { init: { body: formData } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** Remove the uploaded avatar. Returns the updated profile; 404 when no avatar exists. */
+export function deleteAvatar(): Promise<Profile> {
+  return api.api.profile.avatar.$delete().then(async (response) => {
+    if (!response.ok) {
+      throw await toError(response);
+    }
+    return response.json();
+  });
+}
+
+/** Health report inferred from the Hono RPC response type (no direct @al-yo-bo/core import). */
+type HealthRpc = Awaited<ReturnType<typeof api.api.health.$get>>;
+export type HealthReport = Awaited<ReturnType<HealthRpc['json']>>;
+
+/** Aggregated subsystem health; failures are surfaced per-row in the UI. */
+export function fetchHealth(): Promise<HealthReport> {
+  return api.api.health.$get().then(async (response) => {
     if (!response.ok) {
       throw await toError(response);
     }

@@ -202,6 +202,36 @@ bookmarks, import): one row anatomy, one action cluster, one destructive confirm
   (existing `Field` pattern), client-side name filter, status pills (active = primary,
   deprecated = muted), usage counts from aggregates.
 
+### Profile & settings page
+
+Route `#/profile`, title "Profile & settings". Content is left-aligned inside `max-w-2xl`;
+surfaces are flat cards (`rounded-lg border p-3`). Type scale: page title `text-lg`, labels
+`text-sm`, meta/captions `text-xs`. Transitions follow the 150 ms hover / 200 ms state tokens.
+
+- **Identity card** — avatar plus per-field inline edits.
+  - Avatar: 48 px (`size-12`), focusable upload trigger (`aria-label="Change avatar"`) with a
+    visible focus ring; a matching "Change" button with a camera icon; hidden file input;
+    spinner overlay during upload; inline error for >2 MB or wrong type (client-side) plus
+    server errors. "Remove" appears only when an avatar exists and is confirmed through the
+    shared `AlertDialog` pattern, then calls `DELETE /api/profile/avatar`.
+  - Name and GitHub username: each uses `useInlineEdit` + `InlineEditInput`; the display button
+    turns into an input on click, `Enter` commits, `Esc` cancels, and focus returns to the
+    display button. Each field commits independently to `PATCH /api/profile`; no global Save.
+- **Preferences card** — three `SegmentedControl`s:
+  - Theme: Sun/Moon/Monitor → light/dark/system, persisted by `lib/useTheme`.
+  - Layout: List/LayoutGrid → list/grid, persisted by `lib/useLayout`.
+  - Default search mode: Type/Sparkles/Combine → keyword/semantic/hybrid, persisted by
+    `lib/useDefaultSearchMode`.
+- **Dataset card** — active dataset read-only with caption explaining that switching happens
+  via seeding; live switching is a planned follow-up.
+- **System status card** — diagnostics, not user settings. One bordered card with compact rows
+  for classifier, embeddings, vectors, chat, extract, and screenshot. Each row: icon + name
+  (`text-sm`), status Badge (`Available` → primary; `Degraded`/`Unavailable` → destructive or
+  muted-foreground, always paired with text), model/provider string in `font-mono text-xs`, and
+  enrichment pending count where applicable (not screenshot). A refresh icon button sits in the
+  card header; skeleton rows match real row height while loading; per-row degradation on probe
+  failure — the panel never collapses into a single error surface.
+
 ### Sheets and pages — not dialogs
 
 Detail/editing surfaces are **right-anchored sheets** or **routes**, never modal dialogs. Context
@@ -212,6 +242,7 @@ stays visible; `Esc` closes; focus is trapped and restored by the sheet primitiv
 | Bookmark detail          | `BookmarkDetailSheet` — right, `w-full sm:max-w-xl`, sticky image header, scrollable body, footer actions; delete confirm is an `AlertDialog` triggered from within |
 | Add bookmark             | `AddBookmarkSheet` — right, `w-full sm:max-w-md`                           |
 | Vocabulary management    | `VocabularyPage` — route `#/vocabulary` inside the shell (too much data for a sheet) |
+| Profile & settings       | `ProfilePage` — route `#/profile` inside the shell                                    |
 | Import                   | `ImportPage` — route `#/import` inside the shell                           |
 | Share                    | `SharePage` — route `#/share` inside the shell                             |
 | Destructive confirmation | `AlertDialog` (the one legitimate modal — interruptions must interrupt)    |

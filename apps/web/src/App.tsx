@@ -18,6 +18,7 @@ import { BookmarkList } from '@/components/BookmarkList';
 import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ImportPage } from '@/components/ImportPage';
+import { ProfilePage } from '@/components/ProfilePage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { SharePage } from '@/components/SharePage';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
@@ -51,6 +52,7 @@ import {
 import { navigate, useRoute } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
+import { useDefaultSearchMode } from '@/lib/useDefaultSearchMode';
 import { useLayout } from '@/lib/useLayout';
 import type { Layout } from '@/lib/useLayout';
 import { useSidebar } from '@/lib/useSidebar';
@@ -244,7 +246,6 @@ export function App() {
   const [view, setView] = useState<View>('library');
   const [query, setQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [mode, setMode] = useState<SearchMode>('keyword');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [tagId, setTagId] = useState<string | null>(null);
   const [status, setStatus] = useState<BookmarkListStatus>('active');
@@ -253,7 +254,9 @@ export function App() {
   const [page, setPage] = useState(0);
 
   const [layout, setLayout] = useLayout();
+  const [defaultSearchMode, setDefaultSearchMode] = useDefaultSearchMode();
   const [theme, setTheme] = useTheme();
+  const [mode, setMode] = useState<SearchMode>(() => defaultSearchMode);
   const {
     width: sidebarWidth,
     collapsed: sidebarCollapsed,
@@ -510,6 +513,7 @@ export function App() {
   const goImport = useCallback(() => navigate('import'), []);
   const goVocabulary = useCallback(() => navigate('vocabulary'), []);
   const goShare = useCallback(() => navigate('share'), []);
+  const goProfile = useCallback(() => navigate('profile'), []);
 
   const onModeChange = useCallback((next: SearchMode) => {
     setMode(next);
@@ -663,6 +667,7 @@ export function App() {
     onNavigateImport: goImport,
     onNavigateVocabulary: goVocabulary,
     onNavigateShare: goShare,
+    onNavigateProfile: goProfile,
   };
 
   return (
@@ -707,6 +712,16 @@ export function App() {
             />
           ) : route === 'share' ? (
             <SharePage />
+          ) : route === 'profile' ? (
+            <ProfilePage
+              profile={profile}
+              theme={theme}
+              layout={layout}
+              defaultSearchMode={defaultSearchMode}
+              onThemeChange={setTheme}
+              onLayoutChange={setLayout}
+              onDefaultSearchModeChange={setDefaultSearchMode}
+            />
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -809,6 +824,7 @@ export function App() {
                 profile={profile}
                 theme={theme}
                 onThemeChange={setTheme}
+                onNavigateProfile={goProfile}
                 size="icon-sm"
               />
               <ThemeToggle

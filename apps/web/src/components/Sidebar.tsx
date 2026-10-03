@@ -52,6 +52,7 @@ interface SidebarNavProps {
   onNavigateImport: () => void;
   onNavigateVocabulary: () => void;
   onNavigateShare: () => void;
+  onNavigateProfile: () => void;
   /** Called after any selection; mobile sheet uses it to close itself. */
   onNavigate?: () => void;
   /** Render the Tools block inline (the mobile sheet); the full sidebar pins it. */
@@ -429,6 +430,7 @@ export function Sidebar({
   onNavigateImport,
   onNavigateVocabulary,
   onNavigateShare,
+  onNavigateProfile,
   collapsed,
   width,
   onToggleCollapse,
@@ -589,6 +591,7 @@ export function Sidebar({
               profile={profile}
               theme={theme}
               onThemeChange={onThemeChange}
+              onNavigateProfile={onNavigateProfile}
               size="icon-lg"
             />
             <ThemeToggle
@@ -657,6 +660,7 @@ export function Sidebar({
                 profile={profile}
                 theme={theme}
                 onThemeChange={onThemeChange}
+                onNavigateProfile={onNavigateProfile}
               />
               <ThemeToggle
                 theme={theme}
@@ -692,6 +696,7 @@ export function Sidebar({
               onNavigateImport={onNavigateImport}
               onNavigateVocabulary={onNavigateVocabulary}
               onNavigateShare={onNavigateShare}
+              onNavigateProfile={onNavigateProfile}
               showTools={false}
             />
           </ScrollArea>

@@ -389,6 +389,8 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .get('/api/profile', (c) => c.json(core.profile.get()))
 
+    .get('/api/profile/dataset', (c) => c.json(core.profile.getActiveDataset()))
+
     .patch('/api/profile', jsonBody, (c) => {
       const body = c.req.valid('json');
       const patch: ProfilePatchInput = {};
@@ -421,6 +423,8 @@ export function createApp(core: Core, config: ServerConfig) {
       }
       return c.json(await core.profile.saveAvatar({ bytes, ext }));
     })
+
+    .delete('/api/profile/avatar', async (c) => c.json(await core.profile.clearAvatar()))
 
     .get('/api/review/candidates', (c) => c.json(core.review.listCandidates()))
 

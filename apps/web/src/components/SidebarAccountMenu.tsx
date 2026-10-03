@@ -11,18 +11,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { navigate } from '@/lib/router';
 import type { Theme } from '@/lib/useTheme';
 
 interface SidebarAccountMenuProps {
   profile: Profile | null;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
+  onNavigateProfile?: () => void;
   size?: ButtonProps['size'];
 }
 
@@ -35,6 +38,7 @@ export function SidebarAccountMenu({
   profile,
   theme,
   onThemeChange,
+  onNavigateProfile,
   size = 'icon',
 }: SidebarAccountMenuProps) {
   const handleThemeChange = useCallback(
@@ -45,6 +49,14 @@ export function SidebarAccountMenu({
     },
     [onThemeChange],
   );
+
+  const handleProfileClick = useCallback(() => {
+    if (onNavigateProfile) {
+      onNavigateProfile();
+    } else {
+      navigate('profile');
+    }
+  }, [onNavigateProfile]);
 
   const displayName = profile?.name ?? profile?.githubUsername;
 
@@ -77,6 +89,10 @@ export function SidebarAccountMenu({
             <DropdownMenuSeparator />
           </>
         )}
+        <DropdownMenuItem onClick={handleProfileClick}>
+          <UserIcon /> Profile & settings
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={theme} onValueChange={handleThemeChange}>
           <DropdownMenuRadioItem value="light">
             <SunIcon /> Light
