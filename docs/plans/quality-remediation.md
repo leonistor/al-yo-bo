@@ -107,23 +107,23 @@ Update docs to match reality; where Phase 1 changes behavior, describe the new b
       (sentinel is the `default` dataset, covered by the name fallback).
 - [x] DESIGN.md: Share page documented (Tools/footer lists, surface table, "Share page" section).
 
-## Phase 2 — P1 (architecture / robustness)
+## Phase 2 — P1 (architecture / robustness) — DONE
 
-- [ ] 2.1 Cross-dataset assignment guard: compare `tag.datasetId` vs `bookmark.datasetId` in
-      `packages/core/src/services/bookmarks.ts:145–155`; same for `categoryId` on create/update
-      and `updateTag` (`packages/db/src/queries/tags.ts:101–122`); UUID shape → 400 not 500
-      (`apps/server/src/app.ts:254–257`). Test: cross-dataset assign rejected at service layer.
-- [ ] 2.2 Review queue hygiene: `packages/db/src/queries/review.ts:21–50` — exclude
-      (bookmark, tag) pairs already assigned (`NOT EXISTS`), dedupe to latest run per pair.
-- [ ] 2.3 `packages/shared` Bun split: pure codec (`uuid-codec.ts`) vs server generator;
-      web must never pull `Bun.*`.
-- [ ] 2.4 `EXTRACT_MODEL` threading: through `ServerConfig`/`env.ts`, passed into the Ollama
-      extraction client (`apps/server/src/extract.ts:90–108,147–159`).
-- [ ] 2.5 Web keyboard/touch: explicit `Enter` open + confirmed delete in list keyboard nav
-      (`BookmarkList.tsx:365–404`); hover-only card actions reachable on touch (`:239–267`);
-      global Escape closes open sheets (`App.tsx:325–333`); guard `/`+`c` shortcuts against
-      open popups/selects (`App.tsx:295–337`); remove label-overriding `aria-label`
-      (`Topbar.tsx:81`); `TagPill` instead of `Badge` in `ClassifierSuggestions.tsx:86`.
+- [x] 2.1 Cross-dataset assignment guard — DONE `2346492`. Guards in core services
+      (bookmarks `assignTag`/create/update category, vocabulary `createTag`/`updateTag`,
+      review `acceptCandidate`); malformed body/query ids → 400 at the edge (`requiredUuid`/
+      `queryUuid` in `app.ts`). Tests: dataset-boundary suites in core.
+- [x] 2.2 Review queue hygiene — DONE `ba0389e`. `listBelowThresholdCandidates` rewritten as a
+      latest-run-per-pair CTE + `NOT EXISTS` anti-join on `bookmark_tags`. Tests: queue
+      exclusion/dedupe/accept-clears in `db.test.ts`.
+- [x] 2.3 `packages/shared` Bun split — DONE `f0782ce`. Pure codec stays in shared
+      (`uuid-codec.ts`); generator relocated to `packages/db/src/uuid.ts`; web build verified
+      Bun-free.
+- [x] 2.4 `EXTRACT_MODEL` threading — DONE `78bb3c5`. Flows through `ServerConfig`;
+      non-`/` id wins on the Ollama path. Tests: `apps/server/tests/extract.test.ts`.
+- [x] 2.5 Web keyboard/touch — DONE `44d35e2`. Explicit Enter open, delete via confirm dialog,
+      coarse-pointer action visibility, topmost-overlay Escape ordering, popup-aware shortcut
+      guard, visible-label accessible name, `TagPill` in classifier suggestions.
 
 ## Phase 3 — P2 (quality / maintainability)
 

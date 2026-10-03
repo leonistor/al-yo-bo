@@ -155,11 +155,10 @@ importer ─▶ db
 Rules:
 
 - `shared` imports nothing from the app (no Hono, no Bun-specific runtime, no database client).
-  It owns the `VectorIndex` interface and the LE-Float32 BLOB codec shared by `search` and
-  `vectordb`. Known exception (to be split out in `shared`): the id-generator module
-  (`shared/src/uuid.ts` `newId*`) calls `Bun.randomUUIDv7` — it must only be imported from
-  server-side code; the pure uuid codec functions are browser-safe. See the remediation plan
-  (`docs/plans/quality-remediation.md` 2.3).
+  It owns the `VectorIndex` interface, the LE-Float32 BLOB codec shared by `search` and
+  `vectordb`, and the browser-safe uuid codec (`uuid-codec.ts`). Id generation
+  (`Bun.randomUUIDv7`) lives in `packages/db` (`db/src/uuid.ts`) — the layer that mints row keys —
+  so the web bundle can never pull a Bun API through `shared`.
 - `db` owns all SQL; only `apps/server` opens/sets up the SQLite file, then hands the handle to
   `core`. `core` composes typed `db` queries into application services but writes no SQL of its own;
   the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
@@ -489,7 +488,7 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
-| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); otherwise the local Ollama extraction path uses `OLLAMA_CHAT_MODEL` — a non-`/` `EXTRACT_MODEL` id is currently not honored by the Ollama client (remediation plan 2.4). Read directly from `process.env`, not the resolved config object | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
+| `EXTRACT_MODEL`         | Import-extraction model, threaded through `ServerConfig`. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); a non-`/` id selects that model on the local Ollama path (winning over `OLLAMA_CHAT_MODEL`); unset → OpenRouter default when a key is set, else `OLLAMA_CHAT_MODEL`, else the deterministic parser | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
 | `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
