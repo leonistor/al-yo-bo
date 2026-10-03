@@ -22,9 +22,11 @@
 | ----------- | ------------------------------------ | --------------------------------------------------------- |
 | Base unit   | `4px` (Tailwind spacing scale)       | Scale steps only (`2`, `3`, `4`, `6`, …); no arbitrary px. Sole exception: the JS-driven sidebar width |
 | Radius      | `--radius: 0.625rem`                 | `rounded-md` compact controls · `rounded-lg` cards/panels/sheets · `rounded-full` **pills only** |
-| Font (UI)   | Work Sans Variable                   | Via `font-sans`; loaded from `@fontsource-variable/work-sans` |
+| Font (UI)   | Figtree Variable                     | Via `font-sans`; loaded from `@fontsource-variable/figtree` |
 | Font (mono) | system mono stack                    | For URLs, hashes, code (`font-mono`); `tabular-nums` on counts |
 | Color       | shadcn **CSS variables** (oklch)     | Semantic tokens only — never raw hex/Tailwind palette values in token definitions or components |
+
+**UI font alternatives, evaluated Oct 2026** (comparison screenshots in `.omo/evidence/fonts/`, uncommitted): Geist, Inter, Manrope, Atkinson Hyperlegible Next. Figtree chosen for warm-but-crisp rendering at dense list sizes. Geist = runner-up (sharpest, but sterile); Atkinson rejected as default — larger metrics wrap sidebar tags and cost list density; Inter dropped for ubiquity.
 
 **Type scale** (roles, not suggestions):
 
