@@ -29,6 +29,24 @@ activate feedback mode, then click any element, type a note, Add. The expanded
 controls offer Copy feedback, Clear all, Settings, animation pause, and layout
 mode; Esc exits. Paste the copied markdown into the agent session.
 
+## MCP server (local)
+
+Agentation's feedback loop runs through a local MCP server
+([`agentation-mcp`](https://www.npmjs.com/package/agentation-mcp), root
+devDependency; one process serves both HTTP for the toolbar and stdio MCP for
+agents over a shared store):
+
+- **Browser side:** `bun run dev` starts it via `dev:agentation`
+  (`agentation-mcp server`, HTTP on <http://localhost:4747>); the component
+  points at it with `endpoint="http://localhost:4747"`. Without the sidecar the
+  toolbar still works copy/paste-only (localStorage).
+- **Agent side:** registered as the `agentation` MCP server in
+  `.opencode/opencode.jsonc` with `--mcp-only --http-url http://localhost:4747`
+  — stdio MCP joins the dev-run store instead of binding its own port (no
+  4747 conflict). Restart opencode after config changes.
+- **Workflow:** annotate in the browser, then ask the agent to list pending
+  feedback (`agentation-mcp doctor` checks node/server/config health).
+
 ## Alternatives considered
 
 | Tool | Link | Notes |

@@ -46,7 +46,7 @@ createRoot(root).render(
         <Toaster position="bottom-right" />
         {Agentation && (
           <Suspense fallback={null}>
-            <Agentation appName="al-yo-bo" />
+            <Agentation appName="al-yo-bo" endpoint="http://localhost:4747" />
           </Suspense>
         )}
       </TooltipProvider>
