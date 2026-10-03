@@ -1,6 +1,6 @@
 import type { Aggregates, CategoryAggregate, Profile } from '@al-yo-bo/shared';
 import {
-  FolderOpenIcon,
+  FolderIcon,
   HashIcon,
   InboxIcon,
   LibraryBigIcon,
@@ -110,7 +110,7 @@ function CategoryRow({
       data-active={active}
       onClick={handleSelect}
     >
-      <FolderOpenIcon />
+      <FolderIcon />
       <span className="truncate">{category.name}</span>
       <span className="ml-auto text-xs text-muted-foreground tabular-nums">{category.count}</span>
     </Button>
@@ -335,6 +335,7 @@ function SidebarNav({
               name={tag.name}
               count={tag.count}
               selected={selectedTagId === tag.id}
+              size="md"
               onToggle={toggleTag}
             />
           ))}
@@ -589,8 +590,6 @@ export function Sidebar({
           <div className="mt-2 flex flex-col items-center gap-1">
             <SidebarAccountMenu
               profile={profile}
-              theme={theme}
-              onThemeChange={onThemeChange}
               onNavigateProfile={onNavigateProfile}
               size="icon-lg"
             />
@@ -622,7 +621,7 @@ export function Sidebar({
               active={model.isCategoryActive}
               onClick={expand}
             >
-              <FolderOpenIcon />
+              <FolderIcon />
             </RailButton>
             <RailButton
               label={`Tags (${model.tagCount})`}
@@ -658,8 +657,6 @@ export function Sidebar({
             <div className="ml-auto flex items-center gap-0.5">
               <SidebarAccountMenu
                 profile={profile}
-                theme={theme}
-                onThemeChange={onThemeChange}
                 onNavigateProfile={onNavigateProfile}
               />
               <ThemeToggle

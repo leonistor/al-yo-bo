@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { TagPill } from '@/components/TagPill';
+import { TagPill, type TagPillProps } from '@/components/TagPill';
 
 interface FilterTagPillProps {
   /** Tag identifier passed back to onToggle. */
@@ -11,6 +11,8 @@ interface FilterTagPillProps {
   count?: number;
   /** Whether this tag is the active filter. */
   selected: boolean;
+  /** Pill size; the sidebar tag cloud renders at `md`. */
+  size?: TagPillProps['size'];
   /** Called when the pill is clicked; if omitted the pill is non-interactive. */
   onToggle?: (id: string) => void;
 }
@@ -21,13 +23,14 @@ interface FilterTagPillProps {
  * Pixel-identical to the previous inline wrappers; keeps the click handler
  * stable inside memoized parents.
  */
-export function FilterTagPill({ id, name, count, selected, onToggle }: FilterTagPillProps) {
+export function FilterTagPill({ id, name, count, selected, size, onToggle }: FilterTagPillProps) {
   const handleClick = useCallback(() => onToggle?.(id), [onToggle, id]);
 
   return (
     <TagPill
       variant={selected ? 'selected' : 'outline'}
       count={count}
+      size={size}
       onClick={onToggle ? handleClick : undefined}
     >
       {name}

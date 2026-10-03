@@ -30,7 +30,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
@@ -462,68 +461,69 @@ export function ProfilePage({
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <h1 className="text-lg font-semibold tracking-tight">Profile & settings</h1>
 
-      <div className="flex w-full max-w-2xl flex-col gap-3">
-        <section className="rounded-lg border p-3">
-          <h2 className="text-sm font-medium">Identity</h2>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <section className="rounded-lg border p-3">
+            <h2 className="text-sm font-medium">Identity</h2>
 
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              type="button"
-              aria-label="Change avatar"
-              disabled={isUploading || profile === null}
-              onClick={triggerUpload}
-              className="relative size-12 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none"
-            >
-              {profile ? (
-                <ProfileAvatar profile={profile} className="size-12" />
-              ) : (
-                <span className="flex size-12 items-center justify-center rounded-full bg-muted">
-                  <UserIcon className="size-6 text-muted-foreground" />
-                </span>
-              )}
-              {isUploading && (
-                <span className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">
-                  <Spinner className="size-5" />
-                </span>
-              )}
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              tabIndex={-1}
-              accept="image/jpeg,image/png"
-              onChange={handleFileChange}
-              className="sr-only"
-            />
-
-            <div className="flex flex-col gap-1">
-              <Button
-                ref={changeButtonRef}
-                variant="outline"
-                size="sm"
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                aria-label="Change avatar"
                 disabled={isUploading || profile === null}
                 onClick={triggerUpload}
+                className="relative size-12 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none"
               >
-                <CameraIcon />
-                Change
-              </Button>
-              {hasAvatar && (
+                {profile ? (
+                  <ProfileAvatar profile={profile} className="size-12" />
+                ) : (
+                  <span className="flex size-12 items-center justify-center rounded-full bg-muted">
+                    <UserIcon className="size-6 text-muted-foreground" />
+                  </span>
+                )}
+                {isUploading && (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-full bg-background/60">
+                    <Spinner className="size-5" />
+                  </span>
+                )}
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                tabIndex={-1}
+                accept="image/jpeg,image/png"
+                onChange={handleFileChange}
+                className="sr-only"
+              />
+
+              <div className="flex gap-2">
                 <Button
-                  variant="ghost"
+                  ref={changeButtonRef}
+                  variant="outline"
                   size="sm"
-                  disabled={isRemoving}
-                  onClick={handleOpenRemove}
+                  disabled={isUploading || profile === null}
+                  onClick={triggerUpload}
                 >
-                  Remove
+                  <CameraIcon />
+                  Change
                 </Button>
-              )}
+                {hasAvatar && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isRemoving}
+                    onClick={handleOpenRemove}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
 
-          {uploadError && <p className="mt-2 text-xs text-destructive">{uploadError}</p>}
+            {uploadError && <p className="mt-1.5 text-xs text-destructive">{uploadError}</p>}
 
-          <div className="mt-3 grid gap-3">
+            <div className="mt-3 grid gap-2">
             {profile ? (
               <>
                 <InlineField
@@ -560,7 +560,7 @@ export function ProfilePage({
 
         <section className="rounded-lg border p-3">
           <h2 className="text-sm font-medium">Preferences</h2>
-          <div className="mt-3 grid gap-3">
+          <div className="mt-3 grid gap-2">
             <SegmentedControl
               label="Theme"
               value={theme}
@@ -594,10 +594,11 @@ export function ProfilePage({
             Switch datasets by seeding; live switching is a planned follow-up.
           </p>
         </section>
+        </div>
 
-        <Separator />
-
-        <SystemStatusCard />
+        <div className="flex flex-col gap-3">
+          <SystemStatusCard />
+        </div>
       </div>
 
       <ConfirmDeleteDialog

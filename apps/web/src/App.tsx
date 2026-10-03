@@ -822,8 +822,6 @@ export function App() {
             <div className="flex items-center gap-0.5">
               <SidebarAccountMenu
                 profile={profile}
-                theme={theme}
-                onThemeChange={setTheme}
                 onNavigateProfile={goProfile}
                 size="icon-sm"
               />

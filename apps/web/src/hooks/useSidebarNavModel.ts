@@ -42,7 +42,17 @@ export function useSidebarNavModel(
 ): SidebarNavModel {
   return useMemo(() => {
     const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
-    const tags = aggregates?.tags.filter((tag) => tag.count > 0).slice(0, 14) ?? [];
+    // Deterministic order: the active tag floats to the top, then A–Z, before
+    // the top-14 slice so selection never shifts out of the cloud.
+    const tags =
+      aggregates?.tags
+        .filter((tag) => tag.count > 0)
+        .toSorted((a, b) => {
+          if (a.id === selectedTagId) return -1;
+          if (b.id === selectedTagId) return 1;
+          return a.name.localeCompare(b.name);
+        })
+        .slice(0, 14) ?? [];
     const sections = aggregates?.sections.filter((section) => section.count > 0) ?? [];
     const uncategorized = categories.filter((category) => category.sectionId === null);
 

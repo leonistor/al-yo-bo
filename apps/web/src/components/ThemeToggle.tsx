@@ -1,9 +1,11 @@
-import { MoonIcon, SunIcon } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 
 import type { ButtonProps } from '@/components/ui/button';
 import { Button } from '@/components/ui/button';
-import { resolved, type Theme } from '@/lib/useTheme';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { Theme } from '@/lib/useTheme';
 
 interface ThemeToggleProps {
   theme: Theme;
@@ -11,40 +13,45 @@ interface ThemeToggleProps {
   size?: ButtonProps['size'];
 }
 
+// Cycle order: light → dark → system → light. `system` sits last so the two
+// explicit modes stay one click apart and the label reads predictably.
+const NEXT_THEME: Record<Theme, Theme> = {
+  light: 'dark',
+  dark: 'system',
+  system: 'light',
+};
+
+const THEME_ICON: Record<Theme, LucideIcon> = {
+  light: SunIcon,
+  dark: MoonIcon,
+  system: MonitorIcon,
+};
+
 /**
- * Standalone light/dark toggle. `system` is resolved to its actual value for the
- * icon state; clicking always commits to the opposite explicit theme. The
- * account dropdown still exposes the `system` option.
+ * Three-way theme cycle button (light → dark → system). The icon and tooltip
+ * reflect the stored mode — not its resolved value — so `system` stays visible
+ * as a distinct state. Theme state is owned by the app's `useTheme` instance
+ * and passed in, keeping every toggle in sync.
  */
 export function ThemeToggle({ theme, onThemeChange, size = 'icon' }: ThemeToggleProps) {
-  const [resolvedTheme, setResolvedTheme] = useState(() => resolved(theme));
+  const Icon = THEME_ICON[theme];
+  const label = `Theme: ${theme}`;
 
-  useEffect(() => {
-    setResolvedTheme(resolved(theme));
-    if (theme !== 'system') {
-      return;
-    }
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const listener = () => setResolvedTheme(resolved('system'));
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
-  }, [theme]);
+  const handleClick = useCallback(() => {
+    onThemeChange(NEXT_THEME[theme]);
+  }, [theme, onThemeChange]);
 
-  const next = resolvedTheme === 'light' ? 'dark' : 'light';
-  const Icon = resolvedTheme === 'light' ? SunIcon : MoonIcon;
-  const label = `Switch to ${next} theme`;
-
-  const handleClick = useCallback(() => onThemeChange(next), [onThemeChange, next]);
+  const triggerRender = useMemo(
+    () => <Button variant="ghost" size={size} aria-label={label} onClick={handleClick} />,
+    [size, label, handleClick],
+  );
 
   return (
-    <Button
-      variant="ghost"
-      size={size}
-      aria-label={label}
-      title={label}
-      onClick={handleClick}
-    >
-      <Icon />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger render={triggerRender}>
+        <Icon />
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

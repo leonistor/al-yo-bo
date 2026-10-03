@@ -1,11 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
 import { CombineIcon, SearchIcon, SparklesIcon, TypeIcon } from 'lucide-react';
 import type { ChangeEvent, RefObject } from 'react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { SearchMode } from '@al-yo-bo/shared';
 
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface TopbarSearchProps {
@@ -89,9 +90,24 @@ export function TopbarSearch({
     [onQueryChange],
   );
 
+  const searchIconTrigger = useMemo(
+    () => <span className="flex shrink-0 items-center text-muted-foreground" />,
+    [],
+  );
+
   return (
     <div className="relative flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-input bg-background px-3 transition-shadow duration-150 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-      <SearchIcon className="pointer-events-none shrink-0 text-muted-foreground" />
+      {/* The wrapper — not a separate button — is the tooltip trigger so the
+          icon stays pointer-events-none and clicking still focuses the input. */}
+      <Tooltip>
+        <TooltipTrigger render={searchIconTrigger}>
+          <SearchIcon className="pointer-events-none" />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">
+          / focuses search · Keyword: title, URL, notes · Semantic: meaning match · Hybrid: both
+          combined
+        </TooltipContent>
+      </Tooltip>
       <Input
         ref={searchRef}
         value={query}

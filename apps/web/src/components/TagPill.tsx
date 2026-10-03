@@ -18,6 +18,7 @@ const tagPillVariants = cva(
       size: {
         sm: '',
         md: 'h-6 px-2.5 text-sm',
+        lg: 'h-7 px-3 text-sm',
       },
       interactive: {
         true: 'cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
@@ -82,11 +83,21 @@ export function TagPill({
     className,
   );
 
+  // The count must track the pill's fill: muted-foreground disappears on an
+  // inverted primary surface and reads too dim on a secondary fill, so dim the
+  // matching foreground instead.
+  const countClass =
+    resolvedVariant === 'selected'
+      ? 'text-primary-foreground/80'
+      : resolvedVariant === 'removable' || resolvedVariant === 'static'
+        ? 'text-secondary-foreground/70'
+        : 'text-muted-foreground';
+
   const content = (
     <>
       <span className="truncate">{children}</span>
       {count !== undefined && (
-        <span className="text-muted-foreground tabular-nums">{count}</span>
+        <span className={cn(countClass, 'tabular-nums')}>{count}</span>
       )}
       {isRemovable && (
         <button

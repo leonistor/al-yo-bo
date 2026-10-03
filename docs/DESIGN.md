@@ -70,6 +70,13 @@ either auto-assigned or a below-threshold suggestion.
 Left sidebar + right content, split by the sidebar's right border. The content column owns a
 **two-row header**; the sidebar owns navigation and less-frequent tools.
 
+### Route page width convention
+
+Route pages (`#/library`, `#/import`, `#/share`, `#/vocabulary`, `#/profile`) fill the content
+area; the internal layout (single column, two column, or split panes) is page-specific. Do not
+impose an arbitrary `max-w-*` on a whole route page. Profile uses a two-column card layout;
+Import uses side-by-side panes; Share and Vocabulary use full-width single-column layouts.
+
 ```
 ┌──────────┬────────────────────────────────────────────┐
 │ Sidebar  │ Command bar (h-12, border-b, bg-background)│
@@ -148,6 +155,17 @@ updated / Title A–Z / Title Z–A.
   `dropdown-menu`, `command`, `popover`, `badge` (non-tag counts only), `card`, `tabs`,
   `scroll-area`, `separator`, `collapsible`, `toast`/`sonner`, `table`, `tooltip`.
 
+### Count rendering
+
+- **Nav / view counts** (All bookmarks total, Review queue, category rows, vocabulary status counts):
+  render as `Badge variant="secondary"` (or `variant="default"` for emphasis such as review queue).
+- **Tag counts inside pills** (`TagPill`): render as inline text (`text-muted-foreground tabular-nums`),
+  not a `Badge`. For selected pills, use `text-primary-foreground/80` to keep the count readable
+  against the primary surface; for `removable`/`static` secondary pills, use
+  `text-secondary-foreground/70`.
+- **Section / collapsible header counts** and inline meta counts: render as plain
+  `text-muted-foreground tabular-nums`.
+
 ### TagPill — the one tag visual
 
 `src/components/TagPill.tsx` (cva). Every tag everywhere — rows, cards, sidebar, detail sheet, chat
@@ -204,9 +222,11 @@ bookmarks, import): one row anatomy, one action cluster, one destructive confirm
 
 ### Profile & settings page
 
-Route `#/profile`, title "Profile & settings". Content is left-aligned inside `max-w-2xl`;
-surfaces are flat cards (`rounded-lg border p-3`). Type scale: page title `text-lg`, labels
-`text-sm`, meta/captions `text-xs`. Transitions follow the 150 ms hover / 200 ms state tokens.
+Route `#/profile`, title "Profile & settings". Content fills the content area like other route
+pages; internally it uses a two-column layout on large viewports (`grid grid-cols-1 lg:grid-cols-2`)
+with Identity, Preferences and Dataset on the left and System status on the right. Surfaces are
+flat cards (`rounded-lg border p-3`). Type scale: page title `text-lg`, labels `text-sm`,
+meta/captions `text-xs`. Transitions follow the 150 ms hover / 200 ms state tokens.
 
 - **Identity card** — avatar plus per-field inline edits.
   - Avatar: 48 px (`size-12`), focusable upload trigger (`aria-label="Change avatar"`) with a
