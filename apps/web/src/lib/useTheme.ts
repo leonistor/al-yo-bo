@@ -28,7 +28,7 @@ const storage = (() => {
   }
 })();
 
-function resolved(theme: Theme): 'light' | 'dark' {
+export function resolved(theme: Theme): 'light' | 'dark' {
   if (theme !== 'system') {
     return theme;
   }

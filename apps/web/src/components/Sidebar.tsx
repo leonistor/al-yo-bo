@@ -3,8 +3,8 @@ import {
   FolderOpenIcon,
   HashIcon,
   InboxIcon,
+  LibraryBigIcon,
   PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
   Settings2Icon,
   TagsIcon,
   UploadIcon,
@@ -15,6 +15,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
 import { TagPill } from '@/components/TagPill';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -162,19 +163,13 @@ function CollapsibleGroup({
 }
 
 interface SidebarToolsProps {
-  profile: Profile | null;
-  theme: Theme;
-  onThemeChange: (theme: Theme) => void;
   onNavigateImport: () => void;
   onNavigateVocabulary: () => void;
   onNavigate?: () => void;
 }
 
-/** Tools block (DESIGN.md §Sidebar info architecture): Import, Vocabulary, account. */
+/** Tools block (DESIGN.md §Sidebar info architecture): Import, Vocabulary. */
 function SidebarTools({
-  profile,
-  theme,
-  onThemeChange,
   onNavigateImport,
   onNavigateVocabulary,
   onNavigate,
@@ -199,7 +194,6 @@ function SidebarTools({
         <TagsIcon />
         <span>Vocabulary</span>
       </Button>
-      <SidebarAccountMenu profile={profile} theme={theme} onThemeChange={onThemeChange} />
     </div>
   );
 }
@@ -207,8 +201,6 @@ function SidebarTools({
 /** Shared nav body: identical content in the persistent sidebar and the mobile sheet. */
 function SidebarNav({
   aggregates,
-  profile,
-  theme,
   view,
   selectedCategoryId,
   selectedTagId,
@@ -218,7 +210,6 @@ function SidebarNav({
   onSelectView,
   onSelectCategory,
   onSelectTag,
-  onThemeChange,
   onNavigateImport,
   onNavigateVocabulary,
   onNavigate,
@@ -357,9 +348,6 @@ function SidebarNav({
       {showTools && (
         <div className="mt-4 border-t border-sidebar-border pt-2">
           <SidebarTools
-            profile={profile}
-            theme={theme}
-            onThemeChange={onThemeChange}
             onNavigateImport={onNavigateImport}
             onNavigateVocabulary={onNavigateVocabulary}
             onNavigate={onNavigate}
@@ -386,7 +374,7 @@ function RailButton({ label, onClick, children, badge, active }: RailButtonProps
         render={
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-lg"
             aria-label={label}
             aria-pressed={active}
             data-active={active}
@@ -397,7 +385,7 @@ function RailButton({ label, onClick, children, badge, active }: RailButtonProps
       >
         {children}
         {badge !== undefined && badge > 0 && (
-          <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
+          <span className="absolute top-0 right-0 flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
             {badge}
           </span>
         )}
@@ -570,8 +558,22 @@ export function Sidebar({
       {effectiveCollapsed ? (
         <>
           <RailButton label="Expand sidebar" onClick={onToggleCollapse}>
-            <PanelLeftOpenIcon />
+            <LibraryBigIcon />
           </RailButton>
+
+          <div className="mt-2 flex flex-col items-center gap-1">
+            <SidebarAccountMenu
+              profile={profile}
+              theme={theme}
+              onThemeChange={onThemeChange}
+              size="icon-lg"
+            />
+            <ThemeToggle
+              theme={theme}
+              onThemeChange={onThemeChange}
+              size="icon-lg"
+            />
+          </div>
 
           <div className="mt-2 flex flex-col items-center gap-1">
             <RailButton
@@ -612,24 +614,38 @@ export function Sidebar({
             <RailButton label="Vocabulary" onClick={onNavigateVocabulary}>
               <TagsIcon />
             </RailButton>
-            <SidebarAccountMenu profile={profile} theme={theme} onThemeChange={onThemeChange} />
           </div>
         </>
       ) : (
         <>
-          <div className="flex items-center gap-2 px-3 py-3 sm:px-4">
-            <span className="text-sm font-semibold tracking-tight">al-yo-bo</span>
-            <Badge variant="secondary" className="ml-auto tabular-nums">
+          <div className="flex items-center gap-1.5 px-3 py-3 sm:px-4">
+            <LibraryBigIcon className="size-5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate text-sm font-semibold whitespace-nowrap tracking-tight">
+              al-yo-bo
+            </span>
+            <Badge variant="secondary" className="tabular-nums">
               {aggregates?.total ?? 0}
             </Badge>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Collapse sidebar"
-              onClick={onToggleCollapse}
-            >
-              <PanelLeftCloseIcon />
-            </Button>
+            <div className="ml-auto flex items-center gap-0.5">
+              <SidebarAccountMenu
+                profile={profile}
+                theme={theme}
+                onThemeChange={onThemeChange}
+              />
+              <ThemeToggle
+                theme={theme}
+                onThemeChange={onThemeChange}
+                size="icon-sm"
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Collapse sidebar"
+                onClick={onToggleCollapse}
+              >
+                <PanelLeftCloseIcon />
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1">
@@ -655,9 +671,6 @@ export function Sidebar({
 
           <div className="border-t border-sidebar-border px-2 py-2">
             <SidebarTools
-              profile={profile}
-              theme={theme}
-              onThemeChange={onThemeChange}
               onNavigateImport={onNavigateImport}
               onNavigateVocabulary={onNavigateVocabulary}
             />

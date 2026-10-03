@@ -20,6 +20,8 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { ImportPage } from '@/components/ImportPage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
+import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Topbar } from '@/components/Topbar';
 import {
   AlertDialog,
@@ -749,9 +751,24 @@ export function App() {
       {/* Full navigation, off-canvas below md (topbar menu button). */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetContent side="left" className="gap-0 p-0">
-          <SheetHeader className="border-b">
-            <SheetTitle>al-yo-bo</SheetTitle>
-            <SheetDescription>Categories and tags</SheetDescription>
+          <SheetHeader className="flex-row items-center justify-between border-b pr-12">
+            <div className="flex flex-col gap-0.5">
+              <SheetTitle>al-yo-bo</SheetTitle>
+              <SheetDescription>Categories and tags</SheetDescription>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <SidebarAccountMenu
+                profile={profile}
+                theme={theme}
+                onThemeChange={setTheme}
+                size="icon-sm"
+              />
+              <ThemeToggle
+                theme={theme}
+                onThemeChange={setTheme}
+                size="icon-sm"
+              />
+            </div>
           </SheetHeader>
           <ScrollArea className="min-h-0 flex-1">
             <SidebarNav {...sidebarProps} onNavigate={closeNav} />

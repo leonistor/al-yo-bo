@@ -1,4 +1,5 @@
-import { SearchIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { CombineIcon, SearchIcon, SparklesIcon, TypeIcon } from 'lucide-react';
 import type { ChangeEvent, RefObject } from 'react';
 import { useCallback } from 'react';
 
@@ -15,11 +16,41 @@ interface TopbarSearchProps {
   onModeChange: (mode: SearchMode) => void;
 }
 
-const MODES: { value: SearchMode; label: string; short: string }[] = [
-  { value: 'keyword', label: 'Keyword', short: 'Kw' },
-  { value: 'semantic', label: 'Semantic', short: 'Sem' },
-  { value: 'hybrid', label: 'Hybrid', short: 'Hyb' },
+const MODES: { value: SearchMode; label: string; icon: LucideIcon }[] = [
+  { value: 'keyword', label: 'Keyword', icon: TypeIcon },
+  { value: 'semantic', label: 'Semantic', icon: SparklesIcon },
+  { value: 'hybrid', label: 'Hybrid', icon: CombineIcon },
 ];
+
+interface ModeButtonProps {
+  value: SearchMode;
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  onChange: (mode: SearchMode) => void;
+}
+
+function ModeButton({ value, label, icon: Icon, active, onChange }: ModeButtonProps) {
+  const handleClick = useCallback(() => onChange(value), [onChange, value]);
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={active}
+      onClick={handleClick}
+      className={cn(
+        'flex h-6 w-6 items-center justify-center rounded text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-7 sm:w-7',
+        active
+          ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      <Icon className="size-4" />
+    </button>
+  );
+}
 
 function SearchModeToggle({
   mode,
@@ -33,21 +64,14 @@ function SearchModeToggle({
   return (
     <fieldset aria-label="Search mode" className="m-0 flex items-center border-0 p-0">
       {MODES.map((m) => (
-        <button
+        <ModeButton
           key={m.value}
-          type="button"
-          aria-pressed={mode === m.value}
-          onClick={() => onModeChange(m.value)}
-          className={cn(
-            'h-6 rounded px-1.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-7 sm:px-2',
-            mode === m.value
-              ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <span className="hidden sm:inline">{m.label}</span>
-          <span className="sm:hidden">{m.short}</span>
-        </button>
+          value={m.value}
+          label={m.label}
+          icon={m.icon}
+          active={mode === m.value}
+          onChange={onModeChange}
+        />
       ))}
     </fieldset>
   );

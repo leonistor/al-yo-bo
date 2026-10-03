@@ -70,7 +70,7 @@ function CardThumb({ bookmark, layout }: { bookmark: BookmarkWithTags; layout: L
       className={cn(
         'flex shrink-0 items-center justify-center overflow-hidden bg-muted text-muted-foreground',
         layout === 'grid'
-          ? '-mx-3 -mt-3 mb-1 aspect-video rounded-t-lg'
+          ? '-mx-3 -mt-3 mb-0 aspect-video rounded-t-lg'
           : 'aspect-video w-24 rounded-md',
       )}
       aria-hidden={!resolved}
@@ -116,12 +116,12 @@ function CardSkeleton({ layout }: { layout: Layout }) {
     <Card
       className={cn(
         'w-full overflow-hidden',
-        layout === 'grid' ? 'h-full flex-col p-3' : 'flex-row items-start gap-3 p-3',
+        layout === 'grid' ? 'h-full flex-col p-3' : 'flex-row items-start gap-2 p-3',
       )}
       aria-hidden
     >
       {layout === 'grid' ? (
-        <div className="-mx-3 -mt-3 mb-1 aspect-video rounded-t-lg bg-muted" />
+        <div className="-mx-3 -mt-3 mb-0 aspect-video rounded-t-lg bg-muted" />
       ) : (
         <div className="aspect-video w-24 shrink-0 rounded-md bg-muted" />
       )}
@@ -217,7 +217,7 @@ export const BookmarkCard = memo(function BookmarkCard({
       render={listItem ? <li /> : undefined}
       className={cn(
         'group relative w-full overflow-hidden p-3 transition-colors hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring',
-        layout === 'grid' ? 'h-full flex-col' : 'flex-row items-start',
+        layout === 'grid' ? 'h-full flex-col' : 'flex-row items-start gap-2',
         isAnimated &&
           'animate-in fade-in-0 duration-200 ease-out motion-safe:slide-in-from-bottom-1',
       )}
@@ -267,8 +267,10 @@ export const BookmarkCard = memo(function BookmarkCard({
           </div>
         </div>
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="truncate">
-            {hostOf(bookmark.url)} · {formatDate(bookmark.createdAt)}
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <span className="truncate">{hostOf(bookmark.url)}</span>
+            <span aria-hidden>·</span>
+            <span className="truncate text-foreground/70">{formatDate(bookmark.createdAt)}</span>
           </span>
           {bookmark.status === 'invalid' && <Badge variant="destructive">Invalid</Badge>}
         </p>
@@ -277,7 +279,7 @@ export const BookmarkCard = memo(function BookmarkCard({
         )}
         {bookmark.tags.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
-            {bookmark.tags.map((tag) => (
+            {bookmark.tags.slice(0, 5).map((tag) => (
               <BookmarkTagPill
                 key={tag.tagId}
                 tag={tag}
@@ -285,6 +287,14 @@ export const BookmarkCard = memo(function BookmarkCard({
                 onTagClick={onTagClick}
               />
             ))}
+            {bookmark.tags.length > 5 && (
+              <TagPill
+                onClick={handleOpen}
+                aria-label={`Show all ${bookmark.tags.length} tags`}
+              >
+                +{bookmark.tags.length - 5}
+              </TagPill>
+            )}
           </div>
         )}
       </div>
