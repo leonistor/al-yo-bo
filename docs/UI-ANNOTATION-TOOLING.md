@@ -20,9 +20,12 @@ stale single-version republish).
 
 ## Usage
 
-Mounted in `apps/web/src/main.tsx` behind `import.meta.env.DEV` via a dynamic
-import, so Vite tree-shakes it (and everything it pulls in) out of production
-builds. Toolbar behavior is default; `appName="al-yo-bo"` is included in output.
+Mounted in `apps/web/src/main.tsx` behind
+`import.meta.env.DEV && import.meta.env.VITE_ANNOTATE === '1'` via a dynamic
+import — the flag is exported by `scripts/dev.sh` only when the stack runs with
+`--annotate`, so plain `bun run dev` shows no toolbar, and Vite tree-shakes the
+component (and everything it pulls in) out of production builds.
+Toolbar behavior is default; `appName="al-yo-bo"` is included in output.
 
 Entry point: the floating toolbar (FAB) in the bottom-right corner. Click it to
 activate feedback mode, then click any element, type a note, Add. The expanded
@@ -38,9 +41,8 @@ agents over a shared store):
 
 - **Browser side:** `bun run dev -- --annotate` starts it via `dev:agentation`
   (`agentation-mcp server`, HTTP on <http://localhost:4747>; the annotation
-  server is opt-in — plain `bun run dev` skips it); the component
-  points at it with `endpoint="http://localhost:4747"`. Without the sidecar the
-  toolbar still works copy/paste-only (localStorage).
+  server is opt-in — plain `bun run dev` skips both the server and the
+  toolbar); the component points at it with `endpoint="http://localhost:4747"`.
 - **Agent side:** registered as the `agentation` MCP server in
   `.opencode/opencode.jsonc` with `--mcp-only --http-url http://localhost:4747`
   — stdio MCP joins the dev-run store instead of binding its own port (no

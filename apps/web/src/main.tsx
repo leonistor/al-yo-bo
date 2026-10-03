@@ -11,11 +11,14 @@ import './index.css';
 /* eslint-enable import/no-unassigned-import */
 
 // Dev-only annotation toolbar (visual feedback for AI coding agents; see
-// docs/UI-ANNOTATION-TOOLING.md). The static DEV guard lets Vite fold the
-// dynamic import away in production builds, so it never ships.
-const Agentation = import.meta.env.DEV
-  ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
-  : null;
+// docs/UI-ANNOTATION-TOOLING.md). Mounted only when the stack runs with
+// `--annotate` (scripts/dev.sh exports VITE_ANNOTATE=1) — plain `bun run dev`
+// shows no toolbar. The static DEV guard still lets Vite fold the dynamic
+// import away in production builds, so it never ships.
+const Agentation =
+  import.meta.env.DEV && import.meta.env.VITE_ANNOTATE === '1'
+    ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
+    : null;
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({

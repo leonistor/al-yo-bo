@@ -13,9 +13,9 @@ data_dir="${DATA_DIR:-}"
 
 # Parse `--profile=<name>` / `--profile <name>`; `--list-profiles` (alias
 # `--profiles`) prints the available profiles and exits; `--seed` (or
-# `--seed=<dataset>`) seeds before booting; `--annotate` (alias `--annotation`)
-# also launches the annotation server (agentation). Unknown args (including a
-# stray `--` bun may forward) are ignored.
+# `--seed=<dataset>`) seeds before booting; `--annotate` also launches the
+# annotation server (agentation) and mounts the in-app toolbar. Unknown args
+# (including a stray `--` bun may forward) are ignored.
 list_profiles=0
 annotate=0
 seed=""
@@ -37,7 +37,7 @@ while [ $# -gt 0 ]; do
       list_profiles=1
       shift
       ;;
-    --annotate|--annotation)
+    --annotate)
       annotate=1
       shift
       ;;
@@ -119,11 +119,13 @@ fi
 bun scripts/dev-qr.ts
 
 # The annotation server (agentation MCP) is opt-in: `bun run dev -- --annotate`.
-# bun run --parallel needs the script names as separate args, so unquoted
-# expansion is intentional here.
+# VITE_ANNOTATE gates the in-app toolbar mount (apps/web/src/main.tsx) — Vite
+# only exposes VITE_-prefixed env vars to the client bundle. bun run --parallel
+# needs the script names as separate args, so unquoted expansion is intentional.
 agents="dev:server dev:web dev:qdrant dev:ollaya"
 if [ "$annotate" -eq 1 ]; then
   echo "[dev] annotation server enabled (--annotate)"
+  export VITE_ANNOTATE=1
   agents="$agents dev:agentation"
 fi
 
