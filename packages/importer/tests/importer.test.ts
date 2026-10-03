@@ -138,6 +138,69 @@ tags: [beta]
     expect(bookmarks.every((bookmark) => bookmark.tags.length === 0)).toBe(true);
   });
 
+  // Regression: a mid-file `---`-wrapped note (a paragraph plus bullets) used to
+  // be consumed as frontmatter and vanish silently. It has no recognized key and
+  // is not leading, so its lines must flow through as ordinary content.
+  test('keeps a mid-file --- wrapped note with bullets as content', () => {
+    const { bookmarks, warnings } = parseCollection(`## dev
+
+- a: https://example.com/a
+
+---
+
+Note: a wrapped aside
+
+- b: https://example.com/b
+
+---
+`);
+    expect(bookmarks.map((bookmark) => bookmark.url)).toEqual([
+      'https://example.com/a',
+      'https://example.com/b',
+    ]);
+    expect(warnings).toBeUndefined();
+  });
+
+  test('still consumes a mid-file frontmatter block that carries tags', () => {
+    const { bookmarks } = parseCollection(`## dev
+
+- a: https://example.com/a
+
+---
+tags: [later]
+---
+
+- b: https://example.com/b
+`);
+    expect(bookmarks).toHaveLength(2);
+    expect(bookmarks[0]?.tags).toEqual([]);
+    expect(bookmarks[1]?.tags).toEqual(['later']);
+  });
+
+  test('treats a leading --- block as frontmatter even without tags', () => {
+    const { bookmarks, warnings } = parseCollection(`---
+title: only
+---
+
+- a: https://example.com/a
+`);
+    expect(bookmarks).toHaveLength(1);
+    expect(bookmarks[0]?.tags).toEqual([]);
+    expect(warnings).toEqual(['Unrecognized frontmatter key "title" was ignored.']);
+  });
+
+  test('warns about unrecognized keys in a consumed frontmatter block', () => {
+    const { bookmarks, warnings } = parseCollection(`---
+title: My collection
+tags: [imported]
+---
+
+- a: https://example.com/a
+`);
+    expect(bookmarks[0]?.tags).toEqual(['imported']);
+    expect(warnings).toEqual(['Unrecognized frontmatter key "title" was ignored.']);
+  });
+
   test('ignores URLs and bullets inside fenced code blocks', () => {
     const { bookmarks } = parseCollection(`## dev
 

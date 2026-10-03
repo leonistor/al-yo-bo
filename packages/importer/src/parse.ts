@@ -3,6 +3,8 @@ import type { ImportedBookmark } from '@al-yo-bo/shared';
 export interface ParseResult {
   bookmarks: ImportedBookmark[];
   skipped: number;
+  /** Soft, non-fatal issues (e.g. unrecognized frontmatter keys) for the UI. */
+  warnings?: string[];
 }
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/g;
@@ -12,7 +14,7 @@ const BULLET_RE = /^\s*[-*+]\s+(.*)$/;
 const PRIORITY_RE = /^\*{1,3}(?=\s)/;
 const FENCE_RE = /^`{3,}/;
 const FRONTMATTER_DELIMITER = '---';
-const FRONTMATTER_KEY_RE = /^[A-Za-z_][\w-]*\s*:/;
+const FRONTMATTER_KEY_RE = /^([A-Za-z_][\w-]*)\s*:/;
 const FRONTMATTER_LIST_ITEM_RE = /^\s*-\s/;
 const FRONTMATTER_TAGS_RE = /^tags\s*:\s*\[(.*)\]\s*$/;
 
@@ -29,6 +31,7 @@ export function parseCollection(content: string): ParseResult {
   const seen = new Set<string>();
   const tags: string[] = [];
   const knownTags = new Set<string>();
+  const warnings: string[] = [];
   const lines = content.split(/\r?\n/);
   let skipped = 0;
   let category: string | null = null;
@@ -65,6 +68,7 @@ export function parseCollection(content: string): ParseResult {
           tags.push(name);
         }
       }
+      warnings.push(...frontmatter.warnings);
       index = frontmatter.endIndex + 1;
       continue;
     }
@@ -125,18 +129,23 @@ export function parseCollection(content: string): ParseResult {
     index += 1;
   }
 
-  return { bookmarks, skipped };
+  return warnings.length > 0 ? { bookmarks, skipped, warnings } : { bookmarks, skipped };
 }
 
 interface Frontmatter {
   tags: string[];
+  /** Keys the parser does not understand but that were still consumed as frontmatter. */
+  warnings: string[];
   endIndex: number;
 }
 
 /**
- * Recognizes a YAML frontmatter block starting at `startIndex`. The first interior
- * non-blank line must be a key line, which keeps bare `---` horizontal separators
- * (common between concatenated notes) from being swallowed as frontmatter.
+ * Recognizes a YAML frontmatter block starting at `startIndex`. To keep a
+ * mid-file `---`-wrapped note (e.g. a `Note:` paragraph followed by bullets)
+ * from vanishing silently, a block qualifies as frontmatter only when it is a
+ * leading block (starts at file offset 0) or carries at least one recognized
+ * key (`tags`). A block that is consumed but has unrecognized keys reports them
+ * so the caller can warn rather than drop content.
  */
 function tryParseFrontmatter(lines: string[], startIndex: number): Frontmatter | null {
   if ((lines[startIndex] ?? '').trim() !== FRONTMATTER_DELIMITER) {
@@ -144,20 +153,25 @@ function tryParseFrontmatter(lines: string[], startIndex: number): Frontmatter |
   }
 
   const tags: string[] = [];
+  const unknownKeys = new Set<string>();
+  let hasRecognizedKey = false;
   let firstNonBlank = true;
+  let endIndex = -1;
 
   for (let index = startIndex + 1; index < lines.length; index += 1) {
     const rawLine = lines[index] ?? '';
     const trimmed = rawLine.trim();
 
     if (trimmed === FRONTMATTER_DELIMITER) {
-      return firstNonBlank ? null : { tags, endIndex: index };
+      endIndex = index;
+      break;
     }
     if (!trimmed) {
       continue;
     }
 
-    const isKey = FRONTMATTER_KEY_RE.test(rawLine);
+    const keyMatch = FRONTMATTER_KEY_RE.exec(rawLine);
+    const isKey = keyMatch !== null;
     const isListItem = FRONTMATTER_LIST_ITEM_RE.test(rawLine);
     if (firstNonBlank) {
       if (!isKey) {
@@ -170,19 +184,41 @@ function tryParseFrontmatter(lines: string[], startIndex: number): Frontmatter |
     }
 
     if (isKey) {
-      const tagMatch = FRONTMATTER_TAGS_RE.exec(rawLine);
-      if (tagMatch) {
-        for (const part of (tagMatch[1] ?? '').split(',')) {
-          const name = part.trim();
-          if (name) {
-            tags.push(name);
+      const key = keyMatch[1] ?? '';
+      if (key === 'tags') {
+        hasRecognizedKey = true;
+        const tagMatch = FRONTMATTER_TAGS_RE.exec(rawLine);
+        if (tagMatch) {
+          for (const part of (tagMatch[1] ?? '').split(',')) {
+            const name = part.trim();
+            if (name) {
+              tags.push(name);
+            }
           }
         }
+      } else {
+        unknownKeys.add(key);
       }
     }
   }
 
-  return null;
+  // An unclosed or empty block is not frontmatter.
+  if (endIndex === -1 || firstNonBlank) {
+    return null;
+  }
+  // A non-leading block needs a recognized key; otherwise the separator-wrapped
+  // lines flow through as ordinary content instead of being swallowed.
+  if (startIndex !== 0 && !hasRecognizedKey) {
+    return null;
+  }
+
+  return {
+    tags,
+    warnings: [...unknownKeys].map(
+      (key) => `Unrecognized frontmatter key "${key}" was ignored.`,
+    ),
+    endIndex,
+  };
 }
 
 /**
