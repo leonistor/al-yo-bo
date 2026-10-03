@@ -13,9 +13,11 @@ data_dir="${DATA_DIR:-}"
 
 # Parse `--profile=<name>` / `--profile <name>`; `--list-profiles` (alias
 # `--profiles`) prints the available profiles and exits; `--seed` (or
-# `--seed=<dataset>`) seeds before booting. Unknown args (including a stray
+# `--seed=<dataset>`) seeds before booting; `--annotate` also launches the
+# annotation server (agentation). Unknown args (including a stray
 # `--` bun may forward) are ignored.
 list_profiles=0
+annotate=0
 seed=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,6 +35,10 @@ while [ $# -gt 0 ]; do
       ;;
     --list-profiles|--profiles)
       list_profiles=1
+      shift
+      ;;
+    --annotate)
+      annotate=1
       shift
       ;;
     --seed)
@@ -112,4 +118,13 @@ fi
 # (host is 0.0.0.0, port pinned by strictPort in apps/web/vite.config.ts).
 bun scripts/dev-qr.ts
 
-exec bun run --parallel dev:server dev:web dev:qdrant dev:ollaya dev:agentation
+# The annotation server (agentation MCP) is opt-in: `bun run dev -- --annotate`.
+# bun run --parallel needs the script names as separate args, so unquoted
+# expansion is intentional here.
+agents="dev:server dev:web dev:qdrant dev:ollaya"
+if [ "$annotate" -eq 1 ]; then
+  echo "[dev] annotation server enabled (--annotate)"
+  agents="$agents dev:agentation"
+fi
+
+exec bun run --parallel $agents

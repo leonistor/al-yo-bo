@@ -36,8 +36,9 @@ Agentation's feedback loop runs through a local MCP server
 devDependency; one process serves both HTTP for the toolbar and stdio MCP for
 agents over a shared store):
 
-- **Browser side:** `bun run dev` starts it via `dev:agentation`
-  (`agentation-mcp server`, HTTP on <http://localhost:4747>); the component
+- **Browser side:** `bun run dev -- --annotate` starts it via `dev:agentation`
+  (`agentation-mcp server`, HTTP on <http://localhost:4747>; the annotation
+  server is opt-in — plain `bun run dev` skips it); the component
   points at it with `endpoint="http://localhost:4747"`. Without the sidecar the
   toolbar still works copy/paste-only (localStorage).
 - **Agent side:** registered as the `agentation` MCP server in
