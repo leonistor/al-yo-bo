@@ -97,6 +97,17 @@ if [ -n "$seed" ]; then
   bun run db:seed
 fi
 
+# Load the repo-root .env into the environment of every child (exported via
+# set -a). Needed because workspace scripts boot with the package dir as cwd
+# (apps/server), where Bun only auto-loads <package>/.env — without this the
+# root OLLAMA_CHAT_MODEL/OPENROUTER_API_KEY never reach the server process.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 # Print LAN URLs / QR codes for phone & tablet testing before the stack boots
 # (host is 0.0.0.0, port pinned by strictPort in apps/web/vite.config.ts).
 bun scripts/dev-qr.ts
