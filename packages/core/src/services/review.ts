@@ -4,9 +4,9 @@
  * and mirrors it into the vector payload.
  *
  * The vocabulary-review surface (accept/reject/rename/merge proposals) was
- * removed in Phase 0: vocabulary is always created active by the importer and
- * classifier (ARCHITECTURE §7 stage 1 post-simplification), so there are no
- * `proposed` rows to triage.
+ * removed in Phase 0: the importer auto-creates vocabulary in its active state
+ * at commit time and the classifier never creates vocabulary (MODEL.md
+ * principle 5), so there are no `proposed` rows to triage.
  */
 
 import type { Database } from 'bun:sqlite';

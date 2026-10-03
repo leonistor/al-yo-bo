@@ -24,6 +24,7 @@ import {
   getBookmarksWithTagsByIds,
   listActiveTagsForScope,
   listUserTagIds,
+  reconcileClassifierAssignments,
 } from '@al-yo-bo/db';
 import { hostFromUrl, type BookmarkWithTags, type Tag, type VectorIndex } from '@al-yo-bo/shared';
 
@@ -49,6 +50,8 @@ export interface ClassifyOutcome {
   runs: number;
   /** Assignments written with source='classifier'. */
   assigned: number;
+  /** Stale classifier assignments removed because this run no longer qualified them. */
+  retracted: number;
   /** Unknown labels the daemon returned (recorded as evidence, never auto-assigned). */
   unknown: number;
 }
@@ -126,22 +129,26 @@ export async function classifyBookmark(
 ): Promise<ClassifyOutcome> {
   const { db, classifier, config } = deps;
   if (!classifier) {
-    return { status: 'skipped', runs: 0, assigned: 0, unknown: 0 };
+    return { status: 'skipped', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
   }
   const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
   if (!bookmark) {
-    return { status: 'missing', runs: 0, assigned: 0, unknown: 0 };
+    return { status: 'missing', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
   }
 
   const candidates = candidatesForBookmark(db, bookmark);
   if (candidates.size === 0) {
-    return { status: 'skipped', runs: 0, assigned: 0, unknown: 0 };
+    return { status: 'skipped', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
   }
 
   const state = buildStateString(bookmark);
   const userTagIds = new Set(listUserTagIds(db, bookmarkId));
   const allNames = [...candidates.keys()];
-  const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, unknown: 0 };
+  const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
+  /** Tags this pass qualified, across every batch run. */
+  const qualifiedTagIds = new Set<string>();
+  /** Runs created by this pass (the authoritative evidence for `selected`). */
+  const runIds: string[] = [];
 
   /** Persists one result row and applies the assignment policy. */
   const recordResult = (runId: string, name: string, probability: number, rank: number): void => {
@@ -180,6 +187,7 @@ export async function classifyBookmark(
         confidence: probability,
         runId,
       });
+      qualifiedTagIds.add(tag.id);
       outcome.assigned += 1;
     }
   };
@@ -197,6 +205,7 @@ export async function classifyBookmark(
       classifier: 'ollaya',
       model: response.model ?? config.ollaya.model,
     });
+    runIds.push(runId);
     outcome.runs += 1;
 
     const ranked = batch
@@ -222,7 +231,17 @@ export async function classifyBookmark(
     }
   }
 
-  if (outcome.assigned > 0) {
+  // Recompute the effective state under the current policy: retract classifier
+  // assignments this pass did not re-qualify and reconcile `selected` flags.
+  // Runs after all batches so qualification is the union across runs.
+  outcome.retracted = reconcileClassifierAssignments(db, {
+    bookmarkId,
+    datasetId: bookmark.datasetId,
+    qualifiedTagIds: [...qualifiedTagIds],
+    runIds,
+  }).retracted;
+
+  if (outcome.assigned > 0 || outcome.retracted > 0) {
     // Mirrors the (possibly changed) effective tags into the vector payload.
     const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
     await syncVectorPayload(deps.vector, bookmarkId, fresh);

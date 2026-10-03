@@ -102,6 +102,37 @@ function makeDeps(db: Database, classifier?: ClassifyDeps['classifier']): Classi
   };
 }
 
+interface ResultRow {
+  runId: string;
+  tagName: string;
+  selected: number;
+  probability: number;
+}
+
+/** Immutable result rows for a bookmark, oldest run first. */
+function readResults(db: Database, bookmarkId: string): ResultRow[] {
+  return db
+    .query<
+      { run_id: Uint8Array; name: string; selected: number; probability: number },
+      [Uint8Array]
+    >(
+      `SELECT cr.run_id AS run_id, t.name AS name, cr.selected AS selected,
+              cr.probability AS probability
+         FROM classification_results cr
+         JOIN classification_runs r ON r.id = cr.run_id
+         JOIN tags t ON t.id = cr.tag_id
+        WHERE r.bookmark_id = ?
+        ORDER BY r.created_at, r.rowid, t.name`,
+    )
+    .all(uuidToBytes(bookmarkId))
+    .map((row) => ({
+      runId: bytesToUuid(row.run_id),
+      tagName: row.name,
+      selected: row.selected,
+      probability: row.probability,
+    }));
+}
+
 describe('buildStateString', () => {
   test('joins title, description, host and a truncated content excerpt', () => {
     const db = makeDb();
@@ -218,6 +249,7 @@ describe('classifyBookmark', () => {
       status: 'skipped',
       runs: 0,
       assigned: 0,
+      retracted: 0,
       unknown: 0,
     });
 
@@ -230,6 +262,7 @@ describe('classifyBookmark', () => {
       status: 'skipped',
       runs: 0,
       assigned: 0,
+      retracted: 0,
       unknown: 0,
     });
   });
@@ -270,5 +303,71 @@ describe('classifyBookmark', () => {
     for (const runId of runIds) {
       expect(listUnknownClassificationLabels(db, runId)).toHaveLength(1);
     }
+  });
+
+  test('re-run retracts classifier assignments that no longer qualify', async () => {
+    await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.9 })), fixture.bookmarkId);
+    expect(getBookmarkTags(db, fixture.bookmarkId).map((tag) => tag.name)).toEqual(['rust']);
+
+    const outcome = await classifyBookmark(
+      makeDeps(db, stubClassifier({ rust: 0.3 })),
+      fixture.bookmarkId,
+    );
+
+    expect(outcome.retracted).toBe(1);
+    expect(getBookmarkTags(db, fixture.bookmarkId)).toEqual([]);
+  });
+
+  test('retraction never removes user- or import-sourced assignments', async () => {
+    assignTag(db, { bookmarkId: fixture.bookmarkId, tagId: fixture.tagIds.rust, source: 'user' });
+    assignTag(db, { bookmarkId: fixture.bookmarkId, tagId: fixture.tagIds.webdev, source: 'import' });
+
+    const outcome = await classifyBookmark(
+      makeDeps(db, stubClassifier({ rust: 0.1, webdev: 0.1 })),
+      fixture.bookmarkId,
+    );
+
+    expect(outcome.retracted).toBe(0);
+    expect(getBookmarkTags(db, fixture.bookmarkId).map((tag) => [tag.name, tag.source])).toEqual([
+      ['rust', 'user'],
+      ['webdev', 'import'],
+    ]);
+  });
+
+  test('selected flags are reconciled to the latest run', async () => {
+    await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.9 })), fixture.bookmarkId);
+    await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.7 })), fixture.bookmarkId);
+
+    const rustResults = readResults(db, fixture.bookmarkId).filter(
+      (row) => row.tagName === 'rust',
+    );
+    expect(rustResults).toHaveLength(2); // one per run — evidence is never rewritten
+    const selected = rustResults.filter((row) => row.selected === 1);
+    expect(selected).toHaveLength(1);
+
+    const latestRun = db
+      .query<{ id: Uint8Array }, [Uint8Array]>(
+        'SELECT id FROM classification_runs WHERE bookmark_id = ? ORDER BY rowid DESC LIMIT 1',
+      )
+      .get(uuidToBytes(fixture.bookmarkId))!;
+    expect(selected[0]!.runId).toBe(bytesToUuid(latestRun.id));
+  });
+
+  test('retraction leaves prior results as immutable evidence', async () => {
+    await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.9 })), fixture.bookmarkId);
+    const outcome = await classifyBookmark(
+      makeDeps(db, stubClassifier({ rust: 0.1 })),
+      fixture.bookmarkId,
+    );
+
+    expect(outcome.retracted).toBe(1);
+    expect(getBookmarkTags(db, fixture.bookmarkId)).toEqual([]);
+
+    const rustResults = readResults(db, fixture.bookmarkId).filter(
+      (row) => row.tagName === 'rust',
+    );
+    expect(rustResults).toHaveLength(2);
+    expect(rustResults.map((row) => row.probability).toSorted()).toEqual([0.1, 0.9]);
+    expect(readResults(db, fixture.bookmarkId).every((row) => row.selected === 0)).toBe(true);
   });
 });

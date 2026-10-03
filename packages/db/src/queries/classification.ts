@@ -1,4 +1,4 @@
-import type { Database } from 'bun:sqlite';
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
 
 import { bytesToUuid, newIdBytes, uuidToBytes, type Tag } from '@al-yo-bo/shared';
 
@@ -145,6 +145,79 @@ export function createUnknownClassificationLabel(
     `INSERT INTO unknown_classification_labels (id, run_id, raw_label, probability)
      VALUES (?, ?, ?, ?)`,
   ).run(newIdBytes(), uuidToBytes(input.runId), input.rawLabel, input.probability);
+}
+
+export interface ReconcileClassifierAssignmentsInput {
+  bookmarkId: string;
+  /** Dataset whose vocabulary bounds the classifier's candidate scope. */
+  datasetId: string;
+  /** Tag ids the current pass qualified under the active policy. */
+  qualifiedTagIds: string[];
+  /** Run ids created by the current pass — the latest evidence for each tag. */
+  runIds: string[];
+}
+
+export interface ReconcileClassifierAssignmentsResult {
+  /** Classifier-sourced assignments removed because they no longer qualify. */
+  retracted: number;
+}
+
+/**
+ * Recomputes effective classifier state after a re-run (ARCHITECTURE §7 stage 4/6).
+ *
+ * Classifier-sourced `bookmark_tags` rows the current pass did not re-qualify are
+ * removed, so tags assigned under an older policy/threshold do not stick forever.
+ * `user`/`import` rows are never classifier-sourced, so they survive by
+ * construction. The current pass's `classification_results.selected` flags become
+ * authoritative: any older selected flag for this bookmark is unset. Result rows
+ * themselves stay immutable — only the policy-derived `selected` bit is reconciled
+ * (MODEL.md principle 4).
+ */
+export function reconcileClassifierAssignments(
+  db: Database,
+  input: ReconcileClassifierAssignmentsInput,
+): ReconcileClassifierAssignmentsResult {
+  const bookmarkBytes = uuidToBytes(input.bookmarkId);
+  const datasetBytes = uuidToBytes(input.datasetId);
+  const qualifiedBytes = input.qualifiedTagIds.map(uuidToBytes);
+  const runBytes = input.runIds.map(uuidToBytes);
+
+  const qualifiedList = qualifiedBytes.map(() => '?').join(', ');
+  const runList = runBytes.map(() => '?').join(', ');
+
+  // Retract: bounded to the bookmark's dataset so out-of-scope vocabulary is
+  // never touched; `source = 'classifier'` keeps user/import rows intact.
+  const deleteSql = qualifiedBytes.length
+    ? `DELETE FROM bookmark_tags
+        WHERE bookmark_id = ?
+          AND source = 'classifier'
+          AND tag_id IN (SELECT id FROM tags WHERE dataset_id = ?)
+          AND tag_id NOT IN (${qualifiedList})`
+    : `DELETE FROM bookmark_tags
+        WHERE bookmark_id = ?
+          AND source = 'classifier'
+          AND tag_id IN (SELECT id FROM tags WHERE dataset_id = ?)`;
+  const deleteParams: SQLQueryBindings[] = [bookmarkBytes, datasetBytes, ...qualifiedBytes];
+
+  const retracted = db
+    .query<never, SQLQueryBindings[]>(deleteSql)
+    .run(...deleteParams).changes;
+
+  // Reconcile `selected`: only a result from this pass whose tag qualified stays
+  // selected; every older selected flag for the bookmark is cleared.
+  const keepCurrent =
+    qualifiedBytes.length && runBytes.length
+      ? `NOT (tag_id IN (${qualifiedList}) AND run_id IN (${runList}))`
+      : null;
+  const selectedSql = `UPDATE classification_results SET selected = 0
+      WHERE run_id IN (SELECT id FROM classification_runs WHERE bookmark_id = ?)
+        AND selected = 1${keepCurrent ? ` AND ${keepCurrent}` : ''}`;
+  const selectedParams: SQLQueryBindings[] = keepCurrent
+    ? [bookmarkBytes, ...qualifiedBytes, ...runBytes]
+    : [bookmarkBytes];
+  db.query<never, SQLQueryBindings[]>(selectedSql).run(...selectedParams);
+
+  return { retracted };
 }
 
 /** Unknown-label evidence rows for a run, highest probability first. */
