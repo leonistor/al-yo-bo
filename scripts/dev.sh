@@ -97,4 +97,8 @@ if [ -n "$seed" ]; then
   bun run db:seed
 fi
 
+# Print LAN URLs / QR codes for phone & tablet testing before the stack boots
+# (host is 0.0.0.0, port pinned by strictPort in apps/web/vite.config.ts).
+bun scripts/dev-qr.ts
+
 exec bun run --parallel dev:server dev:web dev:qdrant dev:ollaya dev:agentation

@@ -36,6 +36,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.62"
+    "@ai-sdk/openai-compatible": "^3.0.62",
+    "uqr": "^0.1.3"
   }
 }
