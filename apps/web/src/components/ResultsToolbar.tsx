@@ -1,4 +1,4 @@
-import { LayoutGridIcon, ListIcon, RefreshCwIcon } from 'lucide-react';
+import { Grid3x3Icon, LayoutGridIcon, ListIcon, RefreshCwIcon } from 'lucide-react';
 import { useCallback } from 'react';
 
 import type { BookmarkListStatus, BookmarkSort } from '@al-yo-bo/shared';
@@ -83,6 +83,7 @@ export function ResultsToolbar({
 
   const selectListLayout = useCallback(() => onLayoutChange('list'), [onLayoutChange]);
   const selectGridLayout = useCallback(() => onLayoutChange('grid'), [onLayoutChange]);
+  const selectDenseLayout = useCallback(() => onLayoutChange('dense'), [onLayoutChange]);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -148,6 +149,15 @@ export function ResultsToolbar({
             onClick={selectGridLayout}
           >
             <LayoutGridIcon />
+          </Button>
+          <Button
+            variant={layout === 'dense' ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            aria-label="Dense grid view"
+            aria-pressed={layout === 'dense'}
+            onClick={selectDenseLayout}
+          >
+            <Grid3x3Icon />
           </Button>
         </div>
 

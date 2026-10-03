@@ -8,6 +8,7 @@ import {
   CombineIcon,
   DatabaseIcon,
   FileTextIcon,
+  Grid3x3Icon,
   ImageIcon,
   LayoutGridIcon,
   ListIcon,
@@ -157,6 +158,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
 const LAYOUT_OPTIONS: { value: Layout; label: string; icon: LucideIcon }[] = [
   { value: 'list', label: 'List', icon: ListIcon },
   { value: 'grid', label: 'Grid', icon: LayoutGridIcon },
+  { value: 'dense', label: 'Dense', icon: Grid3x3Icon },
 ];
 
 const SEARCH_MODE_OPTIONS: { value: SearchMode; label: string; icon: LucideIcon }[] = [

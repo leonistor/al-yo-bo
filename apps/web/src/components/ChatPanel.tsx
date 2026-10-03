@@ -23,7 +23,7 @@ import {
 import { MessageScroller } from '@/components/agents/message-scroller';
 import { PromptInput } from '@/components/agents/prompt-input';
 import { StreamingResponse } from '@/components/agents/streaming-response';
-import { BookmarkCard } from '@/components/BookmarkList';
+import { CompactBookmarkCard } from '@/components/CompactBookmarkCard';
 import { Button } from '@/components/ui/button';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
@@ -69,9 +69,9 @@ function messageText(message: ChatMessage): string {
 }
 
 /**
- * Adapts a compact chat hit to the library card's view model so both surfaces
- * render identically (DESIGN.md §Chat). Missing scrape metadata degrades to the
- * card's placeholder thumbnail.
+ * Adapts a compact chat hit to the bookmark view model so the tool-result
+ * surface renders through `CompactBookmarkCard` (DESIGN.md §Chat). Missing
+ * scrape metadata degrades to the tile's placeholder thumbnail.
  */
 function toBookmarkWithTags(hit: SearchBookmarkHit): BookmarkWithTags {
   return {
@@ -157,12 +157,11 @@ function CopyMessageButton({ text }: { text: string }) {
 
 /**
  * Renders the `searchBookmarks` tool lifecycle: a live agent-activity row while
- * the search runs, then the hits as library cards. The tool's trash action
- * dismisses a hit from this result set — chat is a view, never a second library
- * — so it stays safe and non-destructive.
+ * the search runs, then the hits as compact tiles. Chat is a view, never a
+ * second library — a tile's primary action opens the URL externally, and
+ * curation (tags, deletion) happens in the library surfaces.
  */
 function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-searchBookmarks' }> }) {
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   const query = part.input?.query ?? '';
   const items = useMemo<AgentActivityItem[]>(
     () => [{ id: part.toolCallId, type: 'search', query: query || 'your bookmarks' }],
@@ -171,9 +170,6 @@ function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-s
 
   const openBookmark = useCallback((bookmark: BookmarkWithTags) => {
     window.open(bookmark.url, '_blank', 'noopener,noreferrer');
-  }, []);
-  const dismissBookmark = useCallback((bookmark: BookmarkWithTags) => {
-    setDismissed((current) => new Set(current).add(bookmark.id));
   }, []);
 
   if (part.state === 'output-error') {
@@ -199,7 +195,6 @@ function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-s
   }
 
   const hits = part.output.bookmarks ?? [];
-  const visibleHits = hits.filter((hit) => !dismissed.has(hit.id));
   const total = part.output.total ?? hits.length;
 
   return (
@@ -212,15 +207,13 @@ function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-s
         }
         maxHeight={160}
       />
-      {visibleHits.length > 0 ? (
-        <ul className="flex w-full flex-col gap-2" aria-label="Bookmarks found">
-          {visibleHits.map((hit) => (
+      {hits.length > 0 ? (
+        <ul className="grid w-full grid-cols-2 gap-2" aria-label="Bookmarks found">
+          {hits.map((hit) => (
             <li key={hit.id}>
-              <BookmarkCard
+              <CompactBookmarkCard
                 bookmark={toBookmarkWithTags(hit)}
-                layout="list"
                 onOpen={openBookmark}
-                onDelete={dismissBookmark}
               />
             </li>
           ))}

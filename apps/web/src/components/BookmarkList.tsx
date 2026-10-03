@@ -2,14 +2,15 @@ import type { BookmarkWithTags } from '@al-yo-bo/shared';
 import {
   BookmarkIcon,
   ExternalLinkIcon,
-  GlobeIcon,
   PlusIcon,
   SearchXIcon,
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 
+import { BookmarkThumb } from '@/components/BookmarkThumb';
+import { CompactBookmarkCard } from '@/components/CompactBookmarkCard';
 import { FilterTagPill } from '@/components/FilterTagPill';
 import { RowActions, type RowAction } from '@/components/RowActions';
 import { TagPill } from '@/components/TagPill';
@@ -27,71 +28,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import { hostOf } from '@/lib/format';
-import { resolveImageSrc } from '@/lib/image';
 import type { Layout } from '@/lib/useLayout';
 import { cn } from '@/lib/utils';
 
 /** Stable <li> element for semantic list rendering; avoids inline JSX-as-prop. */
 const LIST_ITEM_ELEMENT = <li />;
 
-/**
- * Card thumbnail with the full fallback chain, including a failed <img> load
- * (dead remote URLs fall through to the placeholder instead of breaking).
- * Placeholder is a plain muted block with a globe mark — calm, no favicon
- * service round-trip.
- *
- * Click affordance: the whole thumbnail opens the detail sheet, mirroring the
- * title button. It stays `tabIndex={-1}` (not a tab stop) so the roving-focus
- * keyboard model keeps a single primary control per row — the title button.
- */
-function CardThumb({
-  bookmark,
-  layout,
-  title,
-  onOpen,
-  onKeyDown,
-}: {
-  bookmark: BookmarkWithTags;
-  layout: Layout;
-  title: string;
-  onOpen: () => void;
-  onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
-}) {
-  const [failed, setFailed] = useState(false);
-  const markFailed = useCallback(() => setFailed(true), []);
-  const resolved = failed ? null : resolveImageSrc(bookmark.image);
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      onKeyDown={onKeyDown}
-      tabIndex={-1}
-      aria-label={`Open ${title} details`}
-      className={cn(
-        'flex shrink-0 cursor-pointer items-center justify-center overflow-hidden bg-muted text-muted-foreground focus-visible:outline-none',
-        layout === 'grid'
-          ? '-mx-3 -mt-3 mb-0 aspect-video rounded-t-lg'
-          : 'aspect-video w-24 rounded-md',
-      )}
-    >
-      {resolved ? (
-        <img
-          src={resolved.src}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="size-full object-cover object-top"
-          {...(resolved.remote ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
-          onError={markFailed}
-        />
-      ) : (
-        <GlobeIcon className="size-4" aria-hidden />
-      )}
-    </button>
-  );
-}
+/** Dense tile grid (CompactBookmarkCard): 2/3/4/5 columns by breakpoint. */
+const DENSE_GRID_CLASSES = 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
 
 interface BookmarkListProps {
   items: BookmarkWithTags[];
@@ -112,6 +56,17 @@ interface BookmarkListProps {
 
 /** Skeleton mirroring the real card anatomy so loading doesn't shift layout. */
 function CardSkeleton({ layout }: { layout: Layout }) {
+  if (layout === 'dense') {
+    return (
+      <Card className="w-full overflow-hidden p-2" aria-hidden>
+        <div className="-mx-2 -mt-2 mb-2 aspect-video rounded-t-lg bg-muted" />
+        <div className="flex min-w-0 flex-col gap-1">
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card
       className={cn(
@@ -147,7 +102,8 @@ function CardSkeleton({ layout }: { layout: Layout }) {
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithTags;
-  layout: Layout;
+  /** Full cards render in the list/grid layouts; dense uses CompactBookmarkCard. */
+  layout: Exclude<Layout, 'dense'>;
   onOpen: (bookmark: BookmarkWithTags) => void;
   onDelete: (bookmark: BookmarkWithTags) => void;
   /** Active tag filter; renders the matching pill as `selected`. */
@@ -245,12 +201,16 @@ export const BookmarkCard = memo(function BookmarkCard({
       )}
       style={animationStyle}
     >
-      <CardThumb
+      <BookmarkThumb
         bookmark={bookmark}
-        layout={layout}
         title={title}
         onOpen={handleOpen}
         onKeyDown={onKeyDown}
+        className={
+          layout === 'grid'
+            ? '-mx-3 -mt-3 mb-0 aspect-video rounded-t-lg'
+            : 'aspect-video w-24 rounded-md'
+        }
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-start gap-1">
@@ -319,6 +279,16 @@ function getGridColumnCount(): number {
   return 1;
 }
 
+function getDenseColumnCount(): number {
+  if (typeof window === 'undefined') return 2;
+  // Matches DENSE_GRID_CLASSES: grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5.
+  const width = window.innerWidth;
+  if (width >= 1280) return 5;
+  if (width >= 1024) return 4;
+  if (width >= 640) return 3;
+  return 2;
+}
+
 export function BookmarkList({
   items,
   loading,
@@ -340,19 +310,23 @@ export function BookmarkList({
     listRef,
     onActivate: onOpen,
     onDelete,
-    mode: layout === 'grid' ? 'grid' : 'list',
-    getColumnCount: getGridColumnCount,
+    // Dense tiles navigate like the grid: column-aware arrows.
+    mode: layout === 'list' ? 'list' : 'grid',
+    getColumnCount: layout === 'dense' ? getDenseColumnCount : getGridColumnCount,
     focusSelector: '[data-title-button]',
   });
 
   if (loading) {
-    const skeletons = Array.from({ length: 6 }, (_, index) => (
+    const skeletons = Array.from({ length: layout === 'dense' ? 10 : 6 }, (_, index) => (
       <CardSkeleton key={index} layout={layout} />
     ));
     if (layout === 'grid') {
       return (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{skeletons}</div>
       );
+    }
+    if (layout === 'dense') {
+      return <div className={DENSE_GRID_CLASSES}>{skeletons}</div>;
     }
     return <div className="flex flex-col gap-2">{skeletons}</div>;
   }
@@ -410,26 +384,40 @@ export function BookmarkList({
       onFocusCapture={handleFocusIn}
       className={cn(
         'list-none',
-        layout === 'grid'
-          ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
-          : 'flex flex-col gap-2',
+        layout === 'dense'
+          ? DENSE_GRID_CLASSES
+          : layout === 'grid'
+            ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
+            : 'flex flex-col gap-2',
       )}
     >
-      {items.map((bookmark, index) => (
-        <BookmarkCard
-          key={bookmark.id}
-          bookmark={bookmark}
-          layout={layout}
-          index={index}
-          active={activeId === bookmark.id}
-          listItem
-          onOpen={onOpen}
-          onDelete={onDelete}
-          selectedTagId={selectedTagId}
-          onTagClick={onTagClick}
-          onKeyDown={handleKeyDown}
-        />
-      ))}
+      {items.map((bookmark, index) =>
+        layout === 'dense' ? (
+          <CompactBookmarkCard
+            key={bookmark.id}
+            bookmark={bookmark}
+            index={index}
+            active={activeId === bookmark.id}
+            listItem
+            onOpen={onOpen}
+            onKeyDown={handleKeyDown}
+          />
+        ) : (
+          <BookmarkCard
+            key={bookmark.id}
+            bookmark={bookmark}
+            layout={layout}
+            index={index}
+            active={activeId === bookmark.id}
+            listItem
+            onOpen={onOpen}
+            onDelete={onDelete}
+            selectedTagId={selectedTagId}
+            onTagClick={onTagClick}
+            onKeyDown={handleKeyDown}
+          />
+        ),
+      )}
     </ul>
   );
 }

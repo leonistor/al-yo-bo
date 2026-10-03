@@ -37,8 +37,9 @@
 | Bookmark titles, sheet titles          | `text-base` |
 | Page titles (`h1` in main column)      | `text-lg`   |
 
-**Spacing rhythm:** main column `p-4` · cards `p-3` · inline control gaps `gap-2` · section gaps
-`gap-3` · chrome (`Topbar`, `Sidebar`) `px-3 sm:px-4`.
+**Spacing rhythm:** main column `p-4` · cards `p-3` · compact tiles `p-2` (dense grid + chat
+results) · inline control gaps `gap-2` · section gaps `gap-3` · chrome (`Topbar`, `Sidebar`)
+`px-3 sm:px-4`.
 
 **Elevation policy:** flat. All static surfaces are separated by `1px` borders (`border-border`,
 `border-sidebar-border`) and surface tint — never shadows. `shadow-sm` is allowed **only on
@@ -83,7 +84,7 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 │ bg-sidebar│ ──────────────────────────────────────────│
 │ border-r │ main (p-4)                                 │
 │          │  ┌ Results toolbar (row 2 of the header)   │
-│          │  ├ list / grid (scrolls)                   │
+│          │  ├ list / grid / dense (scrolls)           │
 │          │  └ pagination                              │
 │          │                      [chat 24rem, optional]│
 └──────────┴────────────────────────────────────────────┘
@@ -131,9 +132,9 @@ the tinted sidebar by surface and border, never by shadow. Left→right:
 ### Results toolbar (content header, row 2)
 
 Sits at the top of `main`, directly above the list: result count (`aria-live`, `text-sm
-text-muted-foreground`) and Active/Invalid segmented control on the left; sort select, list/grid
-segmented control, refresh on the right. Sort options fold direction in: Newest / Oldest / Recently
-updated / Title A–Z / Title Z–A.
+text-muted-foreground`) and Active/Invalid segmented control on the left; sort select, list/grid/
+dense segmented control (List / LayoutGrid / Grid3x3), refresh on the right. Sort options fold
+direction in: Newest / Oldest / Recently updated / Title A–Z / Title Z–A.
 
 ## Components (shadcn/ui on base-ui)
 
@@ -194,6 +195,26 @@ Sections, category groups, and the Tags group; reused wherever a collapsible gro
 - Content height animation `200ms`; keyboard operable via the base-ui trigger.
 - Open/closed state persists (sidebar: `ayb:sidebar:sections`).
 
+### CompactBookmarkCard + BookmarkThumb — the dense tile
+
+`src/components/CompactBookmarkCard.tsx` — thumbnail-led tile with only **screenshot, title, and
+link**. Used by the library's `dense` layout and the chat tool-result surface; no tags,
+description, date, or action row (everything else lives in the detail sheet).
+
+- Flat card: `rounded-lg border bg-card p-2`, `hover:bg-accent/50` + 150 ms transition, stagger
+  entrance like `BookmarkCard`. Thumbnail flush to the top edges (`-mx-2 -mt-2`, `rounded-t-lg`,
+  `aspect-video`).
+- Title: `text-sm font-medium truncate` button — the tile's primary control (`data-row-focus`),
+  opens the surface's primary action (detail sheet in the library, external tab in chat).
+- Link: host as external link — `text-xs text-primary`, trailing `ExternalLinkIcon` (`size-3`),
+  `target="_blank" rel="noreferrer"`.
+- `src/components/BookmarkThumb.tsx` is the one clickable-thumbnail implementation: the full
+  imagery fallback chain (screenshot → og:image → muted globe placeholder) plus the mouse-only
+  click affordance (`tabIndex={-1}`; the title button owns keyboard activation). Both cards and
+  any future surface consume it — surface-specific sizing passes through `className`.
+- Conscious omissions: no Invalid badge (invalid bookmarks stay fully represented in list/grid);
+  no per-hit dismiss in chat (chat is a view, never a second library).
+
 ### List rows & actions — the one managed-list language
 
 Shared primitives under `src/components/` used by every list-like page (Vocabulary, review queue,
@@ -239,7 +260,7 @@ meta/captions `text-xs`. Transitions follow the 150 ms hover / 200 ms state toke
     display button. Each field commits independently to `PATCH /api/profile`; no global Save.
 - **Preferences card** — three `SegmentedControl`s:
   - Theme: Sun/Moon/Monitor → light/dark/system, persisted by `lib/useTheme`.
-  - Layout: List/LayoutGrid → list/grid, persisted by `lib/useLayout`.
+  - Layout: List/LayoutGrid/Grid3x3 → list/grid/dense, persisted by `lib/useLayout`.
   - Default search mode: Type/Sparkles/Combine → keyword/semantic/hybrid, persisted by
     `lib/useDefaultSearchMode`.
 - **Dataset card** — active dataset read-only with caption explaining that switching happens
@@ -326,8 +347,8 @@ opacity-only.
 
 ## Bookmark imagery
 
-- Bookmarks render a visual from `metadata.image` with a fixed fallback chain, in both the list/grid
-  card thumbnail and the detail sheet header: **local screenshot**
+- Bookmarks render a visual from `metadata.image` with a fixed fallback chain, in the list/grid
+  card thumbnail, the dense tile, and the detail sheet header: **local screenshot**
   (`/data/screenshots/<file>`, validated against the server's filename guard) → **remote og:image**
   (`crossOrigin="anonymous"` + `referrerPolicy="no-referrer"`) → **placeholder** (`bg-muted` block
   with a globe mark — no external favicon service).
@@ -349,7 +370,8 @@ opacity-only.
   messages stay plain text.
 - **Cite** copies a markdown list of source bookmarks from the current assistant message's
   `searchBookmarks` tool results; standard Sonner toast feedback.
-- The chat tool-result surface reuses `BookmarkCard` (and therefore `TagPill`) from the library.
+- The chat tool-result surface reuses `CompactBookmarkCard` (and therefore `BookmarkThumb` and the
+  shared imagery fallback chain) from the library, in a two-column tile grid that fits the panel.
 
 ## Accessibility checklist
 
