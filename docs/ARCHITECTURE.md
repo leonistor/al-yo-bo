@@ -185,6 +185,9 @@ fixes the storage posture:
   the Qdrant storage tree — lives under one data root (`DATA_DIR`, default repo `./data`; resolved by
   `packages/db` `resolveDataDir` and shared by the server and the CLI scripts). One env knob
   relocates the whole tree for deployment; `DB_PATH`/`SCREENSHOTS_DIR` override the individual paths.
+  In development, `bun run dev -- --profile=<name>` sets `DATA_DIR=data/profiles/<name>` (when
+  `DATA_DIR` is unset), giving scratch dev runs an isolated tree; CLI scripts honor the same
+  fallback via `PROFILE`.
   Per-user subfolders are a rejected shape: the app is single-user (§1.3) and the schema has no user
   axis — a second user, if ever requested, is a second instance with its own `DATA_DIR` (§11).
 - **Migrations.** Numbered, forward-only SQL files under `packages/db`, applied at startup in a
