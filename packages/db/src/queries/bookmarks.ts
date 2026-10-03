@@ -3,7 +3,6 @@ import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import {
   bytesToUuid,
   clampPagination,
-  newIdBytes,
   normalizeUrl,
   toFtsMatch,
   uuidToBytes,
@@ -16,6 +15,7 @@ import {
 } from '@al-yo-bo/shared';
 
 import { mapBookmark, parseBookmarkImage, type BookmarkRow } from '../row-mapping.ts';
+import { newIdBytes } from '../uuid.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
 import { prepared } from './statements.ts';
 

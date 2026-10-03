@@ -4,6 +4,7 @@ export * from './migrations.ts';
 export * from './paths.ts';
 export * from './row-mapping.ts';
 export * from './seed.ts';
+export * from './uuid.ts';
 
 export * from './queries/aggregates.ts';
 export * from './queries/bookmark-tags.ts';

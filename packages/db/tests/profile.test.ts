@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { newIdBytes, bytesToUuid } from '@al-yo-bo/shared';
+import { bytesToUuid } from '@al-yo-bo/shared';
 
 import {
   createDataset,
   deleteDataset,
   getProfile,
+  newIdBytes,
   openDatabase,
   PROFILE_ID,
   resolveActiveDataset,

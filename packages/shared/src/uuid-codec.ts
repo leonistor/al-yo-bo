@@ -1,7 +1,10 @@
 /**
- * UUIDv7 identifiers are stored as 16-byte BLOBs in SQLite (the schema enforces
- * `typeof(id) = 'blob' AND length(id) = 16`), but exposed as canonical UUID
- * strings at the API edge. These helpers convert between the two.
+ * Browser-safe UUID codec (ARCHITECTURE §4): `shared` holds no Bun-specific
+ * runtime, so this module must stay free of `Bun.*`. UUIDv7 identifiers are
+ * stored as 16-byte BLOBs in SQLite (the schema enforces `typeof(id) = 'blob'
+ * AND length(id) = 16`), but exposed as canonical UUID strings at the API edge.
+ * These helpers only convert between the two; generation lives in
+ * `@al-yo-bo/db` (`newId`/`newIdBytes`), next to the writes.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,13 +34,4 @@ export function uuidToBytes(uuid: string): Uint8Array {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
-}
-
-/** Generates a v7 UUID as the 16-byte representation used as a primary key. */
-export function newIdBytes(): Uint8Array {
-  return Bun.randomUUIDv7('buffer');
-}
-
-export function newId(): string {
-  return Bun.randomUUIDv7();
 }

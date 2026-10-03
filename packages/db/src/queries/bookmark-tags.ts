@@ -2,13 +2,13 @@ import type { Database } from 'bun:sqlite';
 
 import {
   bytesToUuid,
-  newIdBytes,
   uuidToBytes,
   type AssignmentSource,
   type BookmarkTagView,
 } from '@al-yo-bo/shared';
 
 import { mapBookmarkTag, type BookmarkTagRow } from '../row-mapping.ts';
+import { newIdBytes } from '../uuid.ts';
 import { prepared } from './statements.ts';
 
 export interface AssignTagInput {

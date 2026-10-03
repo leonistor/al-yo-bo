@@ -4,13 +4,14 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { bytesToUuid, newIdBytes, uuidToBytes } from '@al-yo-bo/shared';
+import { bytesToUuid, uuidToBytes } from '@al-yo-bo/shared';
 
 import {
   assignTag,
   createDataset,
   createBookmark,
   createCategory,
+  createClassificationResult,
   createClassificationRun,
   createSection,
   createTag,
@@ -29,12 +30,14 @@ import {
   keywordSearch,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
+  listBelowThresholdCandidates,
   listBookmarks,
   listSections,
   listUnknownClassificationLabels,
   DEFAULT_SEED_PATH,
   listEmbeddingModelMismatches,
   migrate,
+  newIdBytes,
   openDatabase,
   resetSeedData,
   resolveSeedDataset,
@@ -282,6 +285,45 @@ describe('tag assignments', () => {
 
     const [assignment] = getBookmarkTags(db, bookmark.id);
     expect(assignment?.confidence).toBe(0.8);
+  });
+});
+
+describe('review queue', () => {
+  let db: Database & { datasetId: string };
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('excludes already-assigned pairs and keeps only the latest run per pair', () => {
+    const bookmark = createBookmark(db, {
+      datasetId: db.datasetId,
+      url: 'https://review.test/page',
+    });
+    const tag = createTag(db, { datasetId: db.datasetId, name: 'reviewable' });
+
+    const olderRun = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'test' });
+    createClassificationResult(db, { runId: olderRun, tagId: tag.id, probability: 0.5 });
+    const newerRun = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'test' });
+    createClassificationResult(db, { runId: newerRun, tagId: tag.id, probability: 0.2 });
+    // The insert trigger stamps both runs with the same millisecond; pin distinct
+    // times so "latest" is deterministic rather than decided by the id tiebreak.
+    db.query('UPDATE classification_runs SET created_at = ? WHERE id = ?').run(
+      1_000,
+      uuidToBytes(olderRun),
+    );
+    db.query('UPDATE classification_runs SET created_at = ? WHERE id = ?').run(
+      2_000,
+      uuidToBytes(newerRun),
+    );
+
+    const candidates = listBelowThresholdCandidates(db, db.datasetId, 0.7);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.probability).toBe(0.2);
+    expect(candidates[0]?.runId).toBe(newerRun);
+
+    // Accepting writes the assignment; the pair must leave the queue.
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
+    expect(listBelowThresholdCandidates(db, db.datasetId, 0.7)).toEqual([]);
   });
 });
 
