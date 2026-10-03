@@ -37,7 +37,7 @@ depends on it.
 | Web framework   | **Hono**                             | server routes                                                                            | [hono.dev](https://hono.dev)                                                                         |
 | Reactive client | **React 19 + Hono RPC**              | UI; bundled with **Vite**                                                                | [react.dev](https://react.dev), [hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc)         |
 | UI components   | **shadcn/ui**                        |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
-| Chat UI         | **assistant-ui**                     | AI SDK runtime                                                                           | [assistant-ui.com](https://assistant-ui.com)                                                         |
+| Chat UI         | **AI SDK `useChat` + beui primitives** | React hook runtime over the UI message stream; vendored `agents/` kit in `apps/web`    | [ai-sdk.com](https://ai-sdk.com)                                                                     |
 | Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon (young, pre-1.0)                     | [ollaya.dev](https://ollaya.dev) · [github](https://github.com/ollaya-dev/ollaya)                     |
 | LLM access      | **AI SDK v7**                        | `generateText` + `Output.object`; Ollama locally, OpenRouter in production               | [ai-sdk.com](https://ai-sdk.com)                                                                     |
 | Extraction      | **`@ai-sdk/openai-compatible`** + **`ollama-ai-provider-v2`** | LLM import extraction (OpenRouter primary, Ollama local); deterministic parser fallback | [ai-sdk.dev/providers](https://ai-sdk.dev/providers/openai-compatible)                               |
@@ -57,6 +57,16 @@ does not yet apply plugins (Tailwind included) in its production CLI build. This
 Bun-native constraint: Bun stays the runtime, package manager, test runner, and server, and in
 production the same Bun process serves the built assets through Hono (`serveStatic`), so §9 still
 describes a single process. The trigger to revisit this is in §11.
+
+**Chat (decided).** `POST /api/chat` streams an AI SDK UI message stream from the local Ollama
+daemon (`streamText` + one `searchBookmarks` tool that runs the same hybrid search path as the API
+via `SearchService.chatHits` — compact hits only, never page content). The route is mounted outside
+the typed RPC surface (streams are not JSON) and answers 503 problem+json when `OLLAMA_CHAT_MODEL`
+is unset; like every optional sidecar (§1.5) an unreachable daemon only degrades chat, surfacing an
+error part in the stream while the rest of the app is unaffected. The web side is `@ai-sdk/react`
+`useChat` with a `DefaultChatTransport` pointed at `/api/chat`, rendering tool activity, markdown,
+and citations with the vendored beui primitives (DESIGN.md §Chat). assistant-ui was evaluated and
+replaced by this thinner stack during implementation.
 
 ## 3. System overview
 
@@ -80,6 +90,7 @@ flowchart LR
 
   subgraph sidecars [Sidecars]
     Ollaya["Ollaya daemon\n127.0.0.1:11435"]
+    Ollama["Ollama daemon\n127.0.0.1:11434"]
     Qdrant["Qdrant\n127.0.0.1:6333"]
   end
 
@@ -87,6 +98,7 @@ flowchart LR
   Sites["Web pages\n(to scrape)"]
 
   Web -- "type-safe RPC (Hono AppType)" --> API
+  API -- "chat (AI SDK stream)" --> Ollama
   API --> Core
   Core --> Search
   Core --> DB
@@ -117,6 +129,10 @@ without a server.
 
 - **Ollaya** — the classifier decision daemon, an independent single binary. Runs next to the Bun
   server as a sidecar (§7, §9). Never a Node dependency.
+- **Ollama** — the local LLM daemon serving the chat model (`OLLAMA_CHAT_MODEL`) over its OpenAI-
+  compatible endpoint; also the local fallback for import extraction (§7). Optional like every
+  sidecar (§1.5): unset model → chat answers 503; unreachable daemon → an in-stream error. Do not
+  confuse it with **Ollaya** (the classifier daemon above).
 - **Qdrant** — the vector-serving sidecar, a single local binary (§6). Holds only a rebuildable
   serving copy of the embeddings; SQLite is canonical.
 - **OpenRouter** — embedding provider (document vectors in the worker, query vectors in the API).
@@ -483,6 +499,8 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OLLAYA_URL`            | Ollaya daemon base URL                        | `http://127.0.0.1:11435` |
 | `OLLAYA_API_KEY`        | Bearer key when the daemon is exposed         | unset (loopback)         |
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
+| `OLLAMA_URL`            | Ollama daemon base URL (chat + local extraction fallback) | `http://127.0.0.1:11434` |
+| `OLLAMA_CHAT_MODEL`     | Chat model on the local Ollama daemon; unset disables chat (503, health reports unavailable) | unset |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default raised to `0.7` after observing `laya`'s softly-calibrated probabilities: at `0.5` it cleared ~30 of 67 tags per bookmark | `0.7`                    |
 | `DEFAULT_DATASET`       | Fallback dataset name when the profile has no active-dataset pointer (the pointer — set by seeding or `PATCH /api/profile` — is the primary mechanism) | `default` |
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
@@ -597,6 +615,11 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
    installer default is `~/.local/bin`): loopback only, `ollaya serve` if not already running, and
    a clear skip message when it is absent — classification degrades to manual tagging (§1.5).
 
+Chat additionally needs the local **Ollama daemon** (§2 chat) with the `OLLAMA_CHAT_MODEL` pulled
+(e.g. `ollama pull llama3.2`). `scripts/dev.sh` sources the repo-root `.env` so the server process —
+which boots with the package dir as cwd, where Bun only auto-loads `apps/server/.env` — sees it;
+without the model set, chat degrades to a 503 and health reports it unavailable (§1.5).
+
 The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API
 (`POST /collections/{name}/snapshots`) to skip the startup resync after a restore. Ollaya keeps no
@@ -609,6 +632,7 @@ variables (§7).
 | ------------------------- | -------------------------------------------------------------------------- |
 | OpenRouter unreachable    | Document embeddings not produced; query embedding fails → keyword-only search; classification still runs |
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
+| Ollama unreachable / `OLLAMA_CHAT_MODEL` unset | Chat answers 503 problem+json (unset) or surfaces an in-stream error (daemon down); search, browsing, tagging unaffected |
 | Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync. A sidecar still starting at boot is retried for a few seconds before this kicks in |
 | Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
 | Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
