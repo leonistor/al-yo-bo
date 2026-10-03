@@ -88,7 +88,7 @@ Left sidebar + right content, split by the sidebar's right border. The content c
   `4px` invisible hit area on the right edge with a 1px visible divider; cursor `ew-resize`.
 - **Collapsed:** `56px` icon rail (`w-14`): brand/expand button on top; account and theme
   buttons below it; icon entries with tooltips (label + count) for All, Review, Categories, Tags;
-  footer icons for Import, Vocabulary. Rail buttons render at `icon-lg`. Badges sit at the
+  footer icons for Import, Vocabulary, Share. Rail buttons render at `icon-lg`. Badges sit at the
   button's top-right corner, partially outside so they don't overlap the glyph. Active entries
   use `bg-sidebar-accent`.
 - **Snap rule:** dragging below `200px` snaps to the rail; dragging right from the rail restores the
@@ -108,7 +108,7 @@ Left sidebar + right content, split by the sidebar's right border. The content c
    the count inside** (no icon-text rows).
 3. **Header (expanded):** brand icon + wordmark, total badge, account menu, theme toggle,
    collapse button. The sidebar header — not the topbar — owns Profile & theme.
-4. **Tools (footer, less-frequent):** Import, Vocabulary.
+4. **Tools (footer, less-frequent):** Import, Vocabulary, Share.
 
 ### Command bar (content header, row 1)
 
@@ -187,6 +187,7 @@ stays visible; `Esc` closes; focus is trapped and restored by the sheet primitiv
 | Add bookmark             | `AddBookmarkSheet` — right, `w-full sm:max-w-md`                           |
 | Vocabulary management    | `VocabularyPage` — route `#/vocabulary` inside the shell (too much data for a sheet) |
 | Import                   | `ImportPage` — route `#/import` inside the shell                           |
+| Share                    | `SharePage` — route `#/share` inside the shell                             |
 | Destructive confirmation | `AlertDialog` (the one legitimate modal — interruptions must interrupt)    |
 
 Sheet entrances are `translate-x` + opacity, `200ms ease-out`; reduced-motion falls back to
@@ -235,6 +236,16 @@ opacity-only.
 - **Sticky commit bar** at the right pane's bottom: "Cancel" and a primary "Import N bookmarks" whose
   count tracks the included rows live.
 - Edits stay client-side until commit — the server only ever receives the rows the user confirmed.
+
+## Share page
+
+- Route `#/share`, rendered inside the app shell. Sidebar Tools → Share navigates there.
+- **Purpose:** open the app from other devices on the LAN (e.g. a phone). Lists one bordered card
+  per LAN interface with a QR code (`qrcode.react`) encoding that interface's URL; cards use token
+  colors (`bg-card`, `var(--foreground)` for the QR modules), show the URL as truncated mono text,
+  and a copy button with a transient "Copied" state.
+- **Degradation:** when interfaces can't be read, a single `LocalFallbackCard` shows this device's
+  origin URL as the QR — same card treatment, no error surface.
 
 ## Bookmark imagery
 

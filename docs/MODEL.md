@@ -33,8 +33,10 @@
    The row is not deletable, identity never changes when switching datasets, and there is no user
    axis (no `users` table, no `user_id` columns) anywhere else. Deleting the active dataset only
    nulls the pointer. The active dataset resolves by precedence — profile pointer, then the
-   `DEFAULT_DATASET` fallback name, then the migration sentinel — in one helper shared by the server
-   boot, the CLI scripts, and the profile API (`packages/db` `resolveActiveDataset`).
+   `DEFAULT_DATASET` fallback name — in one helper shared by the server
+   boot, the CLI scripts, and the profile API (`packages/db` `resolveActiveDataset`). The migration
+   sentinel needs no separate step: it is the `default` dataset under its fixed all-zero id, so the
+   name fallback resolves to it in a seeded/migrated database.
 
 ## Entity overview
 

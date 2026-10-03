@@ -133,7 +133,7 @@ apps/
   web/             React 19 app (shadcn/ui, assistant-ui), talks to server via Hono RPC
 packages/
   db/              schema, migrations, PRAGMAs, typed queries
-  search/          FTS5 + RRF fusion + in-process KNN (fallback VectorIndex)
+  search/          RRF fusion + in-process KNN + client-side filtering (fallback VectorIndex)
   vectordb/        Qdrant client (VectorIndex adapter, collection sync)
   embeddings/      EmbeddingClient interface + OpenRouter adapter
   classifier/      Ollaya client (ClassifierClient interface + adapter)
@@ -156,7 +156,10 @@ Rules:
 
 - `shared` imports nothing from the app (no Hono, no Bun-specific runtime, no database client).
   It owns the `VectorIndex` interface and the LE-Float32 BLOB codec shared by `search` and
-  `vectordb`.
+  `vectordb`. Known exception (to be split out in `shared`): the id-generator module
+  (`shared/src/uuid.ts` `newId*`) calls `Bun.randomUUIDv7` — it must only be imported from
+  server-side code; the pure uuid codec functions are browser-safe. See the remediation plan
+  (`docs/plans/quality-remediation.md` 2.3).
 - `db` owns all SQL; only `apps/server` opens/sets up the SQLite file, then hands the handle to
   `core`. `core` composes typed `db` queries into application services but writes no SQL of its own;
   the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
@@ -260,8 +263,10 @@ raw speed at this size. The revisit conditions are in §11.
   pre-`datasetId` collection in place; the boot `sync` then rewrites every payload.
 - **All rows must share one dimension** (fixed by `EMBEDDING_MODEL`); a model change requires a
   re-embed pass. On startup the collection is checked against the SQLite rows: a dims/model
-  mismatch drops and recreates it, and `sync` replays SQLite rows into missing points and deletes
-  orphans. Qdrant data loss is therefore free to recover — never re-embed.
+  mismatch drops and recreates it, and `sync` rebuilds the collection from SQLite with a full
+  delete-all + re-upsert (not an incremental replay) — simple, bounded, and always correct; the
+  boot write cost is acceptable at personal-library scale, revisit around ~50k rows. Qdrant data
+  loss is therefore free to recover — never re-embed.
 - **`bookmark_embeddings.model` stores the configured `EMBEDDING_MODEL`**, not the provider's
   response echo: OpenRouter normalizes model ids (e.g. `text-embedding-3-small` for
   `openai/text-embedding-3-small`), and storing the echo would flag every row as stale on every
@@ -271,10 +276,12 @@ raw speed at this size. The revisit conditions are in §11.
   Index writes are best-effort; a missed write is repaired by the next startup sync.
 - `packages/search` loads all SQLite embeddings into one contiguous normalized matrix at startup
   (the fallback), and `FallbackVectorIndex` routes reads/writes to Qdrant with a 30 s failure
-  cooldown before falling back. Filters are pushed into the Qdrant query; on the fallback path they
-  are applied client-side after an 8× overfetch, with payloads resolved from SQLite in one query.
-  The boot-time `sync` is retried for a few seconds before that fallback engages, because
-  `bun run dev` starts the sidecar in parallel and it may still be binding :6333.
+  cooldown before falling back. Filters apply on **every** backend path: Qdrant filters
+  server-side; any non-filtering index (the in-memory `KnnIndex`, used when `QDRANT_URL=''` or
+  when boot sync fails) is wrapped in `FilteringVectorIndex`, which applies the same client-side
+  overfetch (8×) + filter with payloads resolved from SQLite in one query. The boot-time `sync`
+  is retried for a few seconds before the fallback engages, because `bun run dev` starts the
+  sidecar in parallel and it may still be binding :6333.
 
 ### Query path
 
@@ -433,11 +440,18 @@ Then set `selected = 1` and upsert `bookmark_tags` with `source='classifier'`, `
 `run_id` (the evidence link). Results below the threshold remain evidence and surface in the review
 queue.
 
-**User rows win (decided).** Classifier re-runs skip `source='user'` rows entirely — they are never
-overwritten. Re-running appends new evidence; the effective state is recomputed under the current
-policy without rewriting history. Known limitation: user *removals* are not tracked as negative
-evidence, so a later run can re-assign a removed tag; if that becomes annoying, add a suppression
-table in a later model revision (§11).
+**Retraction (decided).** Applying a run recomputes the effective state, not just appends:
+classifier-sourced `bookmark_tags` rows for the affected bookmarks whose tags the current pass did
+**not** re-qualify are removed (`reconcileClassifierAssignments` in `packages/db`), and
+`classification_results.selected` is reconciled to the latest run. Evidence rows
+(`classification_runs`/`classification_results`) are never deleted — retraction touches effective
+state only.
+
+**User rows win (decided).** Classifier re-runs skip `source='user'` and `source='import'` rows
+entirely — they are never overwritten or retracted. Re-running appends new evidence under the
+current policy without rewriting history. Known limitation: user *removals* are not tracked as
+negative evidence, so a later run can re-assign a removed tag; if that becomes annoying, add a
+suppression table in a later model revision (§11).
 
 ### Stage 5 — Review (human-in-the-loop)
 
@@ -475,7 +489,7 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
 | `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
-| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); otherwise a local Ollama chat model is used when configured | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
+| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); otherwise the local Ollama extraction path uses `OLLAMA_CHAT_MODEL` — a non-`/` `EXTRACT_MODEL` id is currently not honored by the Ollama client (remediation plan 2.4). Read directly from `process.env`, not the resolved config object | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
 | `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
 | `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
 | `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |

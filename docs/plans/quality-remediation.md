@@ -20,72 +20,92 @@ zero `as any`/`@ts-ignore` · dependency graph clean.
 
 - [x] Check bun binary upgrade (`bun upgrade`) and `bun outdated`; apply in-range updates
       (`bun update`), evaluate majors against the gates, revert any major that breaks.
-- [ ] Note applied versions in the commit message (`chore: update deps`).
+- [x] Sidecar binaries: Qdrant 1.19.1 = latest release (matches `install.sh` pin); Ollaya 0.9.0 =
+      latest (reinstalled, sidecar restarted). Fixed `scripts/ollaya/start.sh` (`--host` flag
+      rejected by `ollaya serve`; now exports `OLLAYA_HOST`).
+- [x] Note applied versions in the commit message (`chore: update deps`). — nothing to update;
+      all current.
 
 ## Phase 1 — P0 fixes (blockers before any new features)
 
-### 1.1 Vector: memory/fallback path drops all filters (dataset leak)
+### 1.1 Vector: memory/fallback path drops all filters (dataset leak) — DONE `90dc234`
 - Files: `apps/server/src/vector.ts:118–142`, `packages/search/src/knn.ts:137–141`,
   `packages/search/src/fallback.ts:108–122`, `packages/core/src/services/search.ts:119–123`.
 - Bug: bare `KnnIndex` returned on the `QDRANT_URL=''` path and the boot-failure catch;
   `KnnIndex.search` ignores `_filter`. Only the Qdrant-success path wraps KNN in
   `FallbackVectorIndex` (8× overfetch + client-side filter). Degraded semantic search can
   return other datasets' bookmarks and ignores category/tag filters.
-- Fix: always wrap KNN in the filter-applying layer (reuse `FallbackVectorIndex` with an
-  unreachable primary, or extract a `FilteringVectorIndex` decorator) so filter semantics are
-  identical on every backend path.
-- Test: search-service test asserting dataset/category/tag filtering on the memory path.
+- Fix (as implemented): new `FilteringVectorIndex` decorator in `packages/search` (shares
+  `filterCandidates` with the fallback path); both memory paths in `apps/server/src/vector.ts`
+  route through it. `backend` still reports `'memory'`.
+- Test: `packages/search/tests/filtering.test.ts` — dataset/category/tag filtering on the real
+  memory path, rank preservation, unfiltered top-k.
 
-### 1.2 Importer: re-import replaces metadata (destroys scrape provenance + image refs)
+### 1.2 Importer: re-import replaces metadata (destroys scrape provenance + image refs) — DONE `90dc234`
 - Files: `packages/importer/src/ingest.ts:135–150`, `packages/db/src/queries/bookmarks.ts:207–214`.
 - Bug: `updateBookmark` replaces `metadata` wholesale; each re-import wipes `metadata.scrape`
   (lastError/finalUrl/truncated) and `metadata.image`, and re-triggers screenshot/og discovery
   (`listBookmarkIdsMissingScreenshot`). ARCHITECTURE §7 promises merge-by-URL.
-- Fix: shallow-merge on ingest (`{ ...existing.metadata, import: {...} }`) — read existing row
-  first or use `json_set` in the db layer.
-- Test: re-import preserves pre-existing `metadata.scrape`/`metadata.image`.
+- Fix (as implemented): shallow-merge in the db layer — `upsertBookmarkByUrl` merge branch does
+  `{ ...existing.metadata, ...input.metadata }`; `updateBookmark` stays a replace-setter for
+  internal writers that merge manually.
+- Test: `packages/importer/tests/importer.test.ts` re-import regression (scrape/image survive,
+  `metadata.import.file` refreshed).
 
-### 1.3 Classifier: re-runs never retract stale assignments
+### 1.3 Classifier: re-runs never retract stale assignments — DONE `5bb20a4`
 - Files: `packages/core/src/enrichment/classify.ts:159–185`,
-  `packages/db/src/queries/` (add retraction query), `packages/core/tests/classify.test.ts`.
-- Bug: policy only writes `bookmark_tags` rows. Tags assigned under an old policy/threshold
-  stick forever; effective state drifts from immutable evidence (contradicts §7 Stage 4/6:
-  "effective state is recomputed under the current policy").
-- Fix: before applying a run's results, delete `source='classifier'` rows for in-scope
-  (bookmark, tag) pairs not re-qualified by this run. Never touch `source='user'`/`'import'`.
-  Keep `classification_results` immutable; reconcile `selected` flags.
-- Test: re-run retraction regression (below-threshold now → row removed; user rows win).
+  `packages/db/src/queries/classification.ts` (`reconcileClassifierAssignments`),
+  `packages/core/tests/classify.test.ts`.
+- Bug: policy only wrote `bookmark_tags` rows; tags assigned under an old policy/threshold
+  stuck forever; `selected` flags drifted from immutable evidence.
+- Fix (as implemented): after a run, classifier-sourced rows for affected bookmarks whose tags
+  were not re-qualified are retracted (dataset-scoped, `source='classifier'` only — user/import
+  rows untouched); `selected` reconciled to the latest run; evidence rows immutable; vector
+  payload resynced on assign/retract. `ClassifyOutcome` gained a `retracted` count.
+- Tests: retraction on below-threshold re-run, user/import survival, `selected` reconciliation,
+  evidence immutability. Wrong vocabulary comment in `review.ts` fixed in the same commit.
 
-### 1.4 Web: shadow-removal pass on `ui/*` (elevation policy)
+### 1.4 Web: shadow-removal pass on `ui/*` (elevation policy) — DONE `740aabb`
 - Files: `apps/web/src/components/ui/{card,button,input,select,dialog,alert-dialog,sheet,command,dropdown-menu,table,empty,tabs}.tsx`,
   `badge.tsx:7` (`rounded-4xl` → pill/token), `agents/message-bubble.tsx:342` (hardcoded `#000`
   mask → token), `ui/badge.tsx:4` (`cn` import from `"cn"` → `@/lib/utils`).
-- Bug: generated primitives use shadows pervasively; DESIGN.md elevation policy allows shadows
+- Bug: generated primitives used shadows pervasively; DESIGN.md elevation policy allows shadows
   only on overlays (popover, dropdown, command palette, sheets).
-- Fix: remove non-overlay shadows (`shadow-xs/sm/md/lg` + pseudo-shadows), keep overlay shadows;
-  keep token radii; do not otherwise restyle components.
+- Fix (as implemented): non-overlay shadows + pseudo-shadow layers removed from card, button,
+  input, select trigger, table (card variant), empty, tabs, command panel; overlays (dialog,
+  alert-dialog, sheet, popover, dropdown-menu, command/select/autocomplete popups) keep their
+  floating shadows. `badge.tsx` → `rounded-full` + alias import; mask hex → `var(--color-black)`.
 
 ### Phase 1 gates
-- Full gates + `bun run build`. Manual smoke: dev boot with `QDRANT_URL=''` → semantic search
-  scoped to active dataset; re-import an example collection; classifier re-run.
+- [x] Full gates: `bun run typecheck` (all 10 packages), `bun run lint` (warnings-only,
+      pre-existing), `bun test` 227/227 across 23 files (up from 217 — new regression tests).
+- Manual smoke (optional, covered by automated tests): dev boot with `QDRANT_URL=''` → semantic
+  search scoped to active dataset (`filtering.test.ts` exercises the real memory path); re-import
+  preserves provenance (importer regression test); classifier re-run retracts (classify suite).
 
 ## Phase 1.5 — Doc drift sweep (single `docs:` commit)
 
 Update docs to match reality; where Phase 1 changes behavior, describe the new behavior:
 
-- [ ] §4 "shared … no Bun-specific runtime" vs `packages/shared/src/uuid.ts:37–43`
-      (`Bun.randomUUIDv7`) — either document the server-only generator module or fix in P1 (1.9).
-- [ ] §6 Qdrant sync described as replay/orphan-delete vs full delete-all + re-upsert
-      (`packages/vectordb/src/qdrant-index.ts:326–369`) — align doc with implementation.
-- [ ] §6 "filters applied client-side after 8× overfetch on the fallback path" — restate so it
-      is true for every backend path (after 1.1).
-- [ ] §7 EXTRACT_MODEL config table vs `apps/server/src/extract.ts:147–159` behavior.
-- [ ] §4 layout line `search/ FTS5 + RRF` → "RRF fusion + KNN fallback" (FTS5 SQL lives in db).
-- [ ] §7 Stage 4/6 retraction semantics (after 1.3).
-- [ ] `packages/core/src/services/review.ts:7–9` comment says classifier creates vocabulary —
-      wrong (MODEL.md principle 5); fix comment in 1.3's commit.
-- [ ] MODEL.md §5 migration sentinel wording vs `resolveActiveDataset` behavior.
-- [ ] DESIGN.md: document the Share page treatment (exists in sidebar + code, missing from doc).
+- [x] §4 "shared … no Bun-specific runtime" vs `packages/shared/src/uuid.ts:37–43`
+      (`Bun.randomUUIDv7`) — documented as a known server-only exception with a pointer to 2.3
+      (the code split itself remains P1 2.3).
+- [x] §6 Qdrant sync described as replay/orphan-delete vs full delete-all + re-upsert
+      (`packages/vectordb/src/qdrant-index.ts:326–369`) — doc aligned with implementation
+      (full rebuild by design; revisit ~50k rows).
+- [x] §6 "filters applied client-side after 8× overfetch on the fallback path" — restated:
+      filters apply on every backend path (`FilteringVectorIndex` wraps the memory KNN).
+- [x] §7 EXTRACT_MODEL config table — documents actual behavior (non-`/` id not honored by the
+      Ollama client; read from `process.env`); the code fix remains P1 2.4.
+- [x] §4 layout line `search/ FTS5 + RRF` → "RRF fusion + in-process KNN + client-side
+      filtering" (FTS5 SQL lives in db, by rule).
+- [x] §7 Stage 4/6 retraction semantics — explicit "Retraction (decided)" paragraph added
+      (matches the 1.3 implementation).
+- [x] `packages/core/src/services/review.ts:7–9` comment said classifier creates vocabulary —
+      fixed in the 1.3 commit.
+- [x] MODEL.md §5 migration sentinel wording — precedence now reflects `resolveActiveDataset`
+      (sentinel is the `default` dataset, covered by the name fallback).
+- [x] DESIGN.md: Share page documented (Tools/footer lists, surface table, "Share page" section).
 
 ## Phase 2 — P1 (architecture / robustness)
 
