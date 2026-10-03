@@ -84,9 +84,11 @@ Left sidebar + right content, split by the sidebar's right border. The content c
 
 - **Expanded:** default `256px`; drag-resizable between `200px` and `360px`. The resize handle is a
   `4px` invisible hit area on the right edge with a 1px visible divider; cursor `ew-resize`.
-- **Collapsed:** `56px` icon rail (`w-14`): expand button on top; icon entries with tooltips
-  (label + count) for All, Review, Categories, Tags; footer icons for Import, Vocabulary, Profile.
-  Active entries use `bg-sidebar-accent`.
+- **Collapsed:** `56px` icon rail (`w-14`): brand/expand button on top; account and theme
+  buttons below it; icon entries with tooltips (label + count) for All, Review, Categories, Tags;
+  footer icons for Import, Vocabulary. Rail buttons render at `icon-lg`. Badges sit at the
+  button's top-right corner, partially outside so they don't overlap the glyph. Active entries
+  use `bg-sidebar-accent`.
 - **Snap rule:** dragging below `200px` snaps to the rail; dragging right from the rail restores the
   last expanded width.
 - **Persistence:** `localStorage` — `ayb:sidebar:width`, `ayb:sidebar:collapsed`,
@@ -102,8 +104,9 @@ Left sidebar + right content, split by the sidebar's right border. The content c
 2. **Library — collapsible groups:** each Section is a `CollapsibleSection` header; category rows
    indent `pl-4` under a 2px `border-l` guide. Tags are a collapsible group rendered as **pills with
    the count inside** (no icon-text rows).
-3. **Tools (footer, less-frequent):** Import, Vocabulary, Profile & theme (dropdown: theme
-   light/dark/system + profile identity). The sidebar footer — not the topbar — owns these.
+3. **Header (expanded):** brand icon + wordmark, total badge, account menu, theme toggle,
+   collapse button. The sidebar header — not the topbar — owns Profile & theme.
+4. **Tools (footer, less-frequent):** Import, Vocabulary.
 
 ### Command bar (content header, row 1)
 
@@ -272,3 +275,17 @@ opacity-only.
 - [ ] Focus trap verified on every sheet (`BookmarkDetailSheet`, `AddBookmarkSheet`) and the
       `AlertDialog` triggered from within; focus restored on close.
 - [ ] Verify `--muted-foreground` against `--background` in both themes; darken if below AA.
+
+## Deferred UI/UX improvements (iteration 2)
+
+1. Card elevation/radius normalization — base Card uses `shadow-xs` + `rounded-2xl`
+   (`ui/card.tsx:15`), deviating from the flat no-shadow aesthetic and `--radius` token; restyle
+   to flat, token-only radii.
+2. Unify sidebar nav trees — mobile sheet body (`Sidebar.tsx` ~:261-371) and collapsed rail
+   (~:570-617) are parallel nav trees with diverging badge/count rendering; extract one shared
+   renderer.
+3. Unify tag pill wrappers — `TagItem` (`Sidebar.tsx` ~:120-132) and `BookmarkTagPill`
+   (`BookmarkList.tsx` ~:155-166) both wrap `TagPill` with slightly different behavior;
+   consolidate.
+4. Motion + empty-state pass — apply DESIGN.md motion tokens to sidebar collapse/sheet
+   transitions; review empty/skeleton states against imagery fallback rules.
