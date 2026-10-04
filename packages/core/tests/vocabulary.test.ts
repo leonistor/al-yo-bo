@@ -66,6 +66,20 @@ describe('VocabularyService — category tree', () => {
     expect(service.updateCategory(a.id, { name: 'A' }).name).toBe('A');
   });
 
+  test('a garbage sort-order key maps to ValidationError instead of a raw db error', () => {
+    const { service } = makeService();
+    const stuck = service.createCategory({ name: 'Stuck' });
+    const other = service.createCategory({ name: 'Other' });
+
+    // An explicit key outside the [0-9A-Za-z] alphabet is stored as-is by the
+    // db move ('~' sorts after every alnum in BINARY, so it becomes the tail);
+    // the next append walks orderAfter over it and asserts (db/sort-order.ts).
+    service.moveCategory(stuck.id, null, '~~');
+
+    expect(() => service.moveCategory(other.id, null)).toThrow(ValidationError);
+    expect(() => service.moveCategory(other.id, null)).toThrow(/sort-order key/);
+  });
+
   test('moveCategory re-parents the subtree and refuses cycles', () => {
     const { service } = makeService();
 

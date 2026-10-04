@@ -316,6 +316,45 @@ describe('bookmark API', () => {
     expect(body.title).toContain('url');
   });
 
+  test('malformed JSON bodies are a 400 problem+json, not a 500', async () => {
+    // The jsonBody validator path (Hono wraps the parse error in an
+    // HTTPException 400, mapped by onError in errors.ts).
+    const bookmark = await app.request('/api/bookmarks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{ not json',
+    });
+    expect(bookmark.status).toBe(400);
+    expect(((await bookmark.json()) as { type: string }).type).toContain('validation');
+
+    // The direct `c.req.json()` path in readImportText (raw SyntaxError).
+    const preview = await app.request('/api/import/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{ not json',
+    });
+    expect(preview.status).toBe(400);
+    expect(((await preview.json()) as { type: string }).type).toContain('validation');
+  });
+
+  test('a calendar-invalid date-only param is a 400, not silently empty', async () => {
+    // `2024-02-30` matches the YYYY-MM-DD shape but is not a real day.
+    const urls = [
+      '/api/bookmarks?dateFrom=2024-02-30',
+      '/api/export?formats=json&dateTo=2024-02-30',
+    ];
+    const results = await Promise.all(
+      urls.map(async (url) => {
+        const response = await app.request(url);
+        return { url, status: response.status, type: ((await response.json()) as { type: string }).type };
+      }),
+    );
+    for (const { url, status, type } of results) {
+      expect(status, url).toBe(400);
+      expect(type).toContain('validation');
+    }
+  });
+
   test('assigns and removes a user tag', async () => {
     const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
       items: { id: string }[];

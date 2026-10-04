@@ -5,6 +5,7 @@
  */
 
 import { DomainError, type DomainErrorCode } from '@al-yo-bo/core';
+import { HTTPException } from 'hono/http-exception';
 
 /** `DomainErrorCode` → HTTP status. */
 const STATUS_BY_CODE: Record<DomainErrorCode, number> = {
@@ -52,6 +53,20 @@ export function toProblemDetails(error: unknown): ProblemDetails {
       status: STATUS_BY_CODE[error.code],
       type: TYPE_BY_CODE[error.code],
       title: error.message,
+    };
+  }
+  // Body-parse failures are client errors, never 500s: the jsonBody validator
+  // wraps `c.req.json()` in an HTTPException 400 ("Malformed JSON in request
+  // body"), while the direct reads (import preview, reorder body) surface the
+  // platform's raw SyntaxError. Both map to the validators' 400 problem+json.
+  if (
+    error instanceof SyntaxError ||
+    (error instanceof HTTPException && error.status === 400)
+  ) {
+    return {
+      status: 400,
+      type: 'validation',
+      title: error instanceof HTTPException ? error.message : 'Malformed JSON in request body',
     };
   }
   return { status: 500, type: 'internal', title: 'Internal error' };

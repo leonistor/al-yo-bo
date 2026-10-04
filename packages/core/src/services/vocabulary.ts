@@ -106,6 +106,16 @@ export interface VocabularyService {
  * category anymore. Every mutation emits the coarse `categories.changed` /
  * `tags.changed` events (ARCHITECTURE §9/H5).
  */
+/**
+ * db's sort-order primitives reject keys outside the alphabet with a raw
+ * Error ("Invalid ... sort-order key", db/sort-order.ts). The HTTP edge only
+ * checks non-empty, so a garbage `sortOrder` (or a garbage key already stored)
+ * reaches the midpoint walk — it is caller input and maps to 400, not 500.
+ */
+function isSortOrderKeyError(error: Error): boolean {
+  return /^Invalid .*sort-order key/.test(error.message);
+}
+
 export function createVocabularyService(deps: VocabularyServiceDeps): VocabularyService {
   const { db, jobs, vector, events } = deps;
 
@@ -218,6 +228,9 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
         // descendant would close a cycle; the db refuses and we map it.
         if (error instanceof CategoryCycleError) {
           throw new ValidationError('Cannot move a category under its own subtree');
+        }
+        if (error instanceof Error && isSortOrderKeyError(error)) {
+          throw new ValidationError(error.message);
         }
         throw error;
       }

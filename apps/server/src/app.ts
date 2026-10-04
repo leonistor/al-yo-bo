@@ -1,5 +1,4 @@
 import {
-  DomainError,
   NotFoundError,
   ValidationError,
   type BookmarkPatch,
@@ -155,7 +154,16 @@ function parseIsoDate(value: string | undefined, field: string, bound: 'from' | 
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const time = bound === 'from' ? 'T00:00:00.000Z' : 'T23:59:59.999Z';
-    return Date.parse(`${value}${time}`);
+    const ms = Date.parse(`${value}${time}`);
+    // The regex only checks shape, and Date.parse does not reject bad
+    // calendar days — engines silently roll `2024-02-30` over into March, so
+    // a NaN check alone is insufficient. Round-trip the day to make the
+    // rollover (or still-NaN) a 400 instead of a silently empty result set.
+    const rolledOver = !Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 10) !== value;
+    if (rolledOver) {
+      throw new ValidationError(`"${field}" must be an ISO date (YYYY-MM-DD)`);
+    }
+    return ms;
   }
   const ms = Date.parse(value);
   if (!Number.isFinite(ms)) {
@@ -583,7 +591,9 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
 
   app.onError((err, c) => {
     const problem = toProblemDetails(err);
-    if (!(err instanceof DomainError)) {
+    // Only genuine internal failures are logged: mapped domain/parse errors
+    // (4xx) are client noise, and logging them on every bad request is spam.
+    if (problem.status >= 500) {
       console.error(err);
     }
     return c.json(
