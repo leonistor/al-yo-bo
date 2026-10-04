@@ -1,30 +1,36 @@
 # al-yo-bo — Architecture
 
-> Reference document. It describes the intended shape of the system, the cross-cutting decisions,
-> and the subsystems that are not obvious from the code. It is written to be safe for humans and
-> agents to rely on: decisions are stated explicitly and each one has a rationale.
+> v2, rewritten 2026-10-04 for the full rewrite (see `docs/plans/rewrite-v2.md`). Reference
+> document. It describes the intended shape of the system, the cross-cutting decisions, and the
+> subsystems that are not obvious from the code. It is written to be safe for humans and agents to
+> rely on: decisions are stated explicitly and each one has a rationale.
 >
 > Related docs: [README](../README.md) (human overview), [MODEL.md](./MODEL.md) (data model),
-> [DESIGN.md](./DESIGN.md) (UI system), [AGENTS.md](../AGENTS.md) (agent instructions).
+> [DESIGN.md](./DESIGN.md) (UI system), [AGENTS.md](../AGENTS.md) (agent instructions),
+> [rewrite-research.md](./plans/rewrite-research.md) (superseded research record),
+> [rewrite-v2.md](./plans/rewrite-v2.md) (the approved rewrite plan).
 
 ## 1. Principles & constraints
 
 These constrain every later decision. A change that violates one needs an explicit note here first.
 
 1. **Bun-native.** Prefer Bun's built-in APIs and ecosystem. Node only when a dependency forces it.
-2. **One durable store.** Relational data, full-text search, and the durable copy of the vector data
-   live in one SQLite file. Nothing else ever holds the only copy of durable data. Rebuildable
-   *serving* structures may live outside the file (FTS5 inside it; a local Qdrant collection outside
-   it): losing one is repaired from SQLite without re-embedding (§6).
- 3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted or
-    cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every feature
-    must degrade gracefully when a sidecar is down. The single user has a profile (a person — MODEL.md
-    principle 8); it is not an account system, and datasets are that person's content workspaces, not
-    users or tenants.
+2. **One durable store.** Relational data, full-text search, and the durable copy of the vector
+   data live in one SQLite file. Nothing else ever holds the only copy of durable data. Rebuildable
+   *serving* structures may live outside the file (FTS5 inside it; a local Qdrant collection
+   outside it): losing one is repaired from SQLite without re-embedding (§6).
+3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted
+   or cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every
+   feature must degrade gracefully when a sidecar is down. The single user has a profile (a person
+   — MODEL.md principle 8); it is not an account system.
 4. **Docs-first.** Architecture, data model, and design are decided in `docs/` before code. Prefer
    well-documented, open-source components over bespoke infrastructure.
 5. **Classifier is optional.** Search, tagging, and browsing must all work with the classifier
    offline or absent. Classification enriches; it never gates core features.
+6. **Real-time is coarse and lossy by design.** Live updates travel as coarse domain events
+   (§9) whose only job is to trigger refetches. An event is a hint, never a payload of record;
+   a client that misses one still converges on the next event, refocus, or refetch. Events
+   originate exclusively in `packages/core` services.
 
 ## 2. Technology stack
 
@@ -34,29 +40,30 @@ depends on it.
 | Layer           | Choice                               | Notes                                                                                    | URL                                                                                                  |
 | --------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Runtime         | **Bun**                              | Node only if a dependency forces it                                                      | [bun.com](https://bun.com)                                                                           |
-| Web framework   | **Hono**                             | server routes                                                                            | [hono.dev](https://hono.dev)                                                                         |
+| Web framework   | **Hono**                             | server routes; hosts the MCP server (§8)                                                 | [hono.dev](https://hono.dev)                                                                         |
 | Reactive client | **React 19 + Hono RPC**              | UI; bundled with **Vite**                                                                | [react.dev](https://react.dev), [hono.dev/docs/guides/rpc](https://hono.dev/docs/guides/rpc)         |
 | UI components   | **shadcn/ui**                        |                                                                                          | [ui.shadcn.com](https://ui.shadcn.com)                                                               |
 | Chat UI         | **AI SDK `useChat` + beui primitives** | React hook runtime over the UI message stream; vendored `agents/` kit in `apps/web`    | [ai-sdk.com](https://ai-sdk.com)                                                                     |
-| Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon (young, pre-1.0)                     | [ollaya.dev](https://ollaya.dev) · [github](https://github.com/ollaya-dev/ollaya)                     |
+| AI layer        | **AI SDK v7 via `packages/ai`**      | one typed config + provider registry; embeddings, extraction, chat, agents; MCP *client* | [ai-sdk.com](https://ai-sdk.com)                                                                     |
+| MCP server      | **MCP TS SDK v2 + `@modelcontextprotocol/hono`** | bookmarks MCP server mounted in the Hono app (§8)                            | [modelcontextprotocol.io](https://modelcontextprotocol.io)                                           |
+| Classifier      | **Ollaya**                           | open decision models, single binary, sidecar daemon (young, pre-1.0); bespoke `ClassifierClient` in `packages/ai` — it is a decision server, not an LLM gateway | [ollaya.dev](https://ollaya.dev) · [github](https://github.com/ollaya-dev/ollaya) |
 | LLM access      | **AI SDK v7**                        | `generateText` + `Output.object`; Ollama locally, OpenRouter in production               | [ai-sdk.com](https://ai-sdk.com)                                                                     |
-| Extraction      | **`@ai-sdk/openai-compatible`** + **`ollama-ai-provider-v2`** | LLM import extraction (OpenRouter primary, Ollama local); deterministic parser fallback | [ai-sdk.dev/providers](https://ai-sdk.dev/providers/openai-compatible)                               |
+| Extraction      | **`@ai-sdk/openai-compatible`** + **`ollama-ai-provider-v2`** | LLM import extraction (OpenRouter primary, Ollama local); deterministic parser fallback | [ai-sdk.dev/providers](https://ai-sdk.dev/providers/openai-compatible)       |
 | Screenshots     | **`Bun.WebView`** (experimental)     | zero-install WebKit capture (Chrome over CDP on Linux/Windows); `og:image` fallback       | [bun.com/docs/api/webview](https://bun.com/docs/api/webview)                                         |
-| Embeddings      | **OpenRouter** + **SQLite BLOBs**    | durable vector copy in the DB file; query text embedded at request time                  | [openrouter.com](https://openrouter.com)                                                             |
+| Embeddings      | **OpenRouter (via `packages/ai`)** + **SQLite BLOBs** | durable vector copy in the DB file; query text embedded at request time  | [openrouter.com](https://openrouter.com)                                                             |
 | Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
 | Search          | **SQLite FTS5** + **RRF fusion**     | keyword (FTS5) + semantic (Qdrant/KNN), fused app-side                                   | [sqlite.org](https://sqlite.org)                                                                     |
-| Background jobs | **In-process job loop** (Bun)         | sequential, idempotent jobs with bounded retries (§8)                                     |                                                                                                      |
-| Configuration   | **env**                              |                                                                                          | [bun.com/docs/runtime/environment-variables](https://bun.com/docs/runtime/environment-variables)     |
+| Background jobs | **In-process job loop** (Bun)         | sequential, idempotent jobs with bounded retries (§10)                                    |                                                                                                      |
+| Live updates    | **In-process event bus → `streamSSE`** | core emits coarse events; web invalidates TanStack Query caches (§9)                    |                                                                                                      |
+| Configuration   | **env**                              | parsed once by `packages/ai` config (§8)                                                 | [bun.com/docs/runtime/environment-variables](https://bun.com/docs/runtime/environment-variables)     |
 | Deployment      | **shell scripts**                    | a `nohup bun run server.ts` on the server, shell script to copy and unpack a dist archive |                                                                                                      |
-
-Patterns worth studying while scaffolding: [Hono RPC and React Monorepo Template](https://vladimir.vovk.in/blog/hono-rpc-and-react-monorepo-template), [Bun SQL Backend for Frontend Devs](https://samuellawrentz.com/blog/bun-sql-backend-for-frontend-devs/) (the latter is a backend-only pattern — it says nothing about the web build).
 
 **Web build (decided).** `apps/web` is a Vite + React 19 SPA. Vite is used for local dev and the
 production build (`apps/web/dist`) because shadcn/ui's CLI targets Vite and Bun's fullstack bundler
-does not yet apply plugins (Tailwind included) in its production CLI build. This does not weaken the
-Bun-native constraint: Bun stays the runtime, package manager, test runner, and server, and in
-production the same Bun process serves the built assets through Hono (`serveStatic`), so §9 still
-describes a single process. The trigger to revisit this is in §11.
+does not yet apply plugins (Tailwind included) in its production CLI build. This does not weaken
+the Bun-native constraint: Bun stays the runtime, package manager, test runner, and server, and in
+production the same Bun process serves the built assets through Hono (`serveStatic`), so §11 still
+describes a single process. The trigger to revisit this is in §13.
 
 **Chat (decided).** `POST /api/chat` streams an AI SDK UI message stream from the local Ollama
 daemon (`streamText` + one `searchBookmarks` tool that runs the same hybrid search path as the API
@@ -65,25 +72,29 @@ the typed RPC surface (streams are not JSON) and answers 503 problem+json when `
 is unset; like every optional sidecar (§1.5) an unreachable daemon only degrades chat, surfacing an
 error part in the stream while the rest of the app is unaffected. The web side is `@ai-sdk/react`
 `useChat` with a `DefaultChatTransport` pointed at `/api/chat`, rendering tool activity, markdown,
-and citations with the vendored beui primitives (DESIGN.md §Chat). assistant-ui was evaluated and
-replaced by this thinner stack during implementation.
+and citations with the vendored beui primitives (DESIGN.md §Chat).
 
 ## 3. System overview
 
-The app is one Bun process that serves the API, hosts the worker, and talks to a small number of
-external participants. Everything durable is in the SQLite file.
+The app is one Bun process that serves the API, the MCP server, hosts the worker, and talks to a
+small number of external participants. Everything durable is in the SQLite file.
 
 ```mermaid
 flowchart LR
   subgraph browser [Browser]
-    Web["React 19 + shadcn/ui\nassistant-ui"]
+    Web["React 19 + shadcn/ui\nTanStack Query + SSE"]
   end
+
+  MCPC["MCP clients\n(Claude Desktop, agents)"]
 
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
-    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\nreview · import · enrichment · profile · health"]
+    MCP["MCP server\n(MCP TS SDK v2, Hono adapter)"]
+    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\ncategories · review · import\nenrichment · profile · health"]
+    Bus["Event bus\n(core emits, SSE fans out)"]
     Worker["Job worker (in-process loop)\nscrape · embed · classify · screenshot · reindex"]
     Search["Search module\nFTS5 + vector top-k + RRF"]
+    AI["AI layer\n(packages/ai)"]
   end
 
   DB[("bookmarks.db\n(SQLite: data + FTS5 + vector copies)")]
@@ -98,45 +109,55 @@ flowchart LR
   Sites["Web pages\n(to scrape)"]
 
   Web -- "type-safe RPC (Hono AppType)" --> API
-  API -- "chat (AI SDK stream)" --> Ollama
+  API -- "SSE (coarse events, §9)" --> Web
+  MCPC -- "MCP (streamable HTTP, read-only)" --> MCP
   API --> Core
+  MCP --> Core
   Core --> Search
+  Core --> AI
   Core --> DB
-  Core --> OR
-  Core --> Ollaya
+  Core --> Bus
+  Bus --> API
   Worker --> DB
-  Worker --> Ollaya
-  Worker --> OR
+  Worker --> AI
   Worker --> Sites
   Search --> DB
   Search --> Qdrant
+  AI --> Ollaya
+  AI --> Ollama
+  AI --> OR
 ```
 
-**Processes.** The API and the job worker run inside the same Bun process in the default
-single-user deployment (the worker is an in-process loop, §8); nothing in the job code assumes
-co-location, so extraction into a separate entry point stays possible. The worker is a
-durability boundary (see §8), so it is shown separately.
+**Processes.** The API, MCP server, event bus, and job worker run inside the same Bun process in
+the default single-user deployment (the worker is an in-process loop, §10); nothing in the job code
+assumes co-location, so extraction into a separate entry point stays possible. The worker is a
+durability boundary (§10), so it is shown separately.
 
 **Transport vs. domain.** `apps/server` (the Hono API) is a thin transport adapter: it parses HTTP,
 calls exactly one `packages/core` service, and maps domain errors to problem+json. `packages/core`
 owns the application services — search orchestration, bookmark CRUD and its re-run triggers,
-vocabulary, review, import, the enrichment queue, the single-user profile, and health. The app edge
-constructs the concrete adapters (Qdrant stack, OpenRouter embeddings, Ollaya client, scraper,
-avatar file store) and injects them as interfaces, so core stays transport-neutral and testable
-without a server.
+vocabulary, categories (tree), review, import, the enrichment queue, the single-user profile, and
+health. The app edge constructs the concrete adapters (AI layer, Qdrant stack, scraper, avatar file
+store) and injects them as interfaces, so core stays transport-neutral and testable without a
+server.
 
 **External participants.**
 
 - **Ollaya** — the classifier decision daemon, an independent single binary. Runs next to the Bun
-  server as a sidecar (§7, §9). Never a Node dependency.
-- **Ollama** — the local LLM daemon serving the chat model (`OLLAMA_CHAT_MODEL`) over its OpenAI-
-  compatible endpoint; also the local fallback for import extraction (§7). Optional like every
-  sidecar (§1.5): unset model → chat answers 503; unreachable daemon → an in-stream error. Do not
-  confuse it with **Ollaya** (the classifier daemon above).
+  server as a sidecar (§7, §11). Never a Node dependency. It is a **decision server** (typed
+  `choice`/`score`/`noul` questions → calibrated probabilities; it never generates text and has no
+  OpenAI-compatible endpoints), so it can never be an AI SDK provider — it stays behind its
+  bespoke `ClassifierClient` boundary, centrally configured (§8). It already ships its own MCP
+  server: it is something we *expose to* agents, not wrap.
+- **Ollama** — the local LLM daemon serving the chat model (`OLLAMA_CHAT_MODEL`) over its
+  OpenAI-compatible endpoint; also the local fallback for import extraction (§7). Optional like
+  every sidecar (§1.5): unset model → chat answers 503; unreachable daemon → an in-stream error. Do
+  not confuse it with **Ollaya** (the classifier daemon above).
 - **Qdrant** — the vector-serving sidecar, a single local binary (§6). Holds only a rebuildable
   serving copy of the embeddings; SQLite is canonical.
-- **OpenRouter** — embedding provider (document vectors in the worker, query vectors in the API).
-  Optional at the database level: bookmarks without embeddings are still findable by keyword.
+- **OpenRouter** — embedding + LLM provider via `packages/ai` (document vectors in the worker,
+  query vectors in the API, extraction models). Optional at the database level: bookmarks without
+  embeddings are still findable by keyword.
 - **The open web** — fetched by the scraper job only; the app never proxies page loads for the UI.
 
 ## 4. Monorepo layout
@@ -145,17 +166,19 @@ Bun workspaces. The goal is a small, acyclic package graph, not an exhaustive ta
 
 ```
 apps/
-  server/          Hono routes (transport adapters), RPC contract, worker entry, bootstrapping
-  web/             React 19 app (shadcn/ui, assistant-ui), talks to server via Hono RPC
+  server/          Hono routes (transport adapters), RPC contract, worker entry,
+                   event bus → SSE fan-out, MCP mount, bootstrapping
+  web/             React 19 app (shadcn/ui, TanStack Query + SSE), talks to server via Hono RPC
 packages/
-  db/              schema, migrations, PRAGMAs, typed queries
+  db/              schema (born at 0001), PRAGMAs, typed queries, seed
   search/          RRF fusion + in-process KNN + client-side filtering (fallback VectorIndex)
   vectordb/        Qdrant client (VectorIndex adapter, collection sync)
-  embeddings/      EmbeddingClient interface + OpenRouter adapter
-  classifier/      Ollaya client (ClassifierClient interface + adapter)
+  ai/              one AI layer: typed config, provider registry, EmbeddingClient +
+                   ClassifierClient interfaces, OpenRouter/Ollaya/Ollama adapters, health probes
   importer/        markdown collection-file parser, LLM extraction port, and ingest
   exporter/        bookmark export serializers (Netscape HTML, JSON, CSV, markdown collection)
-  core/            domain/application services (search, bookmarks, enrichment, ...); no HTTP
+  core/            domain/application services (search, bookmarks, categories, vocabulary, ...);
+                   the only event-emission layer; no HTTP
   shared/          domain types + utilities (no framework imports)
 ```
 
@@ -163,9 +186,9 @@ packages/
 
 ```
 web ─▶ shared
-server ─▶ core, db, search, vectordb, embeddings, classifier, shared
-core ─▶ db, importer, exporter, search, embeddings, classifier, shared
-db, search, vectordb, embeddings, classifier, importer ─▶ shared
+server ─▶ core, db, search, vectordb, ai, shared
+core ─▶ db, importer, exporter, search, ai, shared
+db, search, vectordb, ai, importer ─▶ shared
 exporter ─▶ shared
 importer ─▶ db
 ```
@@ -175,20 +198,26 @@ Rules:
 - `shared` imports nothing from the app (no Hono, no Bun-specific runtime, no database client).
   It owns the `VectorIndex` interface, the LE-Float32 BLOB codec shared by `search` and
   `vectordb`, and the browser-safe uuid codec (`uuid-codec.ts`). Id generation
-  (`Bun.randomUUIDv7`) lives in `packages/db` (`db/src/uuid.ts`) — the layer that mints row keys —
-  so the web bundle can never pull a Bun API through `shared`.
+  (`Bun.randomUUIDv7`) and fractional-index keys live in `packages/db` — the layer that mints row
+  keys — so the web bundle can never pull a Bun API through `shared`.
 - `db` owns all SQL; only `apps/server` opens/sets up the SQLite file, then hands the handle to
-  `core`. `core` composes typed `db` queries into application services but writes no SQL of its own;
-  the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
+  `core`. `core` composes typed `db` queries into application services but writes no SQL of its
+  own; the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
   `apps/server`.
-- `core` is transport-neutral: it depends on the `EmbeddingClient`/`ClassifierClient` interfaces and
-  a `VectorProvider` port, never on concrete adapters or Hono. It receives an already-open database
-  and a vector provider; only `apps/server` constructs the concrete implementations.
-- `search`, `vectordb`, `embeddings`, and `classifier` take and return plain data, so they are
-  testable without a running server.
+- **`packages/ai` interface/adapter split (decided).** `core` may import only the **interface**
+  modules from `ai` (`EmbeddingClient`, `ClassifierClient` and their types). Concrete adapters and
+  the single construction point (`buildAiLayer(config)`, `packages/ai`'s index) are consumed only
+  by `apps/server`, which injects the built layer into core. This keeps core transport-neutral and
+  testable with fakes, while the concrete provider wiring stays at the edge.
+- `search`, `vectordb`, and `ai`'s adapters take and return plain data, so they are testable
+  without a running server.
 - `exporter` holds the pure export serializers — string in, string out, no I/O. Its tests import
   `importer` to prove the markdown export round-trips; that dependency is test-only, keeping the
   runtime graph acyclic.
+- **Event emission lives in `core` only (decided).** `db` never emits: it is a query layer with no
+  knowledge of domain moments. Seed/CLI/migration writers bypass core and are therefore
+  event-silent — documented, accepted, and the reason the change-log outbox upgrade path exists
+  (§9).
 - No cycles. `server` is the only package allowed to depend on a concrete implementation of each
   subsystem; `web` depends on `server` only through its exported route type (type-only).
 
@@ -198,25 +227,43 @@ place and adds no build-time coupling to server code.
 
 ## 5. Data & storage
 
-The schema, invariants, and deletion semantics are owned by [MODEL.md](./MODEL.md). Architecture only
-fixes the storage posture:
+The schema, invariants, and deletion semantics are owned by [MODEL.md](./MODEL.md). Architecture
+only fixes the storage posture:
 
 - **Single durable file.** All tables, the FTS5 index, and the embedding vectors live in one SQLite
   database (constraint §1.2). Backups are a file copy. The Qdrant collection is a derived serving
   structure (§6) and never needs backing up.
-- **One data root.** Every file artifact — the SQLite database, screenshots, the profile avatar, and
-  the Qdrant storage tree — lives under one data root (`DATA_DIR`, default repo `./data`; resolved by
-  `packages/db` `resolveDataDir` and shared by the server and the CLI scripts). One env knob
-  relocates the whole tree for deployment; `DB_PATH`/`SCREENSHOTS_DIR` override the individual paths.
-  In development, `bun run dev -- --profile=<name>` sets `DATA_DIR=data/profiles/<name>` (when
-  `DATA_DIR` is unset), giving scratch dev runs an isolated tree; CLI scripts honor the same
-  fallback via `PROFILE`.
-  Per-user subfolders are a rejected shape: the app is single-user (§1.3) and the schema has no user
-  axis — a second user, if ever requested, is a second instance with its own `DATA_DIR` (§11).
+- **One data root.** Every file artifact — the SQLite database, screenshots, the profile avatar,
+  and the Qdrant storage tree — lives under one data root (`DATA_DIR`, default repo `./data`;
+  resolved by `packages/db` `resolveDataDir` and shared by the server and the CLI scripts). One
+  env knob relocates the whole tree for deployment; `DB_PATH`/`SCREENSHOTS_DIR` override the
+  individual paths. **Development isolation is a scratch `DATA_DIR`** (e.g.
+  `DATA_DIR=/tmp/ayo-scratch bun run dev`) — there is no profile-switching mechanism and no
+  per-user subfolders (the app is single-user, §1.3; a second user, if ever requested, is a second
+  instance with its own `DATA_DIR`, §13).
 - **Migrations.** Numbered, forward-only SQL files under `packages/db`, applied at startup in a
-  transaction. The server-set timestamp triggers (`created_at`/`updated_at`) belong here.
+  transaction. The database is **born at `0001`** in the final shape (MODEL.md v2): no datasets,
+  no sections, global URL uniqueness, sibling-unique category names, unscoped tags. There is no
+  legacy-data migration; the pre-rewrite model lives at the `legacy` git tag. The server-set
+  timestamp triggers and the FTS sync triggers belong here.
 - **PRAGMAs.** `foreign_keys = ON`, WAL journaling, and a sensible `busy_timeout` are set on every
   connection.
+
+### Canonical verification fixture (decided)
+
+The synthetic **octocat** demo is the single canonical seed and verification fixture:
+
+- **Source.** Curated, vendorable real well-known URLs under the octocat profile (~25 bookmarks
+  across a small category tree: e.g. `GitHub`, `AI tools`, `Dev tools`, `Learning`, `Design`), plus
+  a tree-native markdown collection file (H2 → level-1 category, H3 → child) that seeds through
+  the importer itself, so the seed exercises the real ingest path.
+- **Use.** All integration tests (import round-trip, search sanity with expected hits, classifier
+  run/evidence shape, aggregates) and Playwriter visual QA run against a scratch `DATA_DIR` seeded
+  with octocat. Screenshot evidence from visual QA goes to `.omo/evidence/` (gitignored), never
+  into fixtures.
+- **Exclusions.** Real personal data is never a fixture (the old `leo`/`grimoire` seeds are not
+  carried over). `docs/examples-mds/*` are real user collections — reserved for a much later
+  import-edge-case test phase, and never treated as product requirements.
 
 ## 6. Search subsystem
 
@@ -267,7 +314,7 @@ A benchmark on the reference machine (Bun 1.4.2, arm64, top-k = 10) measured a p
 
 This is why the fallback is viable: when Qdrant is down, semantic search still answers in
 milliseconds at bookmark-collection scale. The Qdrant sidecar buys filtered top-k and headroom, not
-raw speed at this size. The revisit conditions are in §11.
+raw speed at this size. The revisit conditions are in §13.
 
 ### Data layout and lifecycle
 
@@ -275,12 +322,10 @@ raw speed at this size. The revisit conditions are in §11.
   PK, FK cascade, `dims`, `model`, `embedding` BLOB little-endian Float32, `updated_at`). See
   MODEL.md. Backups are the SQLite file copy.
 - The Qdrant collection (default `bookmarks`) holds one point per embedding: point id = bookmark
-  UUID, cosine space, payload `{ model, dims, datasetId, categoryId, tagIds }` with keyword payload
-  indexes on the filter fields, and collection metadata `{ model }`. The `datasetId` payload field
-  keeps the dataset boundary (MODEL.md principle 1) intact in semantic search: the search service
-  always pushes the active dataset into the vector filter, so points from other datasets can never
-  reach fusion. `ensureCollection` re-ensures the payload indexes idempotently, which upgrades a
-  pre-`datasetId` collection in place; the boot `sync` then rewrites every payload.
+  UUID, cosine space, payload `{ model, dims, categoryId, tagIds }` with keyword payload indexes on
+  the filter fields, and collection metadata `{ model }`. Category/tag filters are pushed into the
+  vector query server-side; there is no scoping axis left to filter by (MODEL.md principle 1).
+  `ensureCollection` re-ensures the payload indexes idempotently.
 - **All rows must share one dimension** (fixed by `EMBEDDING_MODEL`); a model change requires a
   re-embed pass. On startup the collection is checked against the SQLite rows: a dims/model
   mismatch drops and recreates it, and `sync` rebuilds the collection from SQLite with a full
@@ -291,7 +336,8 @@ raw speed at this size. The revisit conditions are in §11.
   response echo: OpenRouter normalizes model ids (e.g. `text-embedding-3-small` for
   `openai/text-embedding-3-small`), and storing the echo would flag every row as stale on every
   startup, re-embedding the whole library forever. The startup reconciliation compares rows against
-  the configured model, so a genuine model change re-embeds exactly once.
+  the configured model, so a genuine model change re-embeds exactly once. **This rule survives the
+  `packages/ai` migration intact and carries a dedicated test** (§8).
 - Write-through order: SQLite first (canonical), then the index (Qdrant point and in-memory matrix).
   Index writes are best-effort; a missed write is repaired by the next startup sync.
 - `packages/search` loads all SQLite embeddings into one contiguous normalized matrix at startup
@@ -306,7 +352,7 @@ raw speed at this size. The revisit conditions are in §11.
 ### Query path
 
 1. Keyword candidate list from FTS5 (BM25 ranked).
-2. Semantic candidate list: embed the query text via OpenRouter, then filtered top-k from the
+2. Semantic candidate list: embed the query text via `packages/ai`, then filtered top-k from the
    vector index (Qdrant server-side filter, or fallback overfetch+filter).
 3. RRF fusion (`k = 60`) merges the two ranked lists into the final order.
 
@@ -325,7 +371,7 @@ produced it.
 
 ```mermaid
 flowchart TD
-  V["0. Vocabulary\ncategories + tags (active/deprecated)"] --> I
+  V["0. Vocabulary\ncategories (tree) + tags (active/deprecated)"] --> I
   I["1. Ingest\nextract -> user edits -> commit"] --> E
   E["2. Enrich\nscrape page -> content\nembed -> vector\nscreenshot -> image"] --> C
   C["3. Classify\nOllaya /api/decide\n-> classification_runs + results"] --> A
@@ -338,87 +384,87 @@ flowchart TD
 
 ### Stage 0 — Vocabulary
 
-The user curates categories and tags in the UI, dataset-scoped. Sections and categories are plain
-organizing records with no lifecycle. Tags carry a two-state lifecycle: `active ⇄ deprecated`. Only
-`active` tags are classifier candidates and can be auto-assigned; `deprecated` retires a tag without
-deleting its history. The tag lifecycle is toggled through `POST /api/tags/:id/status`.
+The user curates the category tree and tags in the UI. Categories are plain organizing records with
+no lifecycle; tags carry a two-state lifecycle: `active ⇄ deprecated`. Only `active` tags are
+classifier candidates and can be auto-assigned; `deprecated` retires a tag without deleting its
+history. The tag lifecycle is toggled through `POST /api/tags/:id/status`.
 
 **Vocabulary establishment (decided).** Vocabulary is created in its **usable** state:
 
-- The **importer auto-creates** any missing category or tag referenced by a collection as `active` at
-  commit time (`resolveVocabulary` → `createCategory`/`createTag`). There is no staging, no proposal,
-  and no review gate before bookmarks land.
-- The **classifier never creates vocabulary** — it only votes on `active` tags already in scope; a
-  returned label that matches no candidate tag is recorded as evidence only (see Stage 3).
-- The user tidies up afterwards through the vocabulary UI (rename, re-scope, `deprecate`, delete).
-- A dataset with no content yet simply gets its vocabulary created as the first import lands.
+- The **importer auto-creates** any missing category or tag referenced by a collection as `active`
+  at commit time (`resolveVocabulary` → `createCategory`/`createTag`). There is no staging, no
+  proposal, and no review gate before bookmarks land.
+- The **classifier never creates vocabulary** — it only votes on `active` tags; a returned label
+  that matches no candidate tag is recorded as evidence only (see Stage 3).
+- The user tidies up afterwards through the vocabulary UI (rename, re-parent, `deprecate`, delete,
+  drag-reorder).
+- A fresh workspace gets its vocabulary created as the first import lands.
 
-**Candidate set (decided).** For a bookmark, candidates are the `active` tags **in its dataset**:
-
-- tags with `tags.dataset_id = bookmarks.dataset_id`, plus (when the bookmark has a category) tags in
-  its category scope and unscoped tags — all still within the dataset.
-- If the bookmark has no category, all active tags in its dataset are candidates.
-
-Cross-dataset vocabulary is never a candidate, which is what prevents a demo dataset's tags from
-leaking into a personal dataset.
+**Candidate set (decided).** For a bookmark, candidates are **all `active` tags** — there is no
+category scoping left (tags have no category, MODEL.md principle 2). The per-call cap (batched
+`noul` questions) keeps run size bounded; watch precision as the library's tag count grows (§13).
 
 ### Stage 1 — Ingest (import)
 
-Markdown collection files (see [examples-mds](./examples-mds)) are free-form; the canonical shape is
-`##` / `###` headings and bullet entries containing a URL plus an optional note and optional priority
-stars.
+Markdown collection files (see [examples-mds](./examples-mds) for format examples) are free-form;
+the canonical shape is `##` / `###` headings and bullet entries containing a URL plus an optional
+note and optional priority stars.
 
 **Extraction (decided).** Import is a single **direct-commit** flow — extraction, then user review
 and edits in the UI, then commit:
 
-1. **Extract.** `POST /api/import/preview` runs the configured `ExtractionClient`: AI SDK v7
-   `generateText` + `Output.object({ schema })` against OpenRouter (`@ai-sdk/openai-compatible`) or a
-   local Ollama model (`ollama-ai-provider-v2`). With no provider configured, or when the LLM call
-   fails, it falls back to the deterministic `parseCollection` markdown parser. The preview never
-   writes; it returns `ImportedBookmark[]` plus `provider` (`llm`/`fallback`) and any `warnings`.
+1. **Extract.** `POST /api/import/preview` runs the configured extraction client from `packages/ai`:
+   AI SDK v7 `generateText` + `Output.object({ schema })` against OpenRouter
+   (`@ai-sdk/openai-compatible`) or a local Ollama model (`ollama-ai-provider-v2`). With no
+   provider configured, or when the LLM call fails, it falls back to the deterministic
+   `parseCollection` markdown parser. The preview never writes; it returns `ImportedBookmark[]`
+   plus `provider` (`llm`/`fallback`) and any `warnings`.
 2. **Edit.** The Import page presents the extracted rows (title, description, category, tags,
    priority) for the user to adjust or drop before committing.
 3. **Commit.** `POST /api/import` resolves the vocabulary and ingests in one transaction:
    `resolveVocabulary` **auto-creates any missing category or tag as `active`**, then
    `ingestBookmarks` upserts each bookmark by URL and attaches its tags. New bookmarks enqueue
-   `scrape` and `screenshot`. There is no staging table and no proposal/review gate. Re-importing the
-   same file merges by URL and never duplicates bookmarks.
+   `scrape` and `screenshot`. There is no staging table and no proposal/review gate. Re-importing
+   the same file merges by URL and never duplicates bookmarks.
 
-**Mapping rules (decided):**
+**Mapping rules (decided).** The markdown format *is* the category tree:
 
 | Source element             | Maps to                                                                 |
 | -------------------------- | ----------------------------------------------------------------------- |
-| `## Heading` (H2)          | category name when no H3 is present                                     |
-| `### Heading` (H3)         | category within the current H2 (the most specific name wins)            |
+| `## Heading` (H2)          | level-1 category (root)                                                 |
+| `### Heading` (H3)         | child of the current level-1 category                                   |
 | `*` / `**` / `***` prefix  | personal priority (1–3), **not** a tag                                  |
 | bullet note                | `title` / `description` until the page is scraped                       |
 | URL                        | `bookmarks.url` (unique; upsert key)                                    |
 | frontmatter `tags: [a, b]` | `source='import'` tag rows, auto-created `active` when missing          |
 | fenced code block          | opaque — never a heading, bullet, or URL source                         |
 
-The markdown parser flattens H2/H3 into one `category` field; **sections are never created by
-import** — they are managed through the vocabulary UI only. On the LLM path the model may return
-categories/tags that were not literally in the input when it can derive them plainly, so extraction
-is the vocabulary source, not the markdown structure alone. `metadata.import` preserves provenance
-(`{ file, category, priority }`). Inline-token tag syntax inside a note remains deferred; see §11.
+The parser is tree-native — no flattening, no separate section concept. On the LLM path the model
+may return categories/tags that were not literally in the input when it can derive them plainly, so
+extraction is the vocabulary source, not the markdown structure alone. `metadata.import` preserves
+provenance (`{ file, categoryPath, priority }`). Inline-token tag syntax inside a note remains
+deferred; see §13.
 
 ### Export (synchronous request/response)
 
-Export is the inverse of ingest: a filtered, lossless view of the current dataset in a portable
-format. It is a plain synchronous `GET /api/export` request/response — **not** a background job
-(§8 jobs are bookmark-scoped enrichment only).
+Export is the inverse of ingest: a filtered, lossless view of the library in a portable format. It
+is a plain synchronous `GET /api/export` request/response — **not** a background job (§10 jobs are
+bookmark-scoped enrichment only).
 
-- **Formats** (`packages/exporter`, pure serializers over `ExportBookmarkRow`):
-  **Netscape HTML** — the universal browser/manager interchange format (folder tree =
-  Section ▸ Category, `ADD_DATE` in Unix seconds, comma-joined `TAGS`, `<DD>` description; the
-  domain has no favicon data, so `ICON`/`ICON_URI` are omitted); **JSON** — full-fidelity backup
-  (`format: 'al-yo-bo/export', version: 1`, epoch-ms timestamps, resolved category/section names);
-  **CSV** — Raindrop-compatible header `folder,url,title,note,tags,created`, RFC 4180 quoting;
-  **Markdown** — this app's own collection format, mirroring `parseCollection`, so an export
-  round-trips through import (within the parser's fidelity limits: tag sets are per-file unions,
-  and a bullet's note feeds both title and description on re-import). OPML and XBEL were evaluated
-  and dropped (no tag/description fidelity, no consumer demand); the serializer seams make adding a
-  format cheap if that changes.
+- **Formats** (`packages/exporter`, pure serializers over `ExportBookmarkRow`) — the **path
+  grammar is decided once**: a category's path is its ancestor chain from the root
+  (`["dev", "web", "2024"]`):
+  **Netscape HTML** — the universal browser/manager interchange format; the folder tree is the
+  **category ancestor chain** (one `<DL><DT>H3` per path segment, `ADD_DATE` in Unix seconds,
+  comma-joined `TAGS`, `<DD>` description; the domain has no favicon data, so `ICON`/`ICON_URI` are
+  omitted); **JSON** — full-fidelity backup (`format: 'al-yo-bo/export', version: 2`, epoch-ms
+  timestamps, `categoryPath` as an array, tree-ordered categories with `sort_order`); **CSV** —
+  Raindrop-compatible header `folder,url,title,note,tags,created`, `folder` = the category path
+  joined with `/`, RFC 4180 quoting; **Markdown** — this app's own collection format, mirroring
+  `parseCollection` (H2/H3 → tree), so an export round-trips through import (within the parser's
+  fidelity limits: tag sets are per-file unions, and a bullet's note feeds both title and
+  description on re-import). OPML and XBEL were evaluated and dropped (no tag/description
+  fidelity, no consumer demand); the serializer seams make adding a format cheap if that changes.
 - **No pagination clamp.** Export reads through a dedicated uncapped query
   (`listBookmarksForExport`) — the 100-row `clampPagination` cap exists for page responses and
   must never silently truncate an export.
@@ -426,21 +472,21 @@ format. It is a plain synchronous `GET /api/export` request/response — **not**
   multiple formats are zipped at the server edge with `fflate` (`server` is the package allowed to
   touch concrete subsystems, §4). Core only orchestrates query + serialization; serializers stay
   transport-neutral in `packages/exporter`.
-- **Filters** mirror the search surface (category, tag, status, `created_at` date range, `q`);
-  date-bounded searches run keyword-only (§6). Export is read-only over the existing tables —
-  no schema changes, so [MODEL.md](./MODEL.md) is unaffected.
+- **Filters** mirror the search surface (category subtree, tag, status, `created_at` date range,
+  `q`); date-bounded searches run keyword-only (§6). Export is read-only over the existing tables.
 - **Memory posture.** Serialized files buffer in memory before the response. Fine at personal
-  scale; see §11 for the streaming revisit trigger.
+  scale; see §13 for the streaming revisit trigger.
 
 ### Stage 2 — Enrich (background jobs)
 
 - **Scrape.** Fetch the page, store `content` (markdown), `metadata` (JSON), `content_hash`, and
   `scraped_at`. If the hash is unchanged, nothing downstream is re-run.
 - **Embed.** Compose the embed text (title + description + content, truncated to the embedding
-  model's limits) and call OpenRouter. Store the vector with its `model` and `dims`. Refresh on
-  content-hash change. Enqueue re-classification when content changes.
+  model's limits) and call the embedding client from `packages/ai`. Store the vector with its
+  `model` and `dims` (§8 model rule). Refresh on content-hash change. Enqueue re-classification
+  when content changes.
 - **Screenshot.** Capture a page image and store it under `data/screenshots/`, recording
-  `metadata.image`. Independent of scrape and non-fatal; see §8.
+  `metadata.image`. Independent of scrape and non-fatal; see §10.
 
 ### Stage 3 — Classify (Ollaya)
 
@@ -449,11 +495,10 @@ Build a `state` string from the bookmark: title, description, URL host, and a co
 > **Context limit.** `laya:en` accepts 512 tokens and `laya:multilingual` accepts 1024. **Decided
 > policy:** classify the lead excerpt — title + description + the first ~350 tokens of content.
 > Chunked classification (per-chunk calls, max probability per tag) is deliberately deferred until
-> evidence shows systematic misses; see §11.
+> evidence shows systematic misses; see §13.
 
 Represent the candidate tags as questions. For multi-label tagging, use one `noul` (yes/no) question
-per candidate tag, batched by category scope and capped per call. A bookmark may therefore produce
-one or more runs.
+per candidate tag, batched and capped per call. A bookmark may therefore produce one or more runs.
 
 ```
 POST http://127.0.0.1:11435/api/decide
@@ -501,13 +546,12 @@ state only.
 entirely — they are never overwritten or retracted. Re-running appends new evidence under the
 current policy without rewriting history. Known limitation: user *removals* are not tracked as
 negative evidence, so a later run can re-assign a removed tag; if that becomes annoying, add a
-suppression table in a later model revision (§11).
+suppression table in a later model revision (§13).
 
 ### Stage 5 — Review (human-in-the-loop)
 
-The review surface is **classifier suggestions only**. The vocabulary-proposal queue
-(accept/reject/rename/merge) was removed with the proposal lifecycle: vocabulary is created `active`
-by the importer and curated directly in the vocabulary UI.
+The review surface is **classifier suggestions only**. Vocabulary is created `active` by the
+importer and curated directly in the vocabulary UI.
 
 - **Below-threshold candidates** — classifier results that did not clear `AUTO_ASSIGN_THRESHOLD`.
   Accepting one writes `bookmark_tags` with `source='user'`, which classifier re-runs never
@@ -516,18 +560,64 @@ by the importer and curated directly in the vocabulary UI.
 
 ### Stage 6 — Re-run triggers
 
-Re-classify on: content-hash change, vocabulary change (new active tags in scope), model or threshold
+Re-classify on: content-hash change, vocabulary change (new active tags), model or threshold
 change, or an explicit manual request. At most one classification is in flight per bookmark.
 
 ### Failure & degradation
 
-If Ollaya is unreachable, the job retries with backoff (see §8); the bookmark remains browsable,
+If Ollaya is unreachable, the job retries with backoff (see §10); the bookmark remains browsable,
 searchable, and manually taggable. The classifier is optional by design (§1.5). Ollaya is currently
 **Beta and pre-1.0**, so it sits behind a thin `ClassifierClient` boundary — one adapter module in
-`packages/classifier` — so it can be pinned, upgraded, or swapped without touching the workflow.
-Track upstream: <https://github.com/ollaya-dev/ollaya>.
+`packages/ai` — so it can be pinned, upgraded, or swapped without touching the workflow. Track
+upstream: <https://github.com/ollaya-dev/ollaya>.
 
-### Configuration
+## 8. AI layer (`packages/ai`)
+
+**Decision: one package owns all AI access.** `packages/embeddings` and `packages/classifier` are
+consolidated into `packages/ai` — a central typed config, an explicit provider registry, the
+`EmbeddingClient`/`ClassifierClient` interfaces, and the concrete adapters (§4 interface/adapter
+split). Cross-cutting retries/timeouts/telemetry come from AI SDK middleware + `@ai-sdk/otel`
+instead of duplicated per-adapter plumbing.
+
+```
+packages/ai/
+  config.ts      one zod schema over the env (OLLAYA_*, OLLAMA_*, OPENROUTER_*,
+                 EMBEDDING_MODEL, EXTRACT_MODEL, AUTO_ASSIGN_THRESHOLD, MCP_TOKEN) — parsed once
+  registry.ts    createProviderRegistry({ openrouter, local? }) — explicit instances,
+                 no ambient default provider
+  embedding.ts   embed/embedMany behind the EmbeddingClient contract
+  classifier.ts  Ollaya adapter kept as ClassifierClient, constructed from central config
+  extract.ts     import-extraction client (OpenRouter / Ollama / deterministic fallback)
+  health.ts      capability probes → the existing degrade flags
+  adapters/      concrete provider adapters (constructed only by apps/server)
+  index.ts       buildAiLayer(config) → single construction point injected into core
+```
+
+Staged adoption inside the rewrite: embeddings via AI SDK first (validated on Bun), then classifier
+config, then agents (`ToolLoopAgent`) when features need them.
+
+- **Embeddings model rule (restated, test-pinned).** `bookmark_embeddings.model` stores the
+  configured `EMBEDDING_MODEL`, never the provider echo (§6). The AI SDK `embed()` result's model
+  field is ignored for storage; a test fails if the two are ever conflated.
+- **Ollaya stays bespoke.** It is a decision server, not an LLM gateway (§3): typed
+  `choice`/`score`/`noul` questions, no text generation, no OpenAI-compatible endpoints. Its client
+  remains a hand-rolled `ClassifierClient` adapter inside `packages/ai`, centrally configured.
+
+### Bookmarks MCP server (decided)
+
+Mounted in the existing Hono app via `createMcpHonoApp()` from the official **MCP TypeScript SDK
+v2** (`@modelcontextprotocol/server` + `@modelcontextprotocol/hono`), with its first-party Hono
+adapter providing the localhost Host/Origin DNS-rebinding guard. Posture:
+
+- **Loopback + token.** Bound to loopback; `MCP_TOKEN` (optional env) adds a bearer check so other
+  local processes cannot call it silently.
+- **Read-only first version.** Tools: `search_bookmarks` (hybrid search path), `get_bookmark`,
+  `list_categories` (tree), `list_tags`. Bookmarks are also exposed as **resources**
+  (`bookmark://{id}`), not just tools. No write tools.
+- **Optional stdio build** for Claude Desktop later (same tool implementations, different
+  transport).
+- **Own agents consume it via the AI SDK MCP client** (`@ai-sdk/mcp`, `client.tools()`) — AI SDK is
+  an MCP *client*; authoring the server on the official SDK is the correct split.
 
 | Env var                 | Purpose                                       | Default                  |
 | ----------------------- | --------------------------------------------- | ------------------------ |
@@ -536,22 +626,40 @@ Track upstream: <https://github.com/ollaya-dev/ollaya>.
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
 | `OLLAMA_URL`            | Ollama daemon base URL (chat + local extraction fallback) | `http://127.0.0.1:11434` |
 | `OLLAMA_CHAT_MODEL`     | Chat model on the local Ollama daemon; unset disables chat (503, health reports unavailable) | unset |
-| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default raised to `0.7` after observing `laya`'s softly-calibrated probabilities: at `0.5` it cleared ~30 of 67 tags per bookmark | `0.7`                    |
-| `DEFAULT_DATASET`       | Fallback dataset name when the profile has no active-dataset pointer (the pointer — set by seeding or `PATCH /api/profile` — is the primary mechanism) | `default` |
-| `OPENROUTER_API_KEY`    | Embedding provider credential                 | unset                    |
-| `OPENROUTER_BASE_URL`   | Embeddings API base URL (OpenAI-compatible)   | `https://openrouter.ai/api/v1` |
+| `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default `0.7` after observing `laya`'s softly-calibrated probabilities (at `0.5` it cleared ~30 of 67 tags per bookmark) | `0.7` |
+| `OPENROUTER_API_KEY`    | Embedding/LLM provider credential             | unset                    |
+| `OPENROUTER_BASE_URL`   | OpenAI-compatible API base URL                | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
-| `EXTRACT_MODEL`         | Import-extraction model, threaded through `ServerConfig`. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); a non-`/` id selects that model on the local Ollama path (winning over `OLLAMA_CHAT_MODEL`); unset → OpenRouter default when a key is set, else `OLLAMA_CHAT_MODEL`, else the deterministic parser | `deepseek/deepseek-v4.1-flash` when `OPENROUTER_API_KEY` is set, else `OLLAMA_CHAT_MODEL`, else deterministic parser |
-| `QDRANT_URL`            | Qdrant REST base URL; empty string disables the sidecar | `http://127.0.0.1:6333` |
-| `QDRANT_COLLECTION`     | Qdrant collection name                        | `bookmarks`              |
-| `QDRANT_API_KEY`        | Bearer key when Qdrant is exposed             | unset (loopback)         |
-| `QDRANT_TIMEOUT_MS`     | Client fetch timeout for Qdrant requests      | `5000`                   |
-| `DATA_DIR`               | Data root for every file artifact (§5); `DB_PATH`/`SCREENSHOTS_DIR` override individual paths | `data` (repo-relative) |
-| `SEED_DATASET`          | Seed fixture `bun run db:seed` loads (registered in `packages/db/src/seed.ts`; seed-script only) | `leo` |
-| `SEED_RESET`            | When `1`, `db:seed` wipes the target dataset's content before loading (seed-script only) | unset |
-| `SEED_ACTIVATE`          | When `0`, `db:seed` loads without setting the profile's active-dataset pointer; by default seeding switches the app to what it loaded (seed-script only) | unset (on) |
+| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); a non-`/` id selects that model on the local Ollama path; unset → OpenRouter default when a key is set, else `OLLAMA_CHAT_MODEL`, else the deterministic parser | provider-dependent |
+| `MCP_TOKEN`             | Optional bearer token for the bookmarks MCP server (loopback) | unset |
 
-## 8. Background jobs
+## 9. Real-time layer
+
+**Decision: a service-layer event bus → Hono `streamSSE()` → TanStack Query invalidation.** Every
+app write passes through core services, so core emits coarse domain events and the server fans them
+out; the web client maps events to cache invalidations. No triggers, no polling, no WebSockets, no
+schema changes.
+
+- **Emission layer (decided).** Events are emitted from `packages/core` services only — `db` never
+  emits (§4). Topics are coarse: `bookmarks.changed`, `categories.changed`, `tags.changed`,
+  `profile.changed`, `jobs.changed` (scrape→embed→classify progress). Payload is a hint
+  (ids/counters), never the record of truth.
+- **Lossy by design (decided).** An event's only job is to trigger a refetch; dropping one can
+  never corrupt state. Events emitted while a client is disconnected are **not** replayed.
+- **Reconnect semantics (decided).** On SSE (re)connect the server sends a synthetic
+  `invalidate-all` event; the client also invalidates unconditionally when a stream error
+  resolves/reopens. Clients listen to `error`, not just messages. Multi-tab is one stream per tab —
+  fine, because events are hints.
+- **Slow consumers.** `streamSSE` writes are bounded; a stalled client is dropped after its write
+  buffer backpressure threshold and can reconnect (losing nothing but a refetch hint).
+- **Upgrade path.** A trigger-based `change_log` outbox in SQLite if out-of-process writers (CLI
+  scripts, future split worker) ever need to appear live. Record-level PocketBase-style
+  subscriptions are deliberately deferred.
+
+What this buys: live list/search/tag updates without refresh, and job progress surfacing in the
+UI as it happens. What it costs: ~hand-rolled fan-out — small, testable, and ours.
+
+## 10. Background jobs
 
 **Decision: jobs run on a minimal in-process loop inside the Bun server.**
 The loop is sequential (one job at a time), deduplicates per `(bookmark, type)` so at most one job
@@ -562,22 +670,22 @@ itself is deliberately in-memory: on startup a **reconciliation pass** re-enqueu
 bookmarks without scraped content, embed for bookmarks without embeddings (and a full re-embed for
 stale-model rows), and screenshot for bookmarks with neither an image artifact nor an `og:image`
 reference, which recovers anything a restart dropped. Failures after the retry cap are logged and
-dropped; the manual re-scrape endpoint re-enqueues. The trigger to re-evaluate the job architecture
-is in §11.
+dropped; the manual re-scrape endpoint re-enqueues. Job state changes emit `jobs.changed` (§9).
+The trigger to re-evaluate the job architecture is in §13.
 
 Job types:
 
 | Job          | Input            | Effect                                                          |
 | ------------ | ---------------- | --------------------------------------------------------------- |
 | `scrape`     | bookmark id      | fetch page → content/metadata/hash; enqueue `embed`, `screenshot` |
-| `embed`      | bookmark id      | vector via OpenRouter → `bookmark_embeddings` (durable), then write-through to the vector index; enqueues `classify` |
+| `embed`      | bookmark id      | vector via `packages/ai` → `bookmark_embeddings` (durable), then write-through to the vector index; enqueues `classify` |
 | `classify`   | bookmark id      | Ollaya → runs/results → assignment policy                       |
 | `screenshot` | bookmark id      | capture page image (`Bun.WebView`, then `og:image`) → `data/screenshots/<uuid>.jpg` + `metadata.image` |
 | `reindex`    | bookmark/tag/all | rebuild FTS rows, or sync the Qdrant collection from SQLite rows |
 
-Retries are exponential with a bounded cap; jobs are idempotent (safe to re-run). Concurrency guards:
-one in-flight classification per bookmark and one scrape per URL. Failures never lose a bookmark —
-the row is always saved first, enrichment is best-effort.
+Retries are exponential with a bounded cap; jobs are idempotent (safe to re-run). Concurrency
+guards: one in-flight classification per bookmark and one scrape per URL. Failures never lose a
+bookmark — the row is always saved first, enrichment is best-effort.
 
 ### Scrape implementation
 
@@ -591,12 +699,13 @@ and reconciliation retries it on the next start. Stored content is truncated to
 stored; an unchanged hash skips the embed job. Scrape provenance (timestamp, content type, final
 URL after redirects, truncated flag) is merged under `metadata.scrape`.
 
-Failures are classified. A **dead link** (HTTP 404/410) increments `bookmarks.scrape_attempts`; once it
-reaches `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` — kept, but excluded from default views
-and from startup reconciliation so it is not retried forever. Every other failure (timeout, 5xx,
-missing/converting binary) is transient: it records `metadata.scrape.lastError` but never invalidates,
-and reconciliation retries it on the next start. A successful scrape (or a URL edit) resets the counter
-and restores `active`; `POST /api/bookmarks/:id/scrape` is the manual recovery path.
+Failures are classified. A **dead link** (HTTP 404/410) increments `bookmarks.scrape_attempts`; once
+it reaches `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` — kept, but excluded from default
+views and from startup reconciliation so it is not retried forever. Every other failure (timeout,
+5xx, missing/converting binary) is transient: it records `metadata.scrape.lastError` but never
+invalidates, and reconciliation retries it on the next start. A successful scrape (or a URL edit)
+resets the counter and restores `active`; `POST /api/bookmarks/:id/scrape` is the manual recovery
+path.
 
 | Env var                    | Purpose                                    | Default            |
 | -------------------------- | ------------------------------------------ | ------------------ |
@@ -607,8 +716,8 @@ and restores `active`; `POST /api/bookmarks/:id/scrape` is the manual recovery p
 
 ### Screenshot implementation
 
-The `screenshot` job captures a page image for a bookmark; it is independent of `scrape` (it fetches
-the page itself) and never invalidates the bookmark. The adapter is a degradation ladder:
+The `screenshot` job captures a page image for a bookmark; it is independent of `scrape` (it
+fetches the page itself) and never invalidates the bookmark. The adapter is a degradation ladder:
 
 1. **`Bun.WebView`** (primary) — an experimental Bun API: zero-install WKWebView on macOS, and an
    installed Chrome/Chromium/Edge/Brave over CDP on Linux/Windows. Navigates, waits
@@ -616,14 +725,14 @@ the page itself) and never invalidates the bookmark. The adapter is a degradatio
    `SCREENSHOT_TIMEOUT_MS` budget. The `og:image` URL is read from the live DOM while available.
 2. **`og:image`** (fallback) — when the WebView path is unavailable or throws, fetch the page HTML,
    parse `<meta property="og:image">`, and download those bytes.
-3. **Placeholder** (UI) — when both fail, or the page has no `og:image`, no artifact is stored and the
-   UI renders a placeholder; never a broken image.
+3. **Placeholder** (UI) — when both fail, or the page has no `og:image`, no artifact is stored and
+   the UI renders a placeholder; never a broken image.
 
 On success the job writes the bytes to `data/screenshots/<bookmark-uuid>.jpg` (gitignored, local,
 never backed up — like the Qdrant data) and records `metadata.image = { screenshotPath, ogImageUrl }`.
-The image is served by the guarded `GET /data/screenshots/:filename` route (UUID + `.jpg` regex), not
-by a static directory listing. Failures are non-fatal: reconciliation retries on the next start, and
-`POST /api/bookmarks/:id/screenshot` is the manual path.
+The image is served by the guarded `GET /data/screenshots/:filename` route (UUID + `.jpg` regex),
+not by a static directory listing. Failures are non-fatal: reconciliation retries on the next
+start, and `POST /api/bookmarks/:id/screenshot` is the manual path.
 
 | Env var                 | Purpose                               | Default |
 | ----------------------- | ------------------------------------- | ------- |
@@ -632,26 +741,26 @@ by a static directory listing. Failures are non-fatal: reconciliation retries on
 | `SCREENSHOT_SETTLE_MS`  | Wait after navigation before capture  | `1500`  |
 | `SCREENSHOT_TIMEOUT_MS` | Per-capture timeout                   | `15000` |
 
-## 9. Deployment
+## 11. Deployment
 
-Single-user, shell-script driven. The documented shape is `nohup bun run apps/server …` on the host,
-with a scripted archive copy to ship a new build. Three processes must be running:
+Single-user, shell-script driven. The documented shape is `nohup bun run apps/server …` on the
+host, with a scripted archive copy to ship a new build. Three processes must be running:
 
 0. the **web build** (`bun run build` → `apps/web/dist`), produced ahead of the server start,
-1. the **Bun server** (API + worker, which also serves `apps/web/dist`),
+1. the **Bun server** (API + MCP server + worker, which also serves `apps/web/dist`),
 2. the **Ollaya sidecar** (`bun run ollaya:install` once — the official installer pinned into the
    gitignored `.tools/ollaya/`, binary at `bin/ollaya` with its runner libs in `lib/ollaya/` — then
    pull the decision model once: `OLLAYA_MODELS=<DATA_DIR>/ollaya/models .tools/ollaya/bin/ollaya
    pull laya`). Standalone, `bun run ollaya:start` runs `scripts/ollaya/start.sh`; in development,
-   `bun run dev` starts it the same way: loopback only, `OLLAYA_HOST`, and state anchored to the app
-   data root (`OLLAYA_MODELS` and `OLLAYA_LOG_DIR` under `<DATA_DIR>/ollaya/`) so nothing lands in
-   `$HOME`. When the binary is absent, `dev` skips it — classification degrades to manual tagging
-   (§1.5).
-3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the gitignored
-   `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
-   `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`; loopback
-   only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it automatically
-   when the binary is installed and skips it (in-memory vectors) when it is not.
+   `bun run dev` starts it the same way: loopback only, `OLLAYA_HOST`, and state anchored to the
+   app data root (`OLLAYA_MODELS` and `OLLAYA_LOG_DIR` under `<DATA_DIR>/ollaya/`) so nothing lands
+   in `$HOME`. When the binary is absent, `dev` skips it — classification degrades to manual
+   tagging (§1.5).
+3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the
+   gitignored `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant`
+   with `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`;
+   loopback only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it
+   automatically when the binary is installed and skips it (in-memory vectors) when it is not.
 
 Chat additionally needs the local **Ollama daemon** (§2 chat) with the `OLLAMA_CHAT_MODEL` pulled
 (e.g. `ollama pull llama3.2`). `scripts/dev.sh` sources the repo-root `.env` so the server process —
@@ -665,9 +774,9 @@ The SQLite file and its WAL sidecars are the only state that **must** be backed 
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API
 (`POST /collections/{name}/snapshots`) to skip the startup resync after a restore. Ollaya keeps no
 bookmark state — it is stateless with respect to this app. Configuration is entirely environment
-variables (§7).
+variables (§8, §10).
 
-## 10. Failure modes & degradation
+## 12. Failure modes & degradation
 
 | Failure                   | Effect                                                                     |
 | ------------------------- | -------------------------------------------------------------------------- |
@@ -675,6 +784,7 @@ variables (§7).
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
 | Ollama unreachable / `OLLAMA_CHAT_MODEL` unset | Chat answers 503 problem+json (unset) or surfaces an in-stream error (daemon down); search, browsing, tagging unaffected |
 | Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync. A sidecar still starting at boot is retried for a few seconds before this kicks in |
+| SSE stream dropped        | Client shows stale data only until reconnect (synthetic `invalidate-all`, §9) or the next event/refetch; no state can be lost — events are refetch hints |
 | Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
 | Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
 | html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
@@ -685,9 +795,9 @@ variables (§7).
 | Classifier model upgraded | New runs recorded; old runs retained; effective tags re-policyable         |
 | Search matrix not loaded  | Automatic keyword-only fallback                                            |
 
-## 11. Revisit triggers
+## 13. Revisit triggers
 
-Decisions here are final for v1, but each has an explicit condition that reopens it. When a trigger
+Decisions here are final for v2, but each has an explicit condition that reopens it. When a trigger
 fires, revisit the section, run a fresh benchmark or evaluation, and update this document.
 
 | Decision                         | Revisit when                                                                                                                                                                         |
@@ -695,11 +805,11 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Qdrant serving (§6)              | The sidecar's footprint outweighs the collection (e.g. serving well under ~1,000 vectors), or its upgrade cadence becomes a burden; the in-process KNN fallback is the documented exit path and stays green under tests. Also re-evaluate `sqlite-vec` if a SQL-integrated index is preferred. |
 | Brute-force fallback limits (§6) | The collection exceeds ~50,000 bookmarks, fallback p95 exceeds ~100 ms, or the matrix exceeds ~512 MB of RAM; then Qdrant is carrying the load and the fallback may degrade to keyword-only.                                                        |
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
+| All-active-tags candidate set (§7) | Precision drops as the tag vocabulary grows (more questions per call); then re-introduce scoped candidate sets (e.g. tag groups) as a model revision.                              |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
 | Export memory buffering (§7)     | Exports get slow or memory-heavy at real collection sizes; then stream each format and zip incrementally instead of buffering files in memory.                                        |
-| `Bun.WebView` screenshots (§8)   | The experimental `Bun.WebView` API changes or is removed; then pin/replace the capture client — the `ScreenshotClient` boundary keeps the `og:image` fallback path intact.            |
-| In-process job loop (§8)         | Jobs need cross-restart durability beyond the startup reconciliation pass, scheduled (cron-like) runs, or parallelism the sequential loop cannot provide; then re-evaluate the job architecture.                                                                                                              |
-| Active dataset resolved at boot (§5/MODEL.md 8) | A dataset-switch UI (or any per-request dataset selection) is built; then the boot-time `resolveActiveDataset` moves to per-request resolution and the route surface grows a `datasetId` param. |
-| Single-user profile (§1.3)        | A second human actually needs to use the deployment; then run a second instance with its own `DATA_DIR` — tenancy, `users` tables, and per-user data folders remain rejected shapes. |
-| Web bundler (§2)                 | Bun's bundler applies plugins (Tailwind/shadcn) in its production CLI build and the fullstack API stabilizes; then re-evaluate dropping Vite for a fully Bun-native build.            |
+| Event bus in-process assumption (§9) | A second writer process appears (CLI tools writing through `db`, split worker); then add the trigger-based `change_log` outbox.                                                    |
+| Fractional sort_order (§5/MODEL) | Rebalance churn becomes measurable (very wide sibling lists reordered constantly); then switch keys per-subtree or add lazy rebalancing.                                              |
+| Vite for the web build (§2)      | Bun's fullstack bundler applies Vite-compatible plugins (Tailwind) in its production CLI build; then collapse the dual build path.                                                    |
+| Multi-user / remote ambition     | Any want for multi-device sync, accounts, or a hosted deployment reopens the backend choice; re-entry costs documented in `docs/plans/rewrite-research.md` §2.4 (PocketBase alternative). |

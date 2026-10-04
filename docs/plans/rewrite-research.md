@@ -1,5 +1,10 @@
 # al-yo-bo rewrite — research & plan (backend · data model · AI layer)
 
+> **SUPERSEDED 2026-10-04.** Execution chose the full-rewrite path instead of the incremental
+> phases below — see [rewrite-v2.md](./rewrite-v2.md) (approved plan) and the rewritten
+> [MODEL.md](../MODEL.md) / [ARCHITECTURE.md](../ARCHITECTURE.md). This document stays as the
+> research record; §2.4 remains the documented PocketBase re-entry alternative.
+
 > Compiled 2026-10-04 from three parallel research lanes: backend-candidate web research (versions
 > verified Oct 2026), TypeScript AI-library research, and a code-level coupling map of the current
 > data model. Order follows the brief: backend, then data model, then AI library. Young projects
