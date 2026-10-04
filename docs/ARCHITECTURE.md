@@ -639,16 +639,19 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
 
 0. the **web build** (`bun run build` → `apps/web/dist`), produced ahead of the server start,
 1. the **Bun server** (API + worker, which also serves `apps/web/dist`),
-2. the **Ollaya sidecar** (systemd unit or Docker), with its models pulled once
-   (`ollaya pull laya`),
+2. the **Ollaya sidecar** (`bun run ollaya:install` once — the official installer pinned into the
+   gitignored `.tools/ollaya/`, binary at `bin/ollaya` with its runner libs in `lib/ollaya/` — then
+   pull the decision model once: `OLLAYA_MODELS=<DATA_DIR>/ollaya/models .tools/ollaya/bin/ollaya
+   pull laya`). In development, `bun run dev` starts it via `scripts/ollaya/start.sh`
+   (`.tools/ollaya/bin/ollaya serve`): loopback only, `OLLAYA_HOST`, and state anchored to the app
+   data root (`OLLAYA_MODELS` and `OLLAYA_LOG_DIR` under `<DATA_DIR>/ollaya/`) so nothing lands in
+   `$HOME`. When the binary is absent, `dev` skips it — classification degrades to manual tagging
+   (§1.5).
 3. the **Qdrant sidecar** (`bun run qdrant:install` once — pinned release binary into the gitignored
    `.tools/qdrant/` — then `bun run qdrant:start`, which runs `.tools/qdrant/qdrant` with
    `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`; loopback
    only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it automatically
-   when the binary is installed and skips it (in-memory vectors) when it is not. Likewise, `dev`
-   runs the Ollaya sidecar via `scripts/ollaya/start.sh` when the `ollaya` binary is on PATH (the
-   installer default is `~/.local/bin`): loopback only, `ollaya serve` if not already running, and
-   a clear skip message when it is absent — classification degrades to manual tagging (§1.5).
+   when the binary is installed and skips it (in-memory vectors) when it is not.
 
 Chat additionally needs the local **Ollama daemon** (§2 chat) with the `OLLAMA_CHAT_MODEL` pulled
 (e.g. `ollama pull llama3.2`). `scripts/dev.sh` sources the repo-root `.env` so the server process —
