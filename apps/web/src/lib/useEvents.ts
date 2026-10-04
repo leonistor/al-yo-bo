@@ -65,21 +65,30 @@ const TOPICS = [
   'invalidate-all',
 ] as const;
 
-/** Topic → the query-key prefixes a matching event may have staled. */
+/**
+ * Topic → the query-key prefixes a matching event may have staled. The
+ * review-candidates key rides alongside bookmark/tag data everywhere here:
+ * below-threshold suggestions derive from classification runs, so they
+ * appear/disappear with the same row changes.
+ */
 function topicInvalidations(topic: string): readonly (readonly string[])[] {
   switch (topic) {
     case 'bookmarks.changed':
-      return [queryKeys.bookmarks.all, queryKeys.aggregates];
+      return [queryKeys.bookmarks.all, queryKeys.aggregates, queryKeys.candidates];
     case 'categories.changed':
       return [queryKeys.categories, queryKeys.aggregates];
     case 'tags.changed':
       // List rows render tag names, so a vocabulary edit stales bookmarks too.
-      return [queryKeys.tags, queryKeys.bookmarks.all, queryKeys.aggregates];
+      return [queryKeys.tags, queryKeys.bookmarks.all, queryKeys.aggregates, queryKeys.candidates];
     case 'profile.changed':
       return [queryKeys.profile];
     case 'jobs.changed':
       // Job progress surfaces as the pending count in the health panel.
-      return [queryKeys.health];
+      // Background jobs also mutate bookmark rows (scrape/classify/screenshot);
+      // the batched invalidation machinery above dedupes the storm, so mapping
+      // the coarse hint onto bookmark data keeps enrichment visible even for
+      // row changes the per-job `bookmarks.changed` burst might drop.
+      return [queryKeys.health, queryKeys.bookmarks.all, queryKeys.candidates];
     default:
       return [];
   }
