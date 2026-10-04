@@ -58,6 +58,10 @@ const profileDir = join(config.dataDir, 'profile');
 const avatarStore: AvatarStore = {
   async save(file) {
     await mkdir(profileDir, { recursive: true });
+    // One avatar file per profile: a re-upload with a different extension must
+    // not leave the stale `avatar.<ext>` behind. A missing sibling is fine.
+    const staleExt = file.ext === 'jpg' ? 'png' : 'jpg';
+    await unlink(join(profileDir, `avatar.${staleExt}`)).catch(() => {});
     const filename = `avatar.${file.ext}`;
     await writeFile(join(profileDir, filename), file.bytes);
     return filename;

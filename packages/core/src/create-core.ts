@@ -103,7 +103,13 @@ export function createCore(deps: CoreDeps): Core {
 
   return {
     search: createSearchService({ db, config, vector, embeddings: ai.embeddings ?? undefined }),
-    bookmarks: createBookmarkService({ db, jobs: enrichment, vector, events }),
+    bookmarks: createBookmarkService({
+      db,
+      jobs: enrichment,
+      vector,
+      events,
+      screenshotsDir: deps.screenshotsDir,
+    }),
     vocabulary: createVocabularyService({ db, jobs: enrichment, vector, events }),
     review: createReviewService({ db, config, vector, events }),
     import: createImportService({ db, jobs: enrichment, extract: ai.extract, events }),

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { exists, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   createBookmark,
@@ -14,7 +17,7 @@ import { createBookmarkService } from '../src/services/bookmarks.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
 import { StubVectorIndex, makeDb, recordingEvents, recordingJobs } from './support.ts';
 
-function makeService(vector = new StubVectorIndex()) {
+function makeService(vector = new StubVectorIndex(), screenshotsDir?: string) {
   const db = makeDb();
   const jobs = recordingJobs();
   const events = recordingEvents();
@@ -23,6 +26,7 @@ function makeService(vector = new StubVectorIndex()) {
     jobs,
     vector: createVectorProvider(vector, 'memory'),
     events,
+    screenshotsDir,
   });
   return { db, jobs, events, vector, service };
 }
@@ -202,6 +206,50 @@ describe('BookmarkService.delete', () => {
     await expect(service.delete('11111111-1111-4111-8111-111111111111')).rejects.toThrow(
       NotFoundError,
     );
+  });
+
+  test('delete unlinks the recorded screenshot artifact', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-del-'));
+    try {
+      const { service, db } = makeService(new StubVectorIndex(), dir);
+      const { id } = createBookmark(db, { url: 'https://example.com/shot' });
+      updateBookmark(db, id, {
+        metadata: { image: { ogImageUrl: null, screenshotPath: `${id}.jpg` } },
+      });
+      await writeFile(join(dir, `${id}.jpg`), 'jpeg-bytes');
+
+      await service.delete(id);
+
+      expect(getBookmarkById(db, id)).toBeNull();
+      expect(await exists(join(dir, `${id}.jpg`))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('delete succeeds when the artifact is already gone or untrusted', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-del-'));
+    try {
+      const { service, db } = makeService(new StubVectorIndex(), dir);
+      // Recorded file hand-deleted already (ENOENT is swallowed).
+      const { id: missingFile } = createBookmark(db, { url: 'https://example.com/gone.js' });
+      updateBookmark(db, missingFile, {
+        metadata: { image: { ogImageUrl: null, screenshotPath: `${missingFile}.jpg` } },
+      });
+      // Imported absolute path — never joined into the screenshots dir.
+      const { id: foreignPath } = createBookmark(db, { url: 'https://example.com/imported' });
+      updateBookmark(db, foreignPath, {
+        metadata: { image: { ogImageUrl: null, screenshotPath: '/data/shots/x.png' } },
+      });
+
+      await service.delete(missingFile);
+      await service.delete(foreignPath);
+
+      expect(getBookmarkById(db, missingFile)).toBeNull();
+      expect(getBookmarkById(db, foreignPath)).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

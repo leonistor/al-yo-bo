@@ -1,4 +1,6 @@
 import type { Database } from 'bun:sqlite';
+import { unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import {
   assignTag as assignBookmarkTag,
@@ -9,6 +11,7 @@ import {
   getBookmarksWithTagsByIds,
   getCategoryById,
   getTagById,
+  parseBookmarkImage,
   removeBookmarkTag,
   updateBookmark,
   type BookmarkInput as DbBookmarkInput,
@@ -42,6 +45,8 @@ export interface BookmarkServiceDeps {
   jobs: JobScheduler;
   vector: VectorProvider;
   events: EventsSink;
+  /** Screenshot artifact dir; absent = delete leaves the files (never fails). */
+  screenshotsDir?: string;
 }
 
 export interface BookmarkService {
@@ -60,6 +65,11 @@ function assertCategoryExists(db: Database, categoryId: string): void {
   }
 }
 
+/** `ENOENT` means the artifact is already gone — not a failure (same rule as profile.ts). */
+function isMissingFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
 /**
  * Bookmark CRUD plus its enrichment side effects. The re-run triggers live here
  * (ARCHITECTURE §7 stage 6): a URL change invalidates the old dead-link
@@ -70,11 +80,31 @@ function assertCategoryExists(db: Database, categoryId: string): void {
  * record.
  */
 export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkService {
-  const { db, jobs, vector, events } = deps;
+  const { db, jobs, vector, events, screenshotsDir } = deps;
 
   async function syncPayload(bookmarkId: string): Promise<void> {
     const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
     await syncVectorPayload(vector.current(), bookmarkId, fresh);
+  }
+
+  /**
+   * Unlinks a recorded screenshot artifact. Best-effort by design: cleanup is
+   * housekeeping after the row is gone and must never fail the delete. Only
+   * the bare filenames the screenshot job writes are honored — imported
+   * metadata may carry arbitrary paths (`/data/shots/x.png`), which are left
+   * untouched.
+   */
+  async function removeScreenshot(filename: string | null): Promise<void> {
+    if (!screenshotsDir || !filename || filename.includes('/') || filename.includes('\\')) {
+      return;
+    }
+    try {
+      await unlink(join(screenshotsDir, filename));
+    } catch (error) {
+      if (!isMissingFile(error)) {
+        console.warn(`[bookmarks] screenshot artifact ${filename} was not removed`, error);
+      }
+    }
   }
 
   return {
@@ -163,7 +193,8 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
     },
 
     async delete(id) {
-      if (!deleteBookmark(db, id)) {
+      const existing = getBookmarkById(db, id);
+      if (!existing || !deleteBookmark(db, id)) {
         throw new NotFoundError('Bookmark not found');
       }
       // SQLite cascaded the embedding row; mirror the removal into the index.
@@ -171,6 +202,9 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (index.size > 0) {
         await index.delete(id);
       }
+      // The screenshot artifact is a rebuildable cache, never backed up — unlink
+      // it best-effort so deletes don't orphan files under the data root.
+      await removeScreenshot(parseBookmarkImage(existing.metadata).screenshotPath);
       events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
     },
 
