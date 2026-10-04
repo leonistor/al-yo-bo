@@ -15,9 +15,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@al-yo-bo/classifier": "workspace:*",
+    "@al-yo-bo/ai": "workspace:*",
     "@al-yo-bo/db": "workspace:*",
-    "@al-yo-bo/embeddings": "workspace:*",
     "@al-yo-bo/exporter": "workspace:*",
     "@al-yo-bo/importer": "workspace:*",
     "@al-yo-bo/search": "workspace:*",

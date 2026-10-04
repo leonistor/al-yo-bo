@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { OllayaClassifierClient } from '../src/index.ts';
+import { OllayaClassifierClient } from '../src/classifier.ts';
 
 const servers: Array<{ stop(): void }> = [];
 

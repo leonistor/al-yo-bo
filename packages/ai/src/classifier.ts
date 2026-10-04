@@ -1,7 +1,14 @@
 /**
- * Thin boundary around the Ollaya decision daemon. Ollaya is Beta and pre-1.0,
- * so every call goes through `ClassifierClient` and can be swapped without
- * touching the classification workflow.
+ * Ollaya decision-server boundary (ARCHITECTURE §8, ported from the former
+ * `packages/classifier`). Ollaya is Beta and pre-1.0, so every call goes
+ * through `ClassifierClient` and can be swapped without touching the
+ * classification workflow.
+ *
+ * Unlike the rest of this package this is NOT an AI SDK provider: Ollaya is a
+ * decision server (typed `noul` questions → calibrated probabilities), not an
+ * LLM gateway — no text generation, no OpenAI-compatible endpoints (§3). The
+ * adapter stays a hand-rolled fetch client with its own error taxonomy and
+ * timeout, kept verbatim from the v1 port.
  */
 
 export interface NoulQuestion {
@@ -88,7 +95,9 @@ function normalizeDecideResponse(body: OllayaDecideBody): DecideResult {
   } else if (body.results) {
     result.probabilities = Object.fromEntries(
       body.results
-        .filter((entry): entry is { question: string; probability: number } => Boolean(entry.question))
+        .filter((entry): entry is { question: string; probability: number } =>
+          Boolean(entry.question),
+        )
         .map((entry) => [entry.question, entry.probability ?? 0]),
     );
   }

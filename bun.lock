@@ -23,10 +23,9 @@
       "name": "@al-yo-bo/server",
       "version": "0.0.0",
       "dependencies": {
-        "@al-yo-bo/classifier": "workspace:*",
+        "@al-yo-bo/ai": "workspace:*",
         "@al-yo-bo/core": "workspace:*",
         "@al-yo-bo/db": "workspace:*",
-        "@al-yo-bo/embeddings": "workspace:*",
         "@al-yo-bo/importer": "workspace:*",
         "@al-yo-bo/search": "workspace:*",
         "@al-yo-bo/shared": "workspace:*",
@@ -75,20 +74,23 @@
         "vite": "^8.3.2",
       },
     },
-    "packages/classifier": {
-      "name": "@al-yo-bo/classifier",
+    "packages/ai": {
+      "name": "@al-yo-bo/ai",
       "version": "0.0.0",
       "dependencies": {
+        "@ai-sdk/openai-compatible": "^3.0.62",
         "@al-yo-bo/shared": "workspace:*",
+        "ai": "^7.0.123",
+        "ollama-ai-provider-v2": "^4.0.1",
+        "zod": "^4.6.5",
       },
     },
     "packages/core": {
       "name": "@al-yo-bo/core",
       "version": "0.0.0",
       "dependencies": {
-        "@al-yo-bo/classifier": "workspace:*",
+        "@al-yo-bo/ai": "workspace:*",
         "@al-yo-bo/db": "workspace:*",
-        "@al-yo-bo/embeddings": "workspace:*",
         "@al-yo-bo/exporter": "workspace:*",
         "@al-yo-bo/importer": "workspace:*",
         "@al-yo-bo/search": "workspace:*",
@@ -102,13 +104,6 @@
         "@al-yo-bo/shared": "workspace:*",
       },
     },
-    "packages/embeddings": {
-      "name": "@al-yo-bo/embeddings",
-      "version": "0.0.0",
-      "dependencies": {
-        "@al-yo-bo/shared": "workspace:*",
-      },
-    },
     "packages/exporter": {
       "name": "@al-yo-bo/exporter",
       "version": "0.0.0",
@@ -116,6 +111,7 @@
         "@al-yo-bo/shared": "workspace:*",
       },
       "devDependencies": {
+        "@al-yo-bo/db": "workspace:*",
         "@al-yo-bo/importer": "workspace:*",
       },
     },
@@ -160,13 +156,11 @@
 
     "@ai-sdk/react": ["@ai-sdk/react@4.0.130", "", { "dependencies": { "@ai-sdk/mcp": "2.0.66", "@ai-sdk/provider": "4.0.21", "@ai-sdk/provider-utils": "5.0.53", "ai": "7.0.127", "swr": "^2.4.1", "throttleit": "2.1.0" }, "peerDependencies": { "react": "^18 || ~19.0.1 || ~19.1.2 || ^19.2.1" } }, "sha512-6nUGT2mWIPUK/s2nUJH0Hiu90Oqawwo2INAHekOi4hJBb8zhFJS0yMP0aRn/+UO9VmJT/v58d8rWSmGE3B6ApA=="],
 
-    "@al-yo-bo/classifier": ["@al-yo-bo/classifier@workspace:packages/classifier"],
+    "@al-yo-bo/ai": ["@al-yo-bo/ai@workspace:packages/ai"],
 
     "@al-yo-bo/core": ["@al-yo-bo/core@workspace:packages/core"],
 
     "@al-yo-bo/db": ["@al-yo-bo/db@workspace:packages/db"],
-
-    "@al-yo-bo/embeddings": ["@al-yo-bo/embeddings@workspace:packages/embeddings"],
 
     "@al-yo-bo/exporter": ["@al-yo-bo/exporter@workspace:packages/exporter"],
 

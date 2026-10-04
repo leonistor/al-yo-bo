@@ -1,11 +1,11 @@
-import { OllayaClassifierClient } from '@al-yo-bo/classifier';
-import { createCore, createVectorProvider, makeScraper, type AvatarStore } from '@al-yo-bo/core';
-import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
-import { OpenRouterEmbeddings } from '@al-yo-bo/embeddings';
-import { Hono, type Context } from 'hono';
-import { serveStatic } from 'hono/bun';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
+import { OllayaClassifierClient, OpenRouterEmbeddings } from '@al-yo-bo/ai';
+import { createCore, createVectorProvider, makeScraper, type AvatarStore } from '@al-yo-bo/core';
+import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import { Hono, type Context } from 'hono';
+import { serveStatic } from 'hono/bun';
 
 import { createApp } from './app.ts';
 import { loadConfig } from './env.ts';

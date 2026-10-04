@@ -38,8 +38,9 @@ packages/
   db/              schema, migrations, PRAGMAs, typed queries
   search/          FTS5 + RRF fusion + in-process KNN (fallback VectorIndex)
   vectordb/        Qdrant client (VectorIndex adapter, collection sync)
-  embeddings/      EmbeddingClient interface + OpenRouter adapter
-  classifier/      Ollaya client (ClassifierClient interface + adapter)
+  ai/              one AI layer (ARCHITECTURE §8): typed config, provider registry,
+                   EmbeddingClient/ClassifierClient/ExtractionClient interfaces,
+                   OpenRouter/Ollaya/Ollama adapters, health probes
   importer/        markdown collection-file parser and ingest
   exporter/        bookmark export serializers (Netscape HTML, JSON, CSV, markdown collection)
   core/            domain/application services (transport-neutral); orchestrates db/search/importer
