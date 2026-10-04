@@ -5,16 +5,22 @@ import {
   assignTag,
   createBookmark,
   createCategory,
-  createDataset,
   createTag,
   getBookmarkTags,
   getBookmarksWithTagsByIds,
+  listBelowThresholdCandidates,
   listUnknownClassificationLabels,
   openDatabase,
   setTagStatus,
   setupDatabase,
 } from '@al-yo-bo/db';
-import { bytesToUuid, uuidToBytes, type RankedCandidate, type VectorFilter, type VectorIndex } from '@al-yo-bo/shared';
+import {
+  bytesToUuid,
+  uuidToBytes,
+  type RankedCandidate,
+  type VectorFilter,
+  type VectorIndex,
+} from '@al-yo-bo/shared';
 
 import {
   buildQuestions,
@@ -23,7 +29,7 @@ import {
   MAX_QUESTIONS_PER_CALL,
   type ClassifyDeps,
 } from '../src/enrichment/classify.ts';
-import { testConfig } from './support.ts';
+import { stubClassifier, testConfig } from './support.ts';
 
 class NoVector implements VectorIndex {
   get size(): number {
@@ -46,39 +52,30 @@ interface DecideCall {
   questions: Record<string, unknown>;
 }
 
-function stubClassifier(probabilities: Record<string, number>, calls: DecideCall[] = []) {
-  return {
-    async decide(request: { state: string; questions: Record<string, unknown> }) {
-      calls.push({ state: request.state, questions: request.questions });
-      return { probabilities, model: 'laya:en' };
-    },
-  };
-}
-
-function makeDb(): Database & { datasetId: string } {
-  const db = openDatabase(':memory:') as Database & { datasetId: string };
+function makeDb(): Database {
+  const db = openDatabase(':memory:');
   setupDatabase(db);
-  db.datasetId = createDataset(db, 'test').id;
   return db;
 }
 
 interface Fixture {
   db: Database;
-  datasetId: string;
   bookmarkId: string;
   tagIds: { rust: string; webdev: string };
 }
 
-/** One category ("dev") with scoped active tags; bookmark in that category. */
+/**
+ * One category ("dev") and a set of active + deprecated tags; the bookmark sits
+ * in that category. Tags have no category anymore (MODEL.md principle 2), so
+ * the candidate set for classification is ALL active tags.
+ */
 function makeFixture(db: Database): Fixture {
-  const datasetId = createDataset(db, 'test').id;
-  const category = createCategory(db, { datasetId, name: 'dev' });
-  const rust = createTag(db, { datasetId, name: 'rust', categoryId: category.id });
-  const webdev = createTag(db, { datasetId, name: 'webdev', categoryId: category.id });
-  const deprecated = createTag(db, { datasetId, name: 'inactive', categoryId: category.id });
+  const category = createCategory(db, { name: 'dev' });
+  const rust = createTag(db, { name: 'rust' });
+  const webdev = createTag(db, { name: 'webdev' });
+  const deprecated = createTag(db, { name: 'inactive' });
   setTagStatus(db, deprecated.id, 'deprecated');
   const { id: bookmarkId } = createBookmark(db, {
-    datasetId,
     url: 'https://example.com/rust',
     title: 'Rust book',
     description: 'Learn Rust',
@@ -87,7 +84,6 @@ function makeFixture(db: Database): Fixture {
   });
   return {
     db,
-    datasetId,
     bookmarkId,
     tagIds: { rust: rust.id, webdev: webdev.id },
   };
@@ -183,7 +179,8 @@ describe('classifyBookmark', () => {
 
     // Exactly-at-threshold qualifies (>=), the deprecated tag never does even at 0.99.
     expect(tags.some((tag) => tag.name === 'inactive')).toBe(false);
-    // The question was only asked for active candidates.
+    // The question was only asked for active candidates (the candidate set is
+    // ALL active tags — the deprecated one is excluded).
     expect(Object.keys(calls[0]!.questions).toSorted()).toEqual(['rust', 'webdev']);
     expect(calls[0]!.state).toContain('Rust book');
   });
@@ -195,9 +192,7 @@ describe('classifyBookmark', () => {
     );
 
     expect(getBookmarkTags(db, fixture.bookmarkId)).toEqual([]);
-    const candidates = await import('@al-yo-bo/db').then((m) =>
-      m.listBelowThresholdCandidates(db, fixture.datasetId, 0.5),
-    );
+    const candidates = listBelowThresholdCandidates(db, 0.5);
     expect(candidates.length).toBe(2);
     expect(candidates[0]!.tagName).toBe('rust'); // ranked by probability
   });
@@ -255,7 +250,6 @@ describe('classifyBookmark', () => {
 
     const emptyDb = makeDb();
     const { id } = createBookmark(emptyDb, {
-      datasetId: emptyDb.datasetId,
       url: 'https://example.com/none',
     });
     expect(await classifyBookmark(makeDeps(emptyDb, stubClassifier({ rust: 1 })), id)).toEqual({
@@ -267,36 +261,50 @@ describe('classifyBookmark', () => {
     });
   });
 
+  // Candidate-set delta (the one behavioral change vs legacy): candidates are
+  // ALL active tags, so the fixture's rust/webdev tags join the freshly created
+  // ones in the same batches.
   test('batches candidate questions across multiple runs', async () => {
-    const category = createCategory(db, { datasetId: fixture.datasetId, name: 'big' });
     const names = Array.from({ length: MAX_QUESTIONS_PER_CALL + 5 }, (_, index) => `tag-${index}`);
     for (const name of names) {
-      createTag(db, { datasetId: fixture.datasetId, name, categoryId: category.id });
+      createTag(db, { name });
     }
     const { id } = createBookmark(db, {
-      datasetId: fixture.datasetId,
       url: 'https://example.com/big',
-      categoryId: category.id,
     });
 
     // One unasked label per response: each run persists its own evidence row.
+    // The probabilities cover every candidate (rust/webdev included — they are
+    // active tags in this db, part of the all-active-tags candidate set).
     const calls: DecideCall[] = [];
     const outcome = await classifyBookmark(
       makeDeps(
         db,
-        stubClassifier({ ...Object.fromEntries(names.map((name) => [name, 0.9])), mystery: 0.7 }, calls),
+        stubClassifier(
+          {
+            ...Object.fromEntries(names.map((name) => [name, 0.9])),
+            rust: 0.9,
+            webdev: 0.9,
+            mystery: 0.7,
+          },
+          calls,
+        ),
       ),
       id,
     );
 
+    // 25 fresh tags + rust + webdev = 27 active candidates → two runs (20 + 7).
+    const candidateCount = names.length + 2;
     expect(outcome.runs).toBe(2);
-    expect(outcome.assigned).toBe(names.length);
+    expect(outcome.assigned).toBe(candidateCount);
     expect(outcome.unknown).toBe(2);
     expect(Object.keys(calls[0]!.questions).length).toBe(MAX_QUESTIONS_PER_CALL);
-    expect(Object.keys(calls[1]!.questions).length).toBe(5);
+    expect(Object.keys(calls[1]!.questions).length).toBe(candidateCount - MAX_QUESTIONS_PER_CALL);
 
     const runIds = db
-      .query<{ id: Uint8Array }, [Uint8Array]>('SELECT id FROM classification_runs WHERE bookmark_id = ?')
+      .query<{ id: Uint8Array }, [Uint8Array]>(
+        'SELECT id FROM classification_runs WHERE bookmark_id = ?',
+      )
       .all(uuidToBytes(id))
       .map((row) => bytesToUuid(row.id));
     expect(runIds).toHaveLength(2);
@@ -320,7 +328,11 @@ describe('classifyBookmark', () => {
 
   test('retraction never removes user- or import-sourced assignments', async () => {
     assignTag(db, { bookmarkId: fixture.bookmarkId, tagId: fixture.tagIds.rust, source: 'user' });
-    assignTag(db, { bookmarkId: fixture.bookmarkId, tagId: fixture.tagIds.webdev, source: 'import' });
+    assignTag(db, {
+      bookmarkId: fixture.bookmarkId,
+      tagId: fixture.tagIds.webdev,
+      source: 'import',
+    });
 
     const outcome = await classifyBookmark(
       makeDeps(db, stubClassifier({ rust: 0.1, webdev: 0.1 })),
@@ -338,9 +350,7 @@ describe('classifyBookmark', () => {
     await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.9 })), fixture.bookmarkId);
     await classifyBookmark(makeDeps(db, stubClassifier({ rust: 0.7 })), fixture.bookmarkId);
 
-    const rustResults = readResults(db, fixture.bookmarkId).filter(
-      (row) => row.tagName === 'rust',
-    );
+    const rustResults = readResults(db, fixture.bookmarkId).filter((row) => row.tagName === 'rust');
     expect(rustResults).toHaveLength(2); // one per run — evidence is never rewritten
     const selected = rustResults.filter((row) => row.selected === 1);
     expect(selected).toHaveLength(1);
@@ -363,9 +373,7 @@ describe('classifyBookmark', () => {
     expect(outcome.retracted).toBe(1);
     expect(getBookmarkTags(db, fixture.bookmarkId)).toEqual([]);
 
-    const rustResults = readResults(db, fixture.bookmarkId).filter(
-      (row) => row.tagName === 'rust',
-    );
+    const rustResults = readResults(db, fixture.bookmarkId).filter((row) => row.tagName === 'rust');
     expect(rustResults).toHaveLength(2);
     expect(rustResults.map((row) => row.probability).toSorted()).toEqual([0.1, 0.9]);
     expect(readResults(db, fixture.bookmarkId).every((row) => row.selected === 0)).toBe(true);

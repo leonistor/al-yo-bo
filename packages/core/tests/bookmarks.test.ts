@@ -3,27 +3,28 @@ import { describe, expect, test } from 'bun:test';
 import {
   createBookmark,
   createCategory,
-  createDataset,
   createTag,
   getBookmarkById,
+  getTagByName,
   updateBookmark,
 } from '@al-yo-bo/db';
 
 import { NotFoundError, ValidationError } from '../src/errors.ts';
 import { createBookmarkService } from '../src/services/bookmarks.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
-import { StubVectorIndex, makeDb, recordingJobs } from './support.ts';
+import { StubVectorIndex, makeDb, recordingEvents, recordingJobs } from './support.ts';
 
 function makeService(vector = new StubVectorIndex()) {
   const db = makeDb();
   const jobs = recordingJobs();
+  const events = recordingEvents();
   const service = createBookmarkService({
     db,
     jobs,
     vector: createVectorProvider(vector, 'memory'),
-    datasetId: db.datasetId,
+    events,
   });
-  return { db, jobs, vector, service };
+  return { db, jobs, events, vector, service };
 }
 
 describe('BookmarkService — get/create', () => {
@@ -40,7 +41,6 @@ describe('BookmarkService — get/create', () => {
   test('update rejects non-HTTP(S) URLs and leaves the row untouched', async () => {
     const { service, db } = makeService();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'Original',
     });
@@ -60,13 +60,22 @@ describe('BookmarkService — get/create', () => {
     expect(created.url).toBe('https://example.com/page');
     expect(jobs.calls).toEqual([{ id: created.id, type: 'scrape' }]);
   });
+
+  test('create rejects a category that does not exist', () => {
+    const { service } = makeService();
+    expect(() =>
+      service.create({
+        url: 'https://example.com/orphan',
+        categoryId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).toThrow(NotFoundError);
+  });
 });
 
 describe('BookmarkService.update — re-run triggers', () => {
   test('a URL change resets dead-link evidence and enqueues a scrape', async () => {
     const { service, db, jobs } = makeService();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/old',
       title: 'Old',
     });
@@ -84,7 +93,6 @@ describe('BookmarkService.update — re-run triggers', () => {
   test('a title change enqueues an embed instead of a scrape', async () => {
     const { service, db, jobs } = makeService();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'Before',
     });
@@ -97,10 +105,9 @@ describe('BookmarkService.update — re-run triggers', () => {
 
   test('a category move syncs the vector payload without re-enriching', async () => {
     const { service, db, jobs, vector } = makeService(new StubVectorIndex(['already-indexed']));
-    const from = createCategory(db, { datasetId: db.datasetId, name: 'From' });
-    const to = createCategory(db, { datasetId: db.datasetId, name: 'To' });
+    const from = createCategory(db, { name: 'From' });
+    const to = createCategory(db, { name: 'To' });
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/x',
       categoryId: from.id,
     });
@@ -112,53 +119,82 @@ describe('BookmarkService.update — re-run triggers', () => {
     expect(vector.payloads[0]!.bookmarkId).toBe(id);
     expect(vector.payloads[0]!.patch.categoryId).toBe(to.id);
   });
+
+  test('update rejects a category that does not exist', async () => {
+    const { service, db } = makeService();
+    const { id } = createBookmark(db, { url: 'https://example.com/c' });
+
+    await expect(
+      service.update(id, { categoryId: '11111111-1111-4111-8111-111111111111' }),
+    ).rejects.toThrow(NotFoundError);
+  });
 });
 
-describe('BookmarkService — dataset boundary', () => {
-  test('assignTag rejects a tag from another dataset', async () => {
+describe('BookmarkService — tag assignment', () => {
+  test('assignTag rejects an unknown tag', async () => {
     const { service, db } = makeService();
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://bound.test/a' });
-    const other = createDataset(db, 'other');
-    const foreignTag = createTag(db, { datasetId: other.id, name: 'foreign' });
+    const { id } = createBookmark(db, { url: 'https://bound.test/a' });
 
-    await expect(service.assignTag(id, foreignTag.id)).rejects.toThrow(ValidationError);
-  });
-
-  test('create and update reject a category from another dataset', async () => {
-    const { service, db } = makeService();
-    const other = createDataset(db, 'other');
-    const foreignCategory = createCategory(db, { datasetId: other.id, name: 'Foreign' });
-
-    expect(() =>
-      service.create({ url: 'https://bound.test/b', categoryId: foreignCategory.id }),
-    ).toThrow(ValidationError);
-
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://bound.test/c' });
-    await expect(service.update(id, { categoryId: foreignCategory.id })).rejects.toThrow(
-      ValidationError,
+    await expect(service.assignTag(id, '11111111-1111-4111-8111-111111111111')).rejects.toThrow(
+      NotFoundError,
     );
   });
 
-  test('a same-dataset category and tag are accepted', async () => {
+  test('a category and a global tag are accepted and attached', async () => {
     const { service, db } = makeService();
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Local' });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'local' });
+    const category = createCategory(db, { name: 'Local' });
+    const tag = createTag(db, { name: 'local' });
 
     const created = service.create({ url: 'https://bound.test/d', categoryId: category.id });
     expect(created.categoryId).toBe(category.id);
     const assigned = await service.assignTag(created.id, tag.id);
     expect(assigned.tags.map((view) => view.tagId)).toContain(tag.id);
   });
+
+  test('removeTag drops the assignment and rejects unknown ones', async () => {
+    const { service, db } = makeService();
+    const tag = createTag(db, { name: 'temp' });
+    const { id } = createBookmark(db, { url: 'https://bound.test/e' });
+    await service.assignTag(id, tag.id);
+
+    await service.removeTag(id, tag.id);
+    expect(getTagByName(db, 'temp')).not.toBeNull();
+    const bookmark = await service.get(id);
+    expect(bookmark.tags).toEqual([]);
+
+    await expect(service.removeTag(id, tag.id)).rejects.toThrow(NotFoundError);
+  });
 });
 
 describe('BookmarkService.delete', () => {
   test('removes the row and mirrors the deletion into a non-empty index', async () => {
     const { service, db, vector } = makeService(new StubVectorIndex(['x']));
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/gone' });
+    const { id } = createBookmark(db, { url: 'https://example.com/gone' });
 
     await service.delete(id);
 
     expect(getBookmarkById(db, id)).toBeNull();
     expect(vector.deletions).toEqual([id]);
+  });
+
+  test('delete of an unknown id is NotFoundError', async () => {
+    const { service } = makeService();
+    await expect(service.delete('11111111-1111-4111-8111-111111111111')).rejects.toThrow(
+      NotFoundError,
+    );
+  });
+});
+
+describe('BookmarkService — events', () => {
+  test('every mutation emits bookmarks.changed with the affected id', async () => {
+    const { service, events } = makeService(new StubVectorIndex(['x']));
+    const created = service.create({ url: 'https://example.com/ev' });
+    await service.update(created.id, { title: 'renamed' });
+    await service.delete(created.id);
+
+    const topics = events.events.filter((event) => event.topic === 'bookmarks.changed');
+    expect(topics.length).toBeGreaterThanOrEqual(3);
+    // Events are hints (ARCHITECTURE §9): the payload names the bookmark(s).
+    expect(topics.every((event) => event.topic === 'bookmarks.changed')).toBe(true);
   });
 });

@@ -7,31 +7,35 @@
 // oxlint-disable eslint/no-await-in-loop
 
 /**
- * In-process job loop (ARCHITECTURE §8, MVP decision): sequential, idempotent
- * jobs with bounded retries, deduplicated per (bookmark, type). The queue is
- * deliberately in-memory — SQLite holds the durable state that defines what
- * still needs doing, so `reconcileEnrichment` at startup recovers anything a
- * restart dropped.
+ * In-process job loop (ARCHITECTURE §10): sequential, idempotent jobs with
+ * bounded retries, deduplicated per (bookmark, type). The queue is deliberately
+ * in-memory — SQLite holds the durable state that defines what still needs
+ * doing, so `reconcileEnrichment` at startup recovers anything a restart
+ * dropped.
  *
- * Job types:
- * - `scrape`    — page → content/metadata/content_hash
- * - `embed`     — content → vector (OpenRouter + SQLite BLOB)
- * - `classify`  — content → tag assignments via Ollaya
+ * Job types (§10 table):
+ * - `scrape`     — page → content/metadata/content_hash; chains embed + screenshot
+ * - `embed`      — content → vector (SQLite BLOB first, then the serving index);
+ *                  chains `classify` via `onEmbedded`
+ * - `classify`   — content → tag assignments via Ollaya
  * - `screenshot` — page → image bytes written to `data/screenshots/<uuid>.jpg`
  *
- * The screenshot job (2026-10-01 import simplification) is independent of
- * scrape: it fetches the page itself via the injected `ScreenshotClient`,
- * stores the buffer under `data/screenshots/`, and records both the local
- * path and the discovered `og:image` URL on `metadata.image`. A failed
- * screenshot never invalidates the bookmark — reconciliation retries on the
- * next start.
+ * The screenshot job is independent of scrape: it fetches the page itself via
+ * the injected `ScreenshotClient`, stores the buffer under `data/screenshots/`,
+ * and records both the local path and the discovered `og:image` URL on
+ * `metadata.image`. A failed screenshot never invalidates the bookmark —
+ * reconciliation retries on the next start.
+ *
+ * Every enqueue and completed job emits a coarse `jobs.changed` hint
+ * (ARCHITECTURE §9) when an events sink is provided — lossy by design, it only
+ * triggers UI refetches.
  */
 
+import type { Database } from 'bun:sqlite';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Database } from 'bun:sqlite';
-
+import type { EmbeddingClient } from '@al-yo-bo/ai';
 import {
   getBookmarkById,
   getBookmarksWithTagsByIds,
@@ -43,12 +47,12 @@ import {
   updateBookmark,
   upsertEmbedding,
 } from '@al-yo-bo/db';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { packFloat32, type BookmarkWithTags, type VectorIndex } from '@al-yo-bo/shared';
 
+import type { CoreConfig } from '../config.ts';
+import type { EventsSink } from '../events.ts';
 import { ScrapeError, type ScrapeFn, type ScrapeResult } from '../scrape.ts';
 import type { ScreenshotClient, ScreenshotResult } from '../screenshot.ts';
-import type { CoreConfig } from '../config.ts';
 import { classifyBookmark, type ClassifyDeps } from './classify.ts';
 
 export type JobType = 'scrape' | 'embed' | 'classify' | 'screenshot';
@@ -87,12 +91,14 @@ export interface JobQueue {
 export interface JobQueueOptions extends Omit<JobDeps, 'queue'> {
   maxAttempts?: number;
   baseDelayMs?: number;
-  /** Called after a successful embed write — the classification trigger (§6). */
+  /** Called after a successful embed write — the classification trigger (§7 stage 6). */
   onEmbedded?: (bookmarkId: string) => void;
   /** Classification subsystem; absent = classification stays off (§1.5). */
   classifier?: ClassifyDeps['classifier'];
   /** Core configuration (threshold, Ollaya model) for the classify job. */
   config: CoreConfig;
+  /** Receives the coarse `jobs.changed` hints (ARCHITECTURE §9); absent = silent. */
+  events?: EventsSink;
 }
 
 /**
@@ -137,7 +143,8 @@ export async function scrapeAndStore(deps: JobDeps, bookmarkId: string): Promise
     result = await deps.scrape(bookmark.url);
   } catch (error) {
     // Only a definitive dead link (404/410) counts toward invalidation; every
-    // other failure is transient and is retried on the next reconciliation.
+    // other failure is transient and is retried on the next reconciliation
+    // (ARCHITECTURE §10 scrape implementation).
     const statusCode = error instanceof ScrapeError ? error.statusCode : undefined;
     const deadLink = statusCode === 404 || statusCode === 410;
     const lastError = {
@@ -236,11 +243,12 @@ export async function embedBookmarks(
     }
   }
 
-  // The configured EMBEDDING_MODEL is the row's identity (ARCHITECTURE §6: rows
-  // are keyed by the pinned model, which is what reconciliation compares against).
-  // The client's response model is provider-normalized and may differ cosmetically
-  // (e.g. `text-embedding-3-small` vs `openai/text-embedding-3-small`); storing it
-  // would flag every row as stale on every startup and re-embed forever.
+  // The configured EMBEDDING_MODEL is the row's identity (ARCHITECTURE §6/§8,
+  // M4): rows are keyed by the pinned model, which is what reconciliation
+  // compares against. The client's response model is provider-normalized and
+  // may differ cosmetically (e.g. `text-embedding-3-small` vs
+  // `openai/text-embedding-3-small`); storing it would flag every row as stale
+  // on every startup and re-embed forever.
   const model = deps.config.embeddings.model ?? 'unknown';
 
   for (let offset = 0; offset < pending.length; offset += EMBED_BATCH_SIZE) {
@@ -280,9 +288,10 @@ export async function embedBookmarks(
           payload: {
             model,
             dims,
-            // The dataset boundary must hold in the vector engine too (MODEL.md
-            // principle 1): points are filtered by dataset at query time.
-            datasetId: item.bookmark.datasetId,
+            // The payload mirrors the bookmark's filterable state (shared
+            // VectorPayload) so the vector engine can enforce category/tag
+            // filters inside the top-k query. There is no dataset axis left
+            // to filter by (MODEL.md principle 1).
             categoryId: item.bookmark.categoryId,
             tagIds: item.bookmark.tags.map((tag) => tag.tagId),
           },
@@ -384,6 +393,12 @@ export async function screenshotAndStore(
 export function startJobQueue(options: JobQueueOptions): JobQueue {
   const maxAttempts = options.maxAttempts ?? 3;
   const baseDelayMs = options.baseDelayMs ?? 1_000;
+  /**
+   * Coarse job-progress hints (ARCHITECTURE §9): one on enqueue, one on
+   * completion. Lossy by design — dropping one can only cost a refetch.
+   */
+  const emitJob = (bookmarkId: string, job: JobType): void =>
+    options.events?.emit({ topic: 'jobs.changed', bookmarkId, job });
 
   const queue: JobQueue = {
     enqueue() {},
@@ -491,6 +506,7 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
       for (const entry of results) {
         if (entry.outcome === 'embedded') {
           options.onEmbedded?.(entry.bookmarkId);
+          emitJob(entry.bookmarkId, 'embed');
         } else if (entry.outcome === 'failed') {
           failed.push(entry.bookmarkId);
         }
@@ -530,7 +546,9 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
         if (type === 'embed') {
           await runEmbedBatch(collectEmbedBatch(key.slice('embed:'.length)));
         } else {
-          await runWithRetries(type, key.slice(type.length + 1));
+          const bookmarkId = key.slice(type.length + 1);
+          await runWithRetries(type, bookmarkId);
+          emitJob(bookmarkId, type);
         }
       }
     } finally {
@@ -549,6 +567,7 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
     }
     pending.set(key, type);
     order.push(key);
+    emitJob(bookmarkId, type);
     // Deferred to a microtask so synchronous bursts (e.g. an import loop) dedupe
     // before the first job is dequeued.
     queueMicrotask(() => void pump());
@@ -583,7 +602,7 @@ export interface ReconcileReport {
 }
 
 /**
- * Startup reconciliation (ARCHITECTURE §8): re-enqueue scrape for never-scraped
+ * Startup reconciliation (ARCHITECTURE §10): re-enqueue scrape for never-scraped
  * bookmarks, embed for scraped-but-unembedded bookmarks, and re-embed rows whose
  * stored model differs from the configured one (model changes require a full
  * re-embed pass, §6). The screenshot job enqueues for bookmarks without a

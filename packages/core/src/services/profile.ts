@@ -1,16 +1,19 @@
 /**
- * The single user's profile (identity + active-dataset pointer). Transport-
- * neutral like every service: avatar bytes arrive with an injected write port
- * (`AvatarStore`, mirroring `screenshotsDir`) so core never touches paths —
- * the app edge owns the data root and overwrites `profile/avatar.<ext>`.
+ * The single user's profile (MODEL.md principle 8): a singleton identity row —
+ * name, GitHub username, avatar file. No dataset pointer, no user axis, no
+ * delete path. Transport-neutral like every service: avatar bytes arrive with
+ * an injected write port (`AvatarStore`, mirroring `screenshotsDir`) so core
+ * never touches paths — the app edge owns the data root and overwrites
+ * `profile/avatar.<ext>`.
  */
 
 import type { Database } from 'bun:sqlite';
 
-import { getDatasetById, getProfile, updateProfile } from '@al-yo-bo/db';
-import type { Dataset, Profile } from '@al-yo-bo/shared';
+import { getProfile, updateProfile } from '@al-yo-bo/db';
+import type { Profile } from '@al-yo-bo/shared';
 
 import { NotFoundError, ValidationError } from '../errors.ts';
+import type { EventsSink } from '../events.ts';
 
 /** Validated avatar bytes; the extension was sniffed from magic bytes, not trust. */
 export interface AvatarFile {
@@ -33,19 +36,17 @@ export interface AvatarStore {
 export interface ProfileServiceDeps {
   db: Database;
   avatarStore?: AvatarStore;
+  events: EventsSink;
 }
 
 export interface ProfilePatchInput {
   name?: string | null;
   githubUsername?: string | null;
-  activeDatasetId?: string | null;
 }
 
 export interface ProfileService {
   /** The singleton row, or null only when the schema was tampered with. */
   get(): Profile | null;
-  /** The dataset the pointer names, or null when unset (callers fall back to the boot default). */
-  getActiveDataset(): Dataset | null;
   update(patch: ProfilePatchInput): Profile;
   saveAvatar(file: AvatarFile): Promise<Profile>;
   /** Drops the stored avatar file (if any) and the profile's pointer to it. */
@@ -58,13 +59,13 @@ function isMissingFile(error: unknown): boolean {
 }
 
 export function createProfileService(deps: ProfileServiceDeps): ProfileService {
-  const { db, avatarStore } = deps;
+  const { db, avatarStore, events } = deps;
 
   const requireProfile = (): Profile => {
     const profile = getProfile(db);
     if (!profile) {
-      // Migration 0007 inserts the singleton row; a missing row means the
-      // schema was tampered with — surface it as 404, not a crash.
+      // Migration 0001 inserts the sentinel singleton row; a missing row means
+      // the schema was tampered with — surface it as 404, not a crash.
       throw new NotFoundError('Profile not found');
     }
     return profile;
@@ -73,28 +74,17 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
   return {
     get: () => getProfile(db),
 
-    getActiveDataset() {
-      const activeDatasetId = getProfile(db)?.activeDatasetId;
-      // Read through the pointer at call time, not the boot-resolved dataset:
-      // PATCH can move the pointer while the running services keep their
-      // boot-time scope (known limitation, see create-core).
-      return activeDatasetId ? (getDatasetById(db, activeDatasetId) ?? null) : null;
-    },
-
     update(patch) {
       requireProfile();
-      if (patch.activeDatasetId !== undefined && patch.activeDatasetId !== null) {
-        if (!getDatasetById(db, patch.activeDatasetId)) {
-          throw new ValidationError('"activeDatasetId" must reference an existing dataset');
-        }
-      }
       // People type "@user"; store the bare username the API contract promises.
       const githubUsername =
         patch.githubUsername === undefined || patch.githubUsername === null
           ? patch.githubUsername
           : patch.githubUsername.replace(/^@/, '');
       updateProfile(db, { ...patch, githubUsername });
-      return requireProfile();
+      const profile = requireProfile();
+      events.emit({ topic: 'profile.changed' });
+      return profile;
     },
 
     async saveAvatar(file) {
@@ -104,7 +94,9 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
       }
       const avatarPath = await avatarStore.save(file);
       updateProfile(db, { avatarPath });
-      return requireProfile();
+      const profile = requireProfile();
+      events.emit({ topic: 'profile.changed' });
+      return profile;
     },
 
     async clearAvatar() {
@@ -124,7 +116,9 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
         }
       }
       updateProfile(db, { avatarPath: null });
-      return requireProfile();
+      const updated = requireProfile();
+      events.emit({ topic: 'profile.changed' });
+      return updated;
     },
   };
 }

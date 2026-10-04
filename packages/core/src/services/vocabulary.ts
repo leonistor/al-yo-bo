@@ -1,120 +1,113 @@
 import type { Database } from 'bun:sqlite';
 
 import {
+  CategoryCycleError,
   createCategory,
-  createSection,
   createTag,
   deleteCategory,
-  deleteSection,
   deleteTag,
   getBookmarksWithTagsByIds,
+  getCategoryBySiblingName,
   getCategoryById,
-  getCategoryByName,
-  getSectionByName,
+  getCategorySubtreeInfo,
+  getCategoryTree,
   getTagById,
   getTagByName,
-  listBookmarkIdsForCategoryScope,
   listBookmarkIdsForTag,
+  listBookmarksForExport,
   listCategories,
-  listSections,
   listTags,
+  moveCategory,
+  rebalanceSiblings,
   setTagStatus,
   updateCategory,
-  updateSection,
   updateTag,
+  type CategorySubtreeInfo,
 } from '@al-yo-bo/db';
-import type { Category, Section, Tag, TagStatus } from '@al-yo-bo/shared';
+import type { Category, CategoryNode, Tag, TagStatus } from '@al-yo-bo/shared';
 
 import { ConflictError, NotFoundError, ValidationError } from '../errors.ts';
+import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
 import type { JobScheduler } from './enrichment.ts';
 
-export interface SectionInput {
-  name: string;
-  description?: string | null;
-}
-
-export interface SectionPatch {
-  name?: string;
-  description?: string | null;
-}
-
 export interface CategoryInput {
   name: string;
+  parentId?: string | null;
   description?: string | null;
-  sectionId?: string | null;
 }
 
 export interface CategoryPatch {
   name?: string;
   description?: string | null;
-  sectionId?: string | null;
 }
 
 export interface TagInput {
   name: string;
   description?: string | null;
-  categoryId?: string | null;
 }
 
 export interface TagPatch {
   name?: string;
   description?: string | null;
-  categoryId?: string | null;
 }
 
 export interface VocabularyServiceDeps {
   db: Database;
   jobs: JobScheduler;
   vector: VectorProvider;
-  /** Dataset the vocabulary operations are scoped to. */
-  datasetId: string;
+  events: EventsSink;
 }
 
 export interface VocabularyService {
-  listSections(): Section[];
-  createSection(input: SectionInput): Section;
-  updateSection(id: string, input: SectionPatch): Section;
-  deleteSection(id: string): void;
   listCategories(): Category[];
+  /** The nested tree the sidebar consumes (roots, then children in `sort_order`). */
+  getCategoryTree(): CategoryNode[];
   createCategory(input: CategoryInput): Category;
   updateCategory(id: string, input: CategoryPatch): Category;
-  /** Async so the affected bookmarks' vector payloads can be resynced. */
-  deleteCategory(id: string): Promise<void>;
+  /**
+   * Re-parents a category (subtree included — children follow implicitly).
+   * Cycles are refused here: the db move walks the ancestor chain and throws
+   * `CategoryCycleError`, mapped to the transport-neutral validation error
+   * (MODEL.md "Tree integrity" — SQL cannot express this on a self-FK).
+   */
+  moveCategory(id: string, parentId: string | null, sortOrder?: string): Category;
+  /**
+   * Persists a drag-reorder of one sibling list: `orderedIds` is the complete
+   * list of sibling ids (all sharing `parentId`) in the desired order. Keys are
+   * evenly spaced fractional values from db's `rebalanceSiblings` —
+   * deterministic and gap-safe (MODEL.md principle 2, db/sort-order.ts). A
+   * single-item drag that only needs a midpoint can pass an explicit
+   * `sortOrder` to `moveCategory` instead.
+   */
+  reorderCategories(parentId: string | null, orderedIds: string[]): Category[];
+  /** Counts a delete would remove — the confirmation UI's numbers. */
+  subtreeInfo(id: string): CategorySubtreeInfo;
+  /**
+   * Deletes a category and its subtree; returns the counts the confirmation UI
+   * showed. Bookmarks survive with `category_id` set to NULL (MODEL.md deletion
+   * semantics).
+   */
+  deleteCategory(id: string): Promise<CategorySubtreeInfo>;
   listTags(): Tag[];
   createTag(input: TagInput): Tag;
   updateTag(id: string, input: TagPatch): Tag;
-  /** Async so the affected bookmarks' vector payloads can be resynced. */
   deleteTag(id: string): Promise<void>;
   /** Tag-only lifecycle hook: switch between `active` and `deprecated`. */
   setTagStatus(id: string, status: TagStatus): Tag;
 }
 
 /**
- * A tag's classification scope must stay inside its own dataset: a category from
- * another dataset would leak vocabulary across the boundary (MODEL.md
- * principle 1). Missing categories are NotFound; foreign ones are Validation.
- */
-function assertCategoryInDataset(db: Database, categoryId: string, datasetId: string): void {
-  const category = getCategoryById(db, categoryId);
-  if (!category) {
-    throw new NotFoundError('Category not found');
-  }
-  if (category.datasetId !== datasetId) {
-    throw new ValidationError('Category belongs to a different dataset');
-  }
-}
-
-/**
- * Categories/sections/tags management, dataset-scoped. Sections and categories
- * are no longer gated by status — vocabulary is always created active, so the
- * service only exposes CRUD. Tags retain an `active`/`deprecated` toggle
- * because the classifier's candidate set (ARCHITECTURE §7) and the UI's tag
- * chips both react to it.
+ * Tags + the category tree (MODEL.md principle 2): categories are an orderable,
+ * sibling-unique tree; tags are one flat global namespace with an
+ * `active ⇄ deprecated` lifecycle that gates the classifier's candidate set
+ * (ARCHITECTURE §7 stage 0). The legacy scoped-tag logic is gone — tags have no
+ * category anymore. Every mutation emits the coarse `categories.changed` /
+ * `tags.changed` events (ARCHITECTURE §9/H5).
  */
 export function createVocabularyService(deps: VocabularyServiceDeps): VocabularyService {
-  const { db, jobs, vector, datasetId } = deps;
+  const { db, jobs, vector, events } = deps;
 
   /**
    * Mirrors a vocabulary delete into the denormalized vector payloads: the FK
@@ -128,140 +121,195 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     }
     for (const bookmark of getBookmarksWithTagsByIds(db, bookmarkIds)) {
       // Sequential on purpose: the vector adapter is not assumed to be
-    // concurrency-safe, and a delete resync is small.
-    // oxlint-disable-next-line no-await-in-loop
-    await syncVectorPayload(vector.current(), bookmark.id, bookmark);
+      // concurrency-safe, and a delete resync is small.
+      // oxlint-disable-next-line no-await-in-loop
+      await syncVectorPayload(vector.current(), bookmark.id, bookmark);
     }
   }
 
+  /**
+   * Ids of every bookmark shelved anywhere in a category's subtree, captured
+   * BEFORE the delete (afterwards their `category_id` is NULL and the subtree
+   * no longer resolves). `listBookmarksForExport` is the only uncapped
+   * subtree-filtered read in `@al-yo-bo/db` — the paginated list would
+   * silently truncate the resync at 100 rows.
+   */
+  function subtreeBookmarkIds(categoryId: string): string[] {
+    return listBookmarksForExport(db, { categoryId }).map((bookmark) => bookmark.id);
+  }
+
   return {
-    listSections() {
-      return listSections(db, datasetId);
-    },
-
-    createSection(input) {
-      // The db create is an idempotent upsert, so without this pre-check the UI
-      // cannot tell "created" from "already existed"; renames collide with the
-      // unique index and would otherwise surface as a raw 500.
-      if (getSectionByName(db, datasetId, input.name)) {
-        throw new ConflictError(`A section named "${input.name}" already exists`);
-      }
-      return createSection(db, {
-        datasetId,
-        name: input.name,
-        description: input.description ?? null,
-      });
-    },
-
-    updateSection(id, input) {
-      if (input.name !== undefined) {
-        const existing = getSectionByName(db, datasetId, input.name);
-        if (existing && existing.id !== id) {
-          throw new ConflictError(`A section named "${input.name}" already exists`);
-        }
-      }
-      const updated = updateSection(db, id, {
-        name: input.name,
-        description: 'description' in input ? (input.description ?? null) : undefined,
-      });
-      if (!updated) {
-        throw new NotFoundError('Section not found');
-      }
-      return updated;
-    },
-
-    deleteSection(id) {
-      if (!deleteSection(db, id)) {
-        throw new NotFoundError('Section not found');
-      }
-    },
-
     listCategories() {
-      return listCategories(db, datasetId);
+      return listCategories(db);
+    },
+
+    getCategoryTree() {
+      const tree = getCategoryTree(db);
+      // db's flat ordering keys each root category by its own id (`COALESCE(
+      // parent_id, id)`), so roots come back in creation order while children
+      // sort by the fractional key. Re-sorting the top level here keeps root
+      // drag-reorder honest without touching the db package (tracked as a db
+      // fix-up: the ordering predicate should key roots under a shared NULL
+      // group).
+      return tree.toSorted((a, b) =>
+        a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : 0,
+      );
     },
 
     createCategory(input) {
-      if (getCategoryByName(db, datasetId, input.name)) {
-        throw new ConflictError(`A category named "${input.name}" already exists`);
+      if (input.parentId && !getCategoryById(db, input.parentId)) {
+        throw new NotFoundError('Parent category not found');
       }
-      return createCategory(db, {
-        datasetId,
+      // The db create is an idempotent sibling-name merge, so without this
+      // pre-check the UI cannot tell "created" from "already existed"; the
+      // two partial unique indexes (roots / children) are what backs this up.
+      if (getCategoryBySiblingName(db, input.parentId ?? null, input.name)) {
+        throw new ConflictError(`A category named "${input.name}" already exists there`);
+      }
+      const category = createCategory(db, {
         name: input.name,
+        parentId: input.parentId ?? null,
         description: input.description ?? null,
-        sectionId: input.sectionId ?? null,
       });
+      events.emit({ topic: 'categories.changed' });
+      return category;
     },
 
     updateCategory(id, input) {
-      if (input.name !== undefined) {
-        const existing = getCategoryByName(db, datasetId, input.name);
+      const current = getCategoryById(db, id);
+      if (!current) {
+        throw new NotFoundError('Category not found');
+      }
+      if (input.name !== undefined && input.name !== current.name) {
+        // Sibling names are unique per parent (`web/2024` and `books/2024`
+        // coexist), so the collision scope is the category's own parent.
+        const existing = getCategoryBySiblingName(db, current.parentId, input.name);
         if (existing && existing.id !== id) {
-          throw new ConflictError(`A category named "${input.name}" already exists`);
+          throw new ConflictError(`A category named "${input.name}" already exists there`);
         }
       }
       const updated = updateCategory(db, id, {
         name: input.name,
         description: 'description' in input ? (input.description ?? null) : undefined,
-        sectionId: 'sectionId' in input ? (input.sectionId ?? null) : undefined,
       });
       if (!updated) {
         throw new NotFoundError('Category not found');
       }
+      events.emit({ topic: 'categories.changed' });
       return updated;
     },
 
-    async deleteCategory(id) {
-      // Capture before the delete: the FK sets `bookmarks.category_id` to NULL,
-      // so afterwards this query can no longer find the affected rows.
-      const affected = listBookmarkIdsForCategoryScope(db, datasetId, id);
-      if (!deleteCategory(db, id)) {
+    moveCategory(id, parentId, sortOrder) {
+      const current = getCategoryById(db, id);
+      if (!current) {
         throw new NotFoundError('Category not found');
       }
+      if (parentId && !getCategoryById(db, parentId)) {
+        throw new NotFoundError('Parent category not found');
+      }
+      if (parentId && parentId !== current.parentId) {
+        // The moved category keeps its name; a same-named sibling under the
+        // target parent would violate the unique index with a raw SQLite
+        // error — surface it as the domain conflict instead.
+        const clash = getCategoryBySiblingName(db, parentId, current.name);
+        if (clash && clash.id !== id) {
+          throw new ConflictError(`A category named "${current.name}" already exists there`);
+        }
+      }
+      let moved: Category | null;
+      try {
+        moved = moveCategory(db, id, parentId, sortOrder);
+      } catch (error) {
+        // App-layer tree integrity (MODEL.md): moving a category under its own
+        // descendant would close a cycle; the db refuses and we map it.
+        if (error instanceof CategoryCycleError) {
+          throw new ValidationError('Cannot move a category under its own subtree');
+        }
+        throw error;
+      }
+      if (!moved) {
+        throw new NotFoundError('Category not found');
+      }
+      events.emit({ topic: 'categories.changed' });
+      return moved;
+    },
+
+    reorderCategories(parentId, orderedIds) {
+      const seen = new Set<string>();
+      const currentKeys: string[] = [];
+      for (const id of orderedIds) {
+        if (seen.has(id)) {
+          throw new ValidationError(`Duplicate category id in reorder list: ${id}`);
+        }
+        seen.add(id);
+        const category = getCategoryById(db, id);
+        if (!category) {
+          throw new NotFoundError('Category not found');
+        }
+        if ((category.parentId ?? null) !== (parentId ?? null)) {
+          throw new ValidationError('Reordered categories must share the same parent');
+        }
+        currentKeys.push(category.sortOrder);
+      }
+      // Evenly spaced keys over a fresh span: deterministic, every gap keeps
+      // midpoints free, and the head keeps room below (`orderBefore` still
+      // works — db/sort-order.ts). A full-list reorder is the documented
+      // rebalance path; per-drag midpoint keys go through `moveCategory`.
+      const keys = rebalanceSiblings(currentKeys);
+      orderedIds.forEach((id, index) => {
+        moveCategory(db, id, parentId, keys[index]);
+      });
+      events.emit({ topic: 'categories.changed' });
+      return orderedIds
+        .map((id) => getCategoryById(db, id))
+        .filter((category): category is Category => category !== null);
+    },
+
+    subtreeInfo(id) {
+      if (!getCategoryById(db, id)) {
+        throw new NotFoundError('Category not found');
+      }
+      return getCategorySubtreeInfo(db, id);
+    },
+
+    async deleteCategory(id) {
+      if (!getCategoryById(db, id)) {
+        throw new NotFoundError('Category not found');
+      }
+      const affected = subtreeBookmarkIds(id);
+      const info = deleteCategory(db, id);
       await resyncBookmarkPayloads(affected);
+      events.emit({ topic: 'categories.changed' });
+      return info;
     },
 
     listTags() {
-      return listTags(db, datasetId);
+      return listTags(db);
     },
 
     createTag(input) {
-      if (input.categoryId) {
-        assertCategoryInDataset(db, input.categoryId, datasetId);
-      }
-      // Name uniqueness is scoped per (dataset, category) when the tag is
-      // scoped, per dataset when unscoped; the db create hides that as an
-      // idempotent upsert, so surface the collision explicitly here.
-      if (getTagByName(db, datasetId, input.name, input.categoryId ?? null)) {
+      // Tag names are globally unique (MODEL.md); the db create is an
+      // idempotent merge, so surface the collision explicitly for the UI.
+      if (getTagByName(db, input.name)) {
         throw new ConflictError(`A tag named "${input.name}" already exists`);
       }
-      return createTag(db, {
-        datasetId,
+      // Tags are created `active` (vocabulary is created in its usable state,
+      // MODEL.md principle 3) — a state input would contradict the lifecycle.
+      const tag = createTag(db, {
         name: input.name,
         description: input.description ?? null,
-        categoryId: input.categoryId ?? null,
       });
+      events.emit({ topic: 'tags.changed' });
+      return tag;
     },
 
     updateTag(id, input) {
-      // The DB layer cannot reject a foreign `categoryId` without throwing a
-      // transport-neutral error, so the boundary check lives here (SQL stays in
-      // `@al-yo-bo/db`); the row's own dataset defines the allowed scope.
-      const current =
-        input.name !== undefined || ('categoryId' in input && Boolean(input.categoryId))
-          ? getTagById(db, id)
-          : null;
-      if ('categoryId' in input && input.categoryId) {
-        if (!current) {
-          throw new NotFoundError('Tag not found');
-        }
-        assertCategoryInDataset(db, input.categoryId, current.datasetId);
+      const current = getTagById(db, id);
+      if (!current) {
+        throw new NotFoundError('Tag not found');
       }
-      if (input.name !== undefined && current) {
-        // The collision scope is the *resulting* category, so a simultaneous
-        // rename + re-scope is checked against the new scope, not the old one.
-        const scopeCategoryId =
-          'categoryId' in input ? (input.categoryId ?? null) : current.categoryId;
-        const existing = getTagByName(db, current.datasetId, input.name, scopeCategoryId);
+      if (input.name !== undefined && input.name !== current.name) {
+        const existing = getTagByName(db, input.name);
         if (existing && existing.id !== id) {
           throw new ConflictError(`A tag named "${input.name}" already exists`);
         }
@@ -269,11 +317,11 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       const updated = updateTag(db, id, {
         name: input.name,
         description: 'description' in input ? (input.description ?? null) : undefined,
-        categoryId: 'categoryId' in input ? (input.categoryId ?? null) : undefined,
       });
       if (!updated) {
         throw new NotFoundError('Tag not found');
       }
+      events.emit({ topic: 'tags.changed' });
       return updated;
     },
 
@@ -285,6 +333,7 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
         throw new NotFoundError('Tag not found');
       }
       await resyncBookmarkPayloads(affected);
+      events.emit({ topic: 'tags.changed' });
     },
 
     setTagStatus(id, status) {
@@ -296,17 +345,17 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       if (!updated) {
         throw new NotFoundError('Tag not found');
       }
-      // Vocabulary change (§7 re-run triggers): activating a deprecated tag
-      // makes it a candidate again -> re-classify the bookmarks in its scope.
+      // Vocabulary change (§7 stage 6 re-run triggers): re-activating a tag
+      // puts it back into the candidate set, and the candidate set is ALL
+      // active tags (tags have no category), so the re-classify fan-out is the
+      // whole library. The sequential queue dedupes per (bookmark, classify);
+      // the cost is accepted at personal scale (§13 flags candidate-set growth).
       if (previous.status !== 'active' && status === 'active') {
-        for (const bookmarkId of listBookmarkIdsForCategoryScope(
-          db,
-          datasetId,
-          updated.categoryId,
-        )) {
-          jobs.enqueue(bookmarkId, 'classify');
+        for (const bookmark of listBookmarksForExport(db, {})) {
+          jobs.enqueue(bookmark.id, 'classify');
         }
       }
+      events.emit({ topic: 'tags.changed' });
       return updated;
     },
   };

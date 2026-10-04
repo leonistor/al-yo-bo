@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
+import type { EmbeddingClient } from '@al-yo-bo/ai';
 import {
   countKeywordMatches,
   getAggregates,
@@ -9,7 +10,6 @@ import {
   listBookmarks,
   listCategories,
 } from '@al-yo-bo/db';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { fuseSearch } from '@al-yo-bo/search';
 import {
   clampPagination,
@@ -29,7 +29,6 @@ import type { VectorProvider } from '../vector/provider.ts';
 export interface SearchInput {
   q: string;
   mode: SearchMode;
-  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   /** Epoch-ms bounds on `created_at` (inclusive); set ⇒ keyword-only, since KNN has no date predicate. */
@@ -47,14 +46,12 @@ export interface SearchServiceDeps {
   config: CoreConfig;
   vector: VectorProvider;
   embeddings?: EmbeddingClient;
-  /** Dataset searches are scoped to. */
-  datasetId: string;
 }
 
 export interface SearchService {
   search(input: SearchInput): Promise<SearchResponse>;
   chatHits(query: string, limit: number): Promise<BookmarkHit[]>;
-  /** Library browse/stats read (counts per section/category/tag); owned here alongside search. */
+  /** Library browse/stats read (counts per category/tag); owned here alongside search. */
   aggregates(): Aggregates;
 }
 
@@ -81,13 +78,15 @@ function filterCandidatesByStatus(
 
 /**
  * Search is the only service that owns the full hybrid pipeline (ARCHITECTURE
- * §6): keyword FTS5 + semantic KNN, fused with RRF when semantic candidates are
- * available, degrading to keyword-only everywhere else. The vector index is
+ * §6): keyword FTS5 + semantic top-k, fused with RRF when semantic candidates
+ * are available, degrading to keyword-only everywhere else. The vector index is
  * resolved from the provider at the point of use so a hot-swapped index is used
- * by the next query.
+ * by the next query. There is no dataset axis: both paths are unfiltered by
+ * anything but the user's query and the category/tag filters (MODEL.md
+ * principle 1).
  */
 export function createSearchService(deps: SearchServiceDeps): SearchService {
-  const { db, config, vector, embeddings, datasetId } = deps;
+  const { db, config, vector, embeddings } = deps;
 
   /**
    * Semantic candidate list for the search query. Requires the whole chain to be
@@ -98,7 +97,6 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   async function semanticCandidates(input: {
     q: string;
     mode: SearchMode;
-    datasetId?: string;
     categoryId?: string;
     tagId?: string;
     limit: number;
@@ -117,12 +115,10 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       if (!queryVector) {
         return [];
       }
-      // The dataset boundary is pushed into the vector query together with the
-      // category/tag filters (server-side on Qdrant, client-side overfetch on
-      // the in-memory fallback) — semantic search is dataset-scoped exactly
-      // like keyword search (MODEL.md principle 1).
+      // Category/tag filters are pushed into the vector query together
+      // (server-side on Qdrant, client-side overfetch on the in-memory
+      // fallback) so semantic hits honor the same filters as keyword search.
       return await index.search(queryVector, input.offset + input.limit, {
-        datasetId: input.datasetId ?? datasetId,
         categoryId: input.categoryId,
         tagId: input.tagId,
       });
@@ -137,7 +133,6 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     if (!input.q) {
       const { items, total } = listBookmarks(db, {
-        datasetId: input.datasetId ?? datasetId,
         categoryId: input.categoryId,
         tagId: input.tagId,
         dateFrom: input.dateFrom,
@@ -158,7 +153,6 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     const keywordTotal = countKeywordMatches(db, {
       q: input.q,
-      datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
       dateFrom: input.dateFrom,
@@ -170,14 +164,14 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     // probe item past it so `hasMore` is observable; keyword-only pages in SQL.
     const window = offset + limit;
     // Date-bounded searches stay keyword-only: the semantic index has no date
-    // predicate, so hybrid hits could not honor the range.
+    // predicate, so hybrid hits could not honor the range (ARCHITECTURE §7 export
+    // mirrors this rule for its date filters).
     const rawSemantic =
       input.mode === 'keyword' || input.dateFrom !== undefined || input.dateTo !== undefined
         ? []
         : await semanticCandidates({
             q: input.q,
             mode: input.mode,
-            datasetId: input.datasetId ?? datasetId,
             categoryId: input.categoryId,
             tagId: input.tagId,
             limit: window + 1,
@@ -192,7 +186,6 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
 
     const keyword = keywordSearch(db, {
       q: input.q,
-      datasetId: input.datasetId ?? datasetId,
       categoryId: input.categoryId,
       tagId: input.tagId,
       dateFrom: input.dateFrom,
@@ -262,7 +255,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       offset: 0,
     });
     const categoryNameById = new Map(
-      listCategories(db, datasetId).map((category) => [category.id, category.name]),
+      listCategories(db).map((category) => [category.id, category.name]),
     );
     return response.items.map((item) => ({
       id: item.id,
@@ -277,7 +270,7 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
   }
 
   function aggregates(): Aggregates {
-    return getAggregates(db, datasetId);
+    return getAggregates(db);
   }
 
   return { search, chatHits, aggregates };

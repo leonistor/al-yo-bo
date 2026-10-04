@@ -1,12 +1,13 @@
 /**
  * Human review of classifier output. Accepting a below-threshold candidate
- * writes a user-sourced assignment (which the classifier can never overwrite)
- * and mirrors it into the vector payload.
+ * writes a user-sourced assignment (which the classifier can never overwrite or
+ * retract — ARCHITECTURE §7 "User rows win") and mirrors it into the vector
+ * payload.
  *
- * The vocabulary-review surface (accept/reject/rename/merge proposals) was
- * removed in Phase 0: the importer auto-creates vocabulary in its active state
- * at commit time and the classifier never creates vocabulary (MODEL.md
- * principle 5), so there are no `proposed` rows to triage.
+ * The review surface is classifier suggestions only (§7 stage 5): vocabulary is
+ * created `active` by the importer and curated directly in the vocabulary UI,
+ * and the classifier never creates vocabulary (MODEL.md principle 5), so there
+ * are no proposals to triage.
  */
 
 import type { Database } from 'bun:sqlite';
@@ -16,13 +17,14 @@ import {
   getBookmarkById,
   getBookmarksWithTagsByIds,
   getTagById,
+  listActiveTags,
   listBelowThresholdCandidates,
-  listTagsByStatus,
 } from '@al-yo-bo/db';
 import type { BookmarkWithTags, ReviewCandidate, Tag } from '@al-yo-bo/shared';
 
 import type { CoreConfig } from '../config.ts';
-import { NotFoundError, ValidationError } from '../errors.ts';
+import { NotFoundError } from '../errors.ts';
+import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
@@ -31,33 +33,30 @@ export interface ReviewServiceDeps {
   db: Database;
   config: CoreConfig;
   vector: VectorProvider;
-  /** Dataset the review queues are scoped to. */
-  datasetId: string;
+  events: EventsSink;
 }
 
 export interface ReviewService {
   /** Classifier-suggested tags below the auto-assign threshold. */
   listCandidates(): ReviewCandidate[];
-  /** Active tags still in scope for the user-curated vocabulary. */
+  /** Active tags — the ones a suggestion can be accepted into. */
   listActiveTags(): Tag[];
   acceptCandidate(bookmarkId: string, tagId: string): Promise<BookmarkWithTags>;
 }
 
 export function createReviewService(deps: ReviewServiceDeps): ReviewService {
-  const { db, config, vector, datasetId } = deps;
+  const { db, config, vector, events } = deps;
 
   return {
     listCandidates() {
-      return listBelowThresholdCandidates(db, datasetId, config.autoAssignThreshold);
+      return listBelowThresholdCandidates(db, config.autoAssignThreshold);
     },
 
     listActiveTags() {
-      return listTagsByStatus(db, datasetId, 'active');
+      return listActiveTags(db);
     },
 
     async acceptCandidate(bookmarkId, tagId) {
-      // Accepting is an assignment path, so the same dataset boundary applies:
-      // both ids must resolve and belong to the review service's dataset.
       const bookmark = getBookmarkById(db, bookmarkId);
       if (!bookmark) {
         throw new NotFoundError('Bookmark not found');
@@ -66,12 +65,13 @@ export function createReviewService(deps: ReviewServiceDeps): ReviewService {
       if (!tag) {
         throw new NotFoundError('Tag not found');
       }
-      if (bookmark.datasetId !== datasetId || tag.datasetId !== datasetId) {
-        throw new ValidationError('Candidate is outside this dataset');
-      }
+      // Accepting writes `source='user'`: classifier re-runs skip user rows
+      // entirely and retraction only removes `source='classifier'` rows
+      // (MODEL.md / ARCHITECTURE §7).
       assignTag(db, { bookmarkId, tagId, source: 'user' });
       const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
       await syncVectorPayload(vector.current(), bookmarkId, fresh);
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [bookmarkId] });
       return bookmarkViewOrThrow(db, bookmarkId);
     },
   };

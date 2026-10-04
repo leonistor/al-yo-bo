@@ -1,10 +1,13 @@
 /**
  * Public surface of `@al-yo-bo/core`: a transport-neutral domain/application
- * service layer. The app edge (apps/server) maps HTTP onto these services and
- * owns the concrete Qdrant/embeddings/classifier/scraper construction.
+ * service layer. The app edge (apps/server) maps HTTP onto these services,
+ * owns the concrete Qdrant/AI-layer/scraper construction, and is the only
+ * consumer of the events sink (core is the only emission layer — §9).
  */
 
 export { createCore, type Core, type CoreDeps } from './create-core.ts';
+export type { CoreAi } from './ai.ts';
+export { noopEvents, type EventsSink } from './events.ts';
 export type { CoreConfig } from './config.ts';
 
 export {
@@ -72,6 +75,7 @@ export {
   type EnrichmentServiceDeps,
   type ScrapeResponse,
   type ClassifyResponse,
+  type ScreenshotResponse,
   type JobScheduler,
 } from './services/enrichment.ts';
 export {
@@ -88,7 +92,6 @@ export {
   type HealthServiceDeps,
   type HealthReport,
   type HealthJobs,
-  type ChatHealth,
 } from './services/health.ts';
 export { bookmarkView, bookmarkViewOrThrow } from './services/_views.ts';
 

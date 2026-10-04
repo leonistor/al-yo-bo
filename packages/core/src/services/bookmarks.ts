@@ -15,13 +15,13 @@ import {
 import { isHttpUrl, isUuid, normalizeUrl, type BookmarkWithTags } from '@al-yo-bo/shared';
 
 import { NotFoundError, ValidationError } from '../errors.ts';
+import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
 import type { JobScheduler } from './enrichment.ts';
 
 export interface BookmarkInput {
-  datasetId?: string;
   url: string;
   title?: string | null;
   description?: string | null;
@@ -40,8 +40,7 @@ export interface BookmarkServiceDeps {
   db: Database;
   jobs: JobScheduler;
   vector: VectorProvider;
-  /** Dataset new bookmarks land in when none is specified. */
-  datasetId: string;
+  events: EventsSink;
 }
 
 export interface BookmarkService {
@@ -53,29 +52,24 @@ export interface BookmarkService {
   removeTag(bookmarkId: string, tagId: string): Promise<void>;
 }
 
-/**
- * Rejects a category that is missing or lives in another dataset. Datasets are
- * the runtime scoping boundary (MODEL.md principle 1): a bookmark may only be
- * filed under a category from its own dataset.
- */
-function assertCategoryInDataset(db: Database, categoryId: string, datasetId: string): void {
-  const category = getCategoryById(db, categoryId);
-  if (!category) {
+/** Categories are plain records in the one workspace — only existence is checked. */
+function assertCategoryExists(db: Database, categoryId: string): void {
+  if (!getCategoryById(db, categoryId)) {
     throw new NotFoundError('Category not found');
-  }
-  if (category.datasetId !== datasetId) {
-    throw new ValidationError('Category belongs to a different dataset');
   }
 }
 
 /**
  * Bookmark CRUD plus its enrichment side effects. The re-run triggers live here
- * (ARCHITECTURE §8): a URL change invalidates the old evidence and re-scrapes, a
- * title/description change re-embeds, and a category move only shifts the vector
- * payload filters. Everything else is passive.
+ * (ARCHITECTURE §7 stage 6): a URL change invalidates the old dead-link
+ * evidence and re-scrapes, a title/description change re-embeds, and a category
+ * move only shifts the vector payload filters. Content/vocabulary/model changes
+ * re-run enrichment; every mutation emits the coarse `bookmarks.changed` event
+ * (ARCHITECTURE §9/H5) whose payload is a hint (the affected id), never the
+ * record.
  */
 export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkService {
-  const { db, jobs, vector, datasetId } = deps;
+  const { db, jobs, vector, events } = deps;
 
   async function syncPayload(bookmarkId: string): Promise<void> {
     const [fresh] = getBookmarksWithTagsByIds(db, [bookmarkId]);
@@ -91,18 +85,17 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (!isHttpUrl(input.url)) {
         throw new ValidationError('Only HTTP(S) URLs can be saved');
       }
-      const targetDatasetId = input.datasetId ?? datasetId;
       if (input.categoryId) {
-        assertCategoryInDataset(db, input.categoryId, targetDatasetId);
+        assertCategoryExists(db, input.categoryId);
       }
       const bookmark = createBookmark(db, {
-        datasetId: targetDatasetId,
         url: input.url,
         title: input.title ?? null,
         description: input.description ?? null,
         categoryId: input.categoryId ?? null,
       });
       jobs.enqueue(bookmark.id, 'scrape');
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [bookmark.id] });
       return bookmarkViewOrThrow(db, bookmark.id);
     },
 
@@ -128,7 +121,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       }
       if ('categoryId' in input) {
         if (input.categoryId) {
-          assertCategoryInDataset(db, input.categoryId, current.datasetId);
+          assertCategoryExists(db, input.categoryId);
         }
         patch.categoryId = input.categoryId ?? null;
       }
@@ -141,7 +134,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (!updated) {
         throw new NotFoundError('Bookmark not found');
       }
-      // Content-bearing changes re-run the matching enrichment (§8 re-run triggers);
+      // Content-bearing changes re-run the matching enrichment (§7 stage 6);
       // a category move only shifts the vector payload filters.
       if (updated.url !== current.url) {
         jobs.enqueue(id, 'scrape');
@@ -151,6 +144,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (updated.categoryId !== current.categoryId) {
         await syncPayload(id);
       }
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
       return bookmarkViewOrThrow(db, id);
     },
 
@@ -163,6 +157,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (index.size > 0) {
         await index.delete(id);
       }
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
     },
 
     async assignTag(bookmarkId, tagId) {
@@ -174,13 +169,11 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (!tag) {
         throw new NotFoundError('Tag not found');
       }
-      // The dataset boundary is enforced here, not in SQL: a tag from another
-      // dataset must never attach to this bookmark (MODEL.md principle 1).
-      if (tag.datasetId !== bookmark.datasetId) {
-        throw new ValidationError('Tag belongs to a different dataset');
-      }
+      // The vocabulary is one global namespace (MODEL.md principle 2): any
+      // existing tag may attach to any bookmark.
       assignBookmarkTag(db, { bookmarkId, tagId, source: 'user' });
       await syncPayload(bookmarkId);
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [bookmarkId] });
       return bookmarkViewOrThrow(db, bookmarkId);
     },
 
@@ -189,6 +182,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
         throw new NotFoundError('Assignment not found');
       }
       await syncPayload(bookmarkId);
+      events.emit({ topic: 'bookmarks.changed', bookmarkIds: [bookmarkId] });
     },
   };
 }

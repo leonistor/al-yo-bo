@@ -1,15 +1,11 @@
 import type { Database } from 'bun:sqlite';
 
 import { getBookmarkById } from '@al-yo-bo/db';
-import type { ClassifierClient } from '@al-yo-bo/classifier';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import type { BookmarkWithTags, VectorIndex } from '@al-yo-bo/shared';
 
-import { DomainError, NotFoundError } from '../errors.ts';
-import { ScrapeError, type ScrapeFn } from '../scrape.ts';
-import type { ScreenshotClient } from '../screenshot.ts';
+import type { CoreAi } from '../ai.ts';
 import type { CoreConfig } from '../config.ts';
-import type { VectorProvider } from '../vector/provider.ts';
+import { classifyBookmark, type ClassifyOutcome } from '../enrichment/classify.ts';
 import {
   reconcileEnrichment,
   scrapeAndStore,
@@ -21,7 +17,11 @@ import {
   type ScrapeOutcome,
   type ScreenshotOutcome,
 } from '../enrichment/jobs.ts';
-import { classifyBookmark, type ClassifyOutcome } from '../enrichment/classify.ts';
+import { DomainError, NotFoundError } from '../errors.ts';
+import type { EventsSink } from '../events.ts';
+import { ScrapeError, type ScrapeFn } from '../scrape.ts';
+import type { ScreenshotClient } from '../screenshot.ts';
+import type { VectorProvider } from '../vector/provider.ts';
 import { bookmarkViewOrThrow } from './_views.ts';
 
 /**
@@ -36,9 +36,8 @@ export interface JobScheduler {
 export interface EnrichmentServiceDeps {
   db: Database;
   config: CoreConfig;
+  ai: CoreAi;
   vector: VectorProvider;
-  embeddings?: EmbeddingClient;
-  classifier?: ClassifierClient;
   /** Absent = the manual scrape endpoint reports unavailable and scrape jobs fail. */
   scrape?: ScrapeFn;
   /** Screenshot capture port; absent = screenshot jobs are a no-op. */
@@ -47,6 +46,7 @@ export interface EnrichmentServiceDeps {
   screenshotsDir?: string;
   maxAttempts?: number;
   baseDelayMs?: number;
+  events: EventsSink;
 }
 
 export interface ScrapeResponse {
@@ -98,9 +98,10 @@ function routingVector(provider: VectorProvider): VectorIndex {
   };
 }
 
-/** Enabled only when deps are configured; workspace is optional (§1.5) */
+/** Enabled only when deps are configured; every capability degrades (§1.5). */
 export function createEnrichmentService(deps: EnrichmentServiceDeps): EnrichmentService {
-  const { db, config, vector, embeddings, classifier, scrape, screenshot } = deps;
+  const { db, config, ai, vector, scrape, screenshot, events } = deps;
+  const { embeddings, classifier } = ai;
 
   // The queue chains scrape → embed → classify and is the JobScheduler other
   // services receive. `queue` is referenced from the onEmbedded hook, which only
@@ -109,7 +110,7 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
   queue = startJobQueue({
     db,
     vector: routingVector(vector),
-    embeddings,
+    embeddings: embeddings ?? undefined,
     // With no scrape capability the queue still exists (embed/classify work);
     // scrape jobs fail as transient and are dropped after the retry cap.
     scrape:
@@ -119,14 +120,22 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
       }),
     screenshot: screenshot ?? null,
     screenshotsDir: deps.screenshotsDir,
-    classifier,
+    classifier: classifier ?? undefined,
     config,
     maxAttempts: deps.maxAttempts ?? config.scrape.maxAttempts,
     baseDelayMs: deps.baseDelayMs,
-    // Content changes flow scrape → embed → classify (§6 re-run triggers).
+    // Content changes flow scrape → embed → classify (§7 stage 6 re-run triggers).
     onEmbedded: (bookmarkId) => queue.enqueue(bookmarkId, 'classify'),
+    // Coarse job-progress hints fan out through the injected sink (§9).
+    events,
   });
 
+  /**
+   * Manual endpoints run outside the queue, so the queue's `jobs.changed`
+   * hints do not cover them. Instead they emit `bookmarks.changed` when the
+   * operation actually changed the bookmark row (content, tags, image) — the
+   * response already carries the fresh bookmark for the caller.
+   */
   return {
     enqueue: (bookmarkId, type) => queue.enqueue(bookmarkId, type),
     pendingCount: () => queue.pendingCount(),
@@ -156,7 +165,7 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
             db,
             // Resolved at call time so a reindexed stack is used.
             vector: vector.current(),
-            embeddings,
+            embeddings: embeddings ?? undefined,
             scrape,
             config,
             // Chains the embed job into the same queue the worker drains.
@@ -164,6 +173,9 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
           },
           id,
         );
+        if (status !== 'missing') {
+          events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
+        }
         return { status, bookmark: bookmarkViewOrThrow(db, id) };
       } catch (error) {
         if (error instanceof ScrapeError) {
@@ -185,6 +197,9 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
           { db, vector: vector.current(), classifier, config },
           id,
         );
+        if (outcome.assigned > 0 || outcome.retracted > 0) {
+          events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
+        }
         return { ...outcome, bookmark: bookmarkViewOrThrow(db, id) };
       } catch (error) {
         throw new DomainError(
@@ -206,10 +221,12 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
           {
             db,
             vector: vector.current(),
-            embeddings,
-            scrape: scrape ?? (async () => {
-              throw new ScrapeError('Scraping is not available');
-            }),
+            embeddings: embeddings ?? undefined,
+            scrape:
+              scrape ??
+              (async () => {
+                throw new ScrapeError('Scraping is not available');
+              }),
             screenshot,
             screenshotsDir: deps.screenshotsDir,
             config,
@@ -217,6 +234,10 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
           },
           id,
         );
+        if (status === 'captured') {
+          // Only a capture changes the row (`metadata.image`).
+          events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
+        }
         return { status, bookmark: bookmarkViewOrThrow(db, id) };
       } catch (error) {
         throw new DomainError(

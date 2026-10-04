@@ -1,7 +1,9 @@
 import type { Database } from 'bun:sqlite';
 
-import { createDataset, openDatabase, setupDatabase } from '@al-yo-bo/db';
+import type { AiHealth, AiHealthReport, ClassifierClient, EmbeddingClient } from '@al-yo-bo/ai';
+import { openDatabase, setupDatabase } from '@al-yo-bo/db';
 import type {
+  DomainEvent,
   RankedCandidate,
   VectorFilter,
   VectorIndex,
@@ -9,15 +11,16 @@ import type {
   VectorUpsert,
 } from '@al-yo-bo/shared';
 
+import type { CoreAi } from '../src/ai.ts';
 import type { CoreConfig } from '../src/config.ts';
 import type { JobType } from '../src/enrichment/jobs.ts';
+import type { EventsSink } from '../src/events.ts';
 import type { JobScheduler } from '../src/services/enrichment.ts';
 
-/** In-memory database with the full schema applied and a test dataset. */
-export function makeDb(datasetName = 'test'): Database & { datasetId: string } {
-  const db = openDatabase(':memory:') as Database & { datasetId: string };
+/** In-memory database with the full schema applied (one workspace — no dataset). */
+export function makeDb(): Database {
+  const db = openDatabase(':memory:');
   setupDatabase(db);
-  db.datasetId = createDataset(db, datasetName).id;
   return db;
 }
 
@@ -66,7 +69,7 @@ export class StubVectorIndex implements VectorIndex {
 }
 
 /** EmbeddingClient stub returning a fixed unit-ish vector. */
-export const stubEmbeddings = {
+export const stubEmbeddings: EmbeddingClient = {
   async embed(texts: string[]) {
     return {
       vectors: texts.map(() => Float32Array.from([1, 0, 0])),
@@ -75,6 +78,19 @@ export const stubEmbeddings = {
     };
   },
 };
+
+/** ClassifierClient stub that records decide calls and answers canned probabilities. */
+export function stubClassifier(
+  probabilities: Record<string, number>,
+  calls: Array<{ state: string; questions: Record<string, unknown> }> = [],
+): ClassifierClient {
+  return {
+    async decide(request) {
+      calls.push({ state: request.state, questions: request.questions });
+      return { probabilities, model: 'laya:en' };
+    },
+  };
+}
 
 /** Records `enqueue` calls without running anything. */
 export function recordingJobs(): JobScheduler & { calls: Array<{ id: string; type: JobType }> } {
@@ -87,13 +103,54 @@ export function recordingJobs(): JobScheduler & { calls: Array<{ id: string; typ
   };
 }
 
-/** Config with only the fields core consumes. */
+/** Collects the coarse domain events core emits (ARCHITECTURE §9). */
+export function recordingEvents(): EventsSink & { events: DomainEvent[] } {
+  const events: DomainEvent[] = [];
+  return {
+    events,
+    emit(event) {
+      events.push(event);
+    },
+  };
+}
+
+/** Static AiHealth fake for the health-report composition. */
+export function fakeAiHealth(report: Partial<AiHealthReport> = {}): AiHealth {
+  return {
+    async report() {
+      return {
+        ollayaReachable: false,
+        ollamaReachable: false,
+        chatAvailable: false,
+        chatModel: null,
+        embeddingsConfigured: true,
+        embeddingModel: 'stub-model',
+        classifierModel: 'laya',
+        extractConfigured: false,
+        extractModel: null,
+        ...report,
+      };
+    },
+  };
+}
+
+/** CoreAi fake — embeddings on, classifier/extract off, static health probes. */
+export function stubAi(overrides: Partial<CoreAi> = {}): CoreAi {
+  return {
+    embeddings: stubEmbeddings,
+    classifier: null,
+    extract: null,
+    health: fakeAiHealth(),
+    ...overrides,
+  };
+}
+
+/** Config with only the fields core consumes (no dataset axis — MODEL.md principle 1). */
 export function testConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
   return {
     autoAssignThreshold: 0.7,
-    defaultDataset: 'test',
     embeddings: { model: 'stub-model' },
-    ollaya: { baseUrl: 'http://127.0.0.1:11435', model: 'laya' },
+    ollaya: { model: 'laya' },
     scrape: {
       timeoutMs: 15_000,
       maxContentChars: 200_000,

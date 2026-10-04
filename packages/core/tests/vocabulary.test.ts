@@ -4,83 +4,60 @@ import {
   assignTag,
   createBookmark,
   createCategory,
-  createDataset,
   createTag,
+  getBookmarkById,
   setTagStatus,
 } from '@al-yo-bo/db';
 
 import { ConflictError, NotFoundError, ValidationError } from '../src/errors.ts';
 import { createVocabularyService } from '../src/services/vocabulary.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
-import { StubVectorIndex, makeDb, recordingJobs } from './support.ts';
+import { StubVectorIndex, makeDb, recordingEvents, recordingJobs } from './support.ts';
 
 function makeService(vector = new StubVectorIndex()) {
   const db = makeDb();
   const jobs = recordingJobs();
+  const events = recordingEvents();
   const service = createVocabularyService({
     db,
     jobs,
     vector: createVectorProvider(vector, 'memory'),
-    datasetId: db.datasetId,
+    events,
   });
-  return { db, jobs, vector, service };
+  return { db, jobs, events, vector, service };
 }
 
-describe('VocabularyService — dataset boundary', () => {
-  test('createTag and updateTag reject a category from another dataset', () => {
-    const { db, service } = makeService();
-    const other = createDataset(db, 'other');
-    const foreignCategory = createCategory(db, { datasetId: other.id, name: 'Foreign' });
-
-    expect(() => service.createTag({ name: 'leaky', categoryId: foreignCategory.id })).toThrow(
-      ValidationError,
-    );
-
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'scoped' });
-    expect(() => service.updateTag(tag.id, { categoryId: foreignCategory.id })).toThrow(
-      ValidationError,
-    );
-  });
-});
-
-describe('VocabularyService — duplicate names', () => {
-  test('creating a duplicate section/category/tag throws ConflictError', () => {
+describe('VocabularyService — category tree', () => {
+  test('createCategory nests under its parent and rejects a missing parent', () => {
     const { service } = makeService();
 
-    service.createSection({ name: 'Guides' });
-    expect(() => service.createSection({ name: 'Guides' })).toThrow(ConflictError);
+    const root = service.createCategory({ name: 'Dev' });
+    const child = service.createCategory({ name: 'Web', parentId: root.id });
 
-    service.createCategory({ name: 'Dev' });
-    expect(() => service.createCategory({ name: 'Dev' })).toThrow(ConflictError);
+    const tree = service.getCategoryTree();
+    expect(tree).toHaveLength(1);
+    expect(tree[0]!.name).toBe('Dev');
+    expect(tree[0]!.children.map((node) => node.name)).toEqual(['Web']);
+    expect(child.parentId).toBe(root.id);
 
-    service.createTag({ name: 'rust' });
-    expect(() => service.createTag({ name: 'rust' })).toThrow(ConflictError);
+    expect(() =>
+      service.createCategory({ name: 'X', parentId: '11111111-1111-4111-8111-111111111111' }),
+    ).toThrow(NotFoundError);
   });
 
-  test('tag duplicates are scoped per (dataset, category)', () => {
+  test('sibling names are unique; the same name under a different parent coexists', () => {
     const { service } = makeService();
-    const category = service.createCategory({ name: 'Dev' });
 
-    service.createTag({ name: 'rust', categoryId: category.id });
-    expect(() => service.createTag({ name: 'rust', categoryId: category.id })).toThrow(
-      ConflictError,
-    );
-    // Unscoped is a different scope, so the same name is allowed there.
-    expect(service.createTag({ name: 'rust' }).name).toBe('rust');
-  });
-});
+    const dev = service.createCategory({ name: 'Dev' });
+    const books = service.createCategory({ name: 'Books' });
 
-describe('VocabularyService — rename collisions', () => {
-  test('section rename onto an existing name conflicts; own name succeeds', () => {
-    const { service } = makeService();
-    const a = service.createSection({ name: 'A' });
-    const b = service.createSection({ name: 'B' });
-
-    expect(() => service.updateSection(b.id, { name: 'A' })).toThrow(ConflictError);
-    expect(service.updateSection(a.id, { name: 'A' }).name).toBe('A');
+    service.createCategory({ name: '2024', parentId: dev.id });
+    // Sibling-unique, not globally unique: books/2024 may coexist (MODEL.md H3).
+    expect(() => service.createCategory({ name: '2024', parentId: dev.id })).toThrow(ConflictError);
+    expect(service.createCategory({ name: '2024', parentId: books.id }).name).toBe('2024');
   });
 
-  test('category rename onto an existing name conflicts; own name succeeds', () => {
+  test('rename onto an existing sibling name conflicts; own name succeeds', () => {
     const { service } = makeService();
     const a = service.createCategory({ name: 'A' });
     const b = service.createCategory({ name: 'B' });
@@ -89,23 +66,126 @@ describe('VocabularyService — rename collisions', () => {
     expect(service.updateCategory(a.id, { name: 'A' }).name).toBe('A');
   });
 
-  test('tag rename onto an existing name in its scope conflicts; own name succeeds', () => {
+  test('moveCategory re-parents the subtree and refuses cycles', () => {
     const { service } = makeService();
-    const a = service.createTag({ name: 'A' });
-    const b = service.createTag({ name: 'B' });
 
-    expect(() => service.updateTag(b.id, { name: 'A' })).toThrow(ConflictError);
-    expect(service.updateTag(a.id, { name: 'A' }).name).toBe('A');
+    const a = service.createCategory({ name: 'A' });
+    const b = service.createCategory({ name: 'B', parentId: a.id });
+    const c = service.createCategory({ name: 'C', parentId: b.id });
+
+    // A cycle: A cannot take its own descendant C as parent (app-layer rule).
+    expect(() => service.moveCategory(a.id, c.id)).toThrow(ValidationError);
+    expect(() => service.moveCategory(a.id, a.id)).toThrow(ValidationError);
+
+    // Moving B to the root level detaches its whole subtree (C follows).
+    service.moveCategory(b.id, null);
+    const tree = service.getCategoryTree();
+    expect(tree.map((node) => node.name).toSorted()).toEqual(['A', 'B']);
+    const bNode = tree.find((node) => node.id === b.id)!;
+    expect(bNode.children.map((node) => node.name)).toEqual(['C']);
+
+    expect(() => service.moveCategory(c.id, '11111111-1111-4111-8111-111111111111')).toThrow(
+      NotFoundError,
+    );
+  });
+
+  test('moveCategory conflicts with a same-named sibling under the target parent', () => {
+    const { service } = makeService();
+    // Sibling names are unique per parent (web/2024 and books/2024 coexist),
+    // so a clash only occurs when the TARGET parent already has a same-named
+    // child.
+    const dev = service.createCategory({ name: 'Dev' });
+    service.createCategory({ name: 'Tools', parentId: dev.id });
+    const books = service.createCategory({ name: 'Books' });
+    const booksTools = service.createCategory({ name: 'Tools', parentId: books.id });
+
+    expect(() => service.moveCategory(booksTools.id, dev.id)).toThrow(ConflictError);
+  });
+
+  test('reorderCategories persists the new sibling order with increasing fractional keys', () => {
+    const { service } = makeService();
+
+    const a = service.createCategory({ name: 'A' });
+    const b = service.createCategory({ name: 'B' });
+    const c = service.createCategory({ name: 'C' });
+
+    const reordered = service.reorderCategories(null, [c.id, a.id, b.id]);
+    expect(reordered.map((category) => category.name)).toEqual(['C', 'A', 'B']);
+
+    // Keys are lexicographically increasing along the new order (BINARY collation).
+    const keys = reordered.map((category) => category.sortOrder);
+    expect(keys.toSorted()).toEqual(keys);
+
+    const tree = service.getCategoryTree();
+    expect(tree.map((node) => node.name)).toEqual(['C', 'A', 'B']);
+  });
+
+  test('reorderCategories rejects lists that mix parents or duplicate ids', () => {
+    const { service } = makeService();
+    const root = service.createCategory({ name: 'Root' });
+    const child = service.createCategory({ name: 'Child', parentId: root.id });
+
+    expect(() => service.reorderCategories(null, [root.id, child.id])).toThrow(ValidationError);
+    expect(() => service.reorderCategories(null, [root.id, root.id])).toThrow(ValidationError);
   });
 });
 
-describe('VocabularyService — vector payload resync on delete', () => {
+describe('VocabularyService — category delete', () => {
+  test('deletes the subtree, returns counts, and keeps the bookmarks', async () => {
+    const { db, service, vector } = makeService();
+    const parent = service.createCategory({ name: 'Parent' });
+    const child = service.createCategory({ name: 'Child', parentId: parent.id });
+    const bookmark = createBookmark(db, { url: 'https://example.com/a', categoryId: child.id });
+    vector.ids.push(bookmark.id);
+
+    const info = await service.deleteCategory(parent.id);
+
+    // Subtree info is the confirmation UI's contract (MODEL.md deletion semantics).
+    expect(info).toEqual({ categories: 2, bookmarks: 1 });
+    expect(service.getCategoryTree()).toEqual([]);
+    const survived = getBookmarkById(db, bookmark.id);
+    expect(survived!.categoryId).toBeNull();
+    // The vector payload mirrors the post-delete state.
+    expect(vector.payloads).toEqual([
+      { bookmarkId: bookmark.id, patch: { categoryId: null, tagIds: [] } },
+    ]);
+  });
+
+  test('subtreeInfo counts without deleting', () => {
+    const { db, service } = makeService();
+    const parent = service.createCategory({ name: 'Parent' });
+    service.createCategory({ name: 'Child', parentId: parent.id });
+    createBookmark(db, { url: 'https://example.com/a', categoryId: parent.id });
+
+    expect(service.subtreeInfo(parent.id)).toEqual({ categories: 2, bookmarks: 1 });
+    expect(service.getCategoryTree()).toHaveLength(1);
+  });
+
+  test('deleting an unknown category is NotFoundError', async () => {
+    const { service } = makeService();
+    await expect(service.deleteCategory('11111111-1111-4111-8111-111111111111')).rejects.toThrow(
+      NotFoundError,
+    );
+  });
+});
+
+describe('VocabularyService — tags', () => {
+  test('tag names are globally unique; renames collide', () => {
+    const { service } = makeService();
+
+    const rust = service.createTag({ name: 'rust' });
+    expect(() => service.createTag({ name: 'rust' })).toThrow(ConflictError);
+
+    const web = service.createTag({ name: 'web' });
+    expect(() => service.updateTag(web.id, { name: 'rust' })).toThrow(ConflictError);
+    expect(service.updateTag(rust.id, { name: 'rust' }).name).toBe('rust');
+  });
+
   test('deleteTag resyncs the affected bookmarks with the tag removed', async () => {
     const { db, service, vector } = makeService();
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'dev' });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'rust' });
+    const category = createCategory(db, { name: 'dev' });
+    const tag = createTag(db, { name: 'rust' });
     const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       categoryId: category.id,
     });
@@ -120,27 +200,9 @@ describe('VocabularyService — vector payload resync on delete', () => {
     expect(vector.payloads[0]!.patch.categoryId).toBe(category.id);
   });
 
-  test('deleteCategory resyncs the affected bookmarks with a null category', async () => {
-    const { db, service, vector } = makeService();
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'dev' });
-    const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/a',
-      categoryId: category.id,
-    });
-    vector.ids.push(bookmark.id);
-
-    await service.deleteCategory(category.id);
-
-    expect(vector.payloads.length).toBe(1);
-    expect(vector.payloads[0]!.bookmarkId).toBe(bookmark.id);
-    expect(vector.payloads[0]!.patch.categoryId).toBeNull();
-    expect(vector.payloads[0]!.patch.tagIds).toEqual([]);
-  });
-
   test('deletes on an empty index stay no-ops', async () => {
     const { db, service, vector } = makeService();
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'rust' });
+    const tag = createTag(db, { name: 'rust' });
 
     await service.deleteTag(tag.id);
 
@@ -149,28 +211,19 @@ describe('VocabularyService — vector payload resync on delete', () => {
 });
 
 describe('VocabularyService.setTagStatus', () => {
-  test('activating a tag fans out classify jobs for its category scope only', () => {
+  // Candidate-set delta: tags have no category, so re-activating a tag makes it
+  // a candidate for EVERY bookmark — the re-classify fan-out is the whole library.
+  test('activating a deprecated tag fans classify jobs out to all bookmarks', () => {
     const { db, service, jobs } = makeService();
 
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'dev' });
-    const tag = createTag(db, {
-      datasetId: db.datasetId,
-      name: 'rust',
-      categoryId: category.id,
-    });
+    const category = createCategory(db, { name: 'dev' });
+    const tag = createTag(db, { name: 'rust' });
     setTagStatus(db, tag.id, 'deprecated');
-    const inScopeA = createBookmark(db, {
-      datasetId: db.datasetId,
+    const inCategory = createBookmark(db, {
       url: 'https://example.com/a',
       categoryId: category.id,
     });
-    const inScopeB = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/b',
-      categoryId: category.id,
-    });
-    const outside = createBookmark(db, {
-      datasetId: db.datasetId,
+    const uncategorized = createBookmark(db, {
       url: 'https://example.com/outside',
     });
 
@@ -178,24 +231,14 @@ describe('VocabularyService.setTagStatus', () => {
 
     expect(updated.status).toBe('active');
     const classified = jobs.calls.filter((call) => call.type === 'classify').map((call) => call.id);
-    expect(classified.toSorted()).toEqual([inScopeA.id, inScopeB.id].toSorted());
-    expect(classified).not.toContain(outside.id);
+    expect(classified.toSorted()).toEqual([inCategory.id, uncategorized.id].toSorted());
   });
 
   test('re-activating an already active tag enqueues nothing', () => {
     const { db, service, jobs } = makeService();
 
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'dev' });
-    const tag = createTag(db, {
-      datasetId: db.datasetId,
-      name: 'rust',
-      categoryId: category.id,
-    });
-    createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/a',
-      categoryId: category.id,
-    });
+    const tag = createTag(db, { name: 'rust' });
+    createBookmark(db, { url: 'https://example.com/a' });
 
     service.setTagStatus(tag.id, 'active');
 
@@ -208,5 +251,24 @@ describe('VocabularyService.setTagStatus', () => {
     expect(() => service.setTagStatus('11111111-1111-4111-8111-111111111111', 'active')).toThrow(
       NotFoundError,
     );
+  });
+});
+
+describe('VocabularyService — events', () => {
+  test('category mutations emit categories.changed, tag mutations tags.changed', async () => {
+    const { service, events } = makeService();
+
+    const category = service.createCategory({ name: 'Dev' });
+    service.updateCategory(category.id, { description: 'dev things' });
+    await service.deleteCategory(category.id);
+
+    const tag = service.createTag({ name: 'rust' });
+    service.updateTag(tag.id, { description: 'rust things' });
+    service.setTagStatus(tag.id, 'deprecated');
+    await service.deleteTag(tag.id);
+
+    expect(events.events.filter((event) => event.topic === 'categories.changed').length).toBe(3);
+    // create + update + deprecate + delete = four tag mutations.
+    expect(events.events.filter((event) => event.topic === 'tags.changed').length).toBe(4);
   });
 });

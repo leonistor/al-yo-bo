@@ -6,8 +6,9 @@ import { join } from 'node:path';
 
 import {
   createBookmark,
-  createDataset,
+  createTag,
   getBookmarkById,
+  getBookmarkTags,
   openDatabase,
   setupDatabase,
   updateBookmark,
@@ -92,10 +93,9 @@ function defaultConfig(): CoreConfig {
   return testConfig({ embeddings: { model: 'openai/text-embedding-3-small' } });
 }
 
-function makeDb(): Database & { datasetId: string } {
-  const db = openDatabase(':memory:') as Database & { datasetId: string };
+function makeDb(): Database {
+  const db = openDatabase(':memory:');
   setupDatabase(db);
-  db.datasetId = createDataset(db, 'test').id;
   return db;
 }
 
@@ -199,7 +199,7 @@ describe('makeScraper', () => {
 });
 
 describe('scrapeAndStore', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
 
   beforeEach(() => {
     db = makeDb();
@@ -207,7 +207,6 @@ describe('scrapeAndStore', () => {
 
   test('persists scraped content and chains the embed job', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'A',
     });
@@ -237,7 +236,7 @@ describe('scrapeAndStore', () => {
   });
 
   test('an unchanged page skips downstream and refreshes scraped_at', async () => {
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/b' });
+    const { id } = createBookmark(db, { url: 'https://example.com/b' });
     const hash = sha256Hex('# Same');
     const deps = makeDeps(db, {
       scrape: async () => ({
@@ -264,7 +263,6 @@ describe('scrapeAndStore', () => {
 
   test('a scrape failure leaves the bookmark untouched and throws', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/c',
       title: 'Keep',
     });
@@ -278,7 +276,7 @@ describe('scrapeAndStore', () => {
   });
 
   test('marks a bookmark invalid after repeated dead-link failures', async () => {
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/dead' });
+    const { id } = createBookmark(db, { url: 'https://example.com/dead' });
     const deps = makeDeps(db, {
       scrape: async () => {
         throw new ScrapeError('Fetching dead failed: HTTP 404', 404);
@@ -305,7 +303,6 @@ describe('scrapeAndStore', () => {
 
   test('honors the configured invalidation cap', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/dead-cap',
     });
     const deps = makeDeps(db, {
@@ -323,7 +320,6 @@ describe('scrapeAndStore', () => {
 
   test('transient failures do not count toward invalidation', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/flaky',
     });
     const deps = makeDeps(db, {
@@ -347,7 +343,6 @@ describe('scrapeAndStore', () => {
 
   test('server errors are transient, not dead links', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/error',
     });
     const deps = makeDeps(db, {
@@ -363,7 +358,6 @@ describe('scrapeAndStore', () => {
 
   test('a success after two dead links resets the counters and clears the error', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/revive',
     });
     let dead = true;
@@ -397,7 +391,6 @@ describe('scrapeAndStore', () => {
 
   test('a success restores an invalid bookmark to active', async () => {
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/healed',
     });
     updateBookmark(db, id, { status: 'invalid', scrapeAttempts: 3 });
@@ -422,7 +415,6 @@ describe('screenshotAndStore', () => {
     const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-shot-'));
     try {
       const { id } = createBookmark(db, {
-        datasetId: db.datasetId,
         url: 'https://example.com/og',
       });
       const buffer = Buffer.from('jpeg-bytes');
@@ -452,7 +444,6 @@ describe('screenshotAndStore', () => {
   test('a capture throw does not invalidate the bookmark', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/broken',
     });
     const deps = makeDeps(db, {
@@ -474,7 +465,6 @@ describe('screenshotAndStore', () => {
   test('a null capture result is a failure, not an invalidation', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/null-shot',
     });
     const deps = makeDeps(db, {
@@ -493,7 +483,6 @@ describe('screenshotAndStore', () => {
   test('is a no-op without a screenshot client', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/skip-shot',
     });
 
@@ -506,7 +495,6 @@ describe('screenshotAndStore', () => {
   test('is a no-op without a screenshots dir', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/skip-dir',
     });
     const deps = makeDeps(db, {
@@ -526,7 +514,6 @@ describe('embedBookmark', () => {
   test('stores the embedding and write-throughs the vector index', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/d',
       title: 'D',
       content: 'Body',
@@ -535,16 +522,22 @@ describe('embedBookmark', () => {
 
     expect(await embedBookmark(deps, id)).toBe('embedded');
     expect(deps.vector.ids).toEqual([id]);
-    // The configured model is the stored identity, not the client's echo.
+    // The configured model is the stored identity, not the client's echo (M4).
     expect(deps.vector.upserts[0]!.payload.model).toBe('openai/text-embedding-3-small');
-    // The point carries its dataset so query-time filtering can scope it.
-    expect(deps.vector.upserts[0]!.payload.datasetId).toBe(db.datasetId);
+    // The payload mirrors the filterable state (shared VectorPayload): no
+    // dataset axis anymore — category + tags only.
+    expect(deps.vector.upserts[0]!.payload).toEqual({
+      model: 'openai/text-embedding-3-small',
+      dims: 3,
+      categoryId: null,
+      tagIds: [],
+    });
     expect(deps.vector.upserts[0]!.vector).toEqual(Float32Array.from([1, 2, 3]));
   });
 
   test('is skipped without an embedding client or embeddable text', async () => {
     const db = makeDb();
-    const { id } = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/e' });
+    const { id } = createBookmark(db, { url: 'https://example.com/e' });
 
     const noClient = makeDeps(db, { embeddings: undefined });
     expect(await embedBookmark(noClient, id)).toBe('skipped');
@@ -560,7 +553,6 @@ describe('job queue', () => {
   test('drains scrape+embed chains and reports idle', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/f',
       title: 'F',
     });
@@ -591,7 +583,6 @@ describe('job queue', () => {
   test('drops failing jobs after the attempt cap and keeps the bookmark intact', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/g',
       title: 'G',
     });
@@ -619,7 +610,6 @@ describe('job queue', () => {
   test('deduplicates queued jobs per bookmark and type', async () => {
     const db = makeDb();
     const { id } = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/h',
       title: 'H',
     });
@@ -652,7 +642,6 @@ describe('job queue', () => {
     for (let i = 0; i < 20; i += 1) {
       ids.push(
         createBookmark(db, {
-          datasetId: db.datasetId,
           url: `https://example.com/batch-${i}`,
           title: `B${i}`,
           content: 'body',
@@ -706,24 +695,64 @@ describe('job queue', () => {
     expect(vector.ids).toContain(poison);
     expect(poisonFailures).toBe(1);
   });
+
+  test('classify jobs run after embed chains the trigger', async () => {
+    const db = makeDb();
+    // At least one active tag, so the classify pass has candidates to ask about.
+    createTag(db, { name: 'rust' });
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/chained',
+      title: 'C',
+      content: 'Body',
+    });
+    const decideCalls: string[] = [];
+    // The embed → classify chain is wired by the enrichment service via
+    // onEmbedded (ARCHITECTURE §7 stage 6); the primitive test wires it the
+    // same way to prove the trigger fires.
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      embeddings: stubEmbeddings,
+      scrape: async () => {
+        throw new ScrapeError('unused');
+      },
+      classifier: {
+        async decide(request) {
+          decideCalls.push(request.state);
+          return { probabilities: { rust: 0.9 }, model: 'laya:en' };
+        },
+      },
+      onEmbedded: (bookmarkId) => queue.enqueue(bookmarkId, 'classify'),
+      config: testConfig(),
+      baseDelayMs: 1,
+    });
+
+    queue.enqueue(id, 'embed');
+    await queue.waitForIdle();
+    queue.stop();
+
+    // embed → onEmbedded → classify (the §7 stage 6 content trigger).
+    expect(decideCalls.length).toBe(1);
+    expect(decideCalls[0]).toContain('C');
+
+    // The assignment policy made the result effective.
+    expect(getBookmarkTags(db, id).map((tag) => tag.name)).toEqual(['rust']);
+  });
 });
 
 describe('reconcileEnrichment', () => {
   test('enqueues missing scrapes, missing embeddings and stale-model re-embeds', () => {
     const db = makeDb();
     const neverScraped = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/i',
     });
     const unembedded = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/j',
       content: 'scraped body',
       contentHash: 'h',
       scrapedAt: 1,
     });
     const staleModel = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/k',
       content: 'body',
       contentHash: 'h',
@@ -754,7 +783,6 @@ describe('reconcileEnrichment', () => {
   test('skips embedding reconciliation when no model is configured (screenshot still reconciles)', () => {
     const db = makeDb();
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/l',
       content: 'body',
       contentHash: 'h',
@@ -771,7 +799,6 @@ describe('reconcileEnrichment', () => {
   test('skips screenshot reconciliation when no client is configured', () => {
     const db = makeDb();
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/l',
       content: 'body',
       contentHash: 'h',

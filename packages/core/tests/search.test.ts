@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { assignTag, createBookmark, createCategory, createTag } from '@al-yo-bo/db';
+import { uuidToBytes } from '@al-yo-bo/shared';
 
 import { createSearchService, type SearchService } from '../src/services/search.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
@@ -17,7 +18,6 @@ function makeService(
     config: testConfig(),
     vector: createVectorProvider(vector, 'memory'),
     embeddings: withEmbeddings ? stubEmbeddings : undefined,
-    datasetId: db.datasetId,
   });
   return { service, db };
 }
@@ -31,9 +31,9 @@ const BASE = {
 describe('SearchService — empty query', () => {
   test('lists bookmarks in keyword mode and reports hasMore past the page', async () => {
     const { service, db } = makeService();
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/1', title: 'one' });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/2', title: 'two' });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/3', title: 'three' });
+    createBookmark(db, { url: 'https://example.com/1', title: 'one' });
+    createBookmark(db, { url: 'https://example.com/2', title: 'two' });
+    createBookmark(db, { url: 'https://example.com/3', title: 'three' });
 
     const response = await service.search({ q: '', mode: 'keyword', ...BASE, limit: 2, offset: 0 });
 
@@ -48,17 +48,14 @@ describe('SearchService — keyword-only pagination', () => {
   test('total is the match count and hasMore flips on the last page', async () => {
     const { service, db } = makeService();
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'rust one',
     });
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/b',
       title: 'rust two',
     });
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/c',
       title: 'unrelated',
     });
@@ -86,24 +83,41 @@ describe('SearchService — keyword-only pagination', () => {
     expect(second.items.length).toBe(1);
     expect(second.pagination.hasMore).toBe(false);
   });
+
+  test('a category filter matches the whole subtree', async () => {
+    const { service, db } = makeService();
+    const parent = createCategory(db, { name: 'Dev' });
+    const child = createCategory(db, { name: 'Web', parentId: parent.id });
+    createBookmark(db, { url: 'https://example.com/a', title: 'rust one', categoryId: parent.id });
+    createBookmark(db, { url: 'https://example.com/b', title: 'rust two', categoryId: child.id });
+    createBookmark(db, { url: 'https://example.com/c', title: 'rust three' });
+
+    const response = await service.search({
+      q: 'rust',
+      mode: 'keyword',
+      ...BASE,
+      categoryId: parent.id,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.total).toBe(2); // parent + child; uncategorized excluded
+  });
 });
 
 describe('SearchService — fused pagination', () => {
   test('reports a monotonic total lower bound and an exact hasMore probe', async () => {
     const db = makeDb();
     const a = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'alpha rust',
     });
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/b',
       title: 'beta rust',
     });
     // Semantic-only hit (no keyword match) so fusion has something to add.
     const c = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/c',
       title: 'gamma',
     });
@@ -115,7 +129,6 @@ describe('SearchService — fused pagination', () => {
       config: testConfig(),
       vector: createVectorProvider(vector, 'memory'),
       embeddings: stubEmbeddings,
-      datasetId: db.datasetId,
     });
 
     // limit 1 → window 1, probe fetches 2 from each list.
@@ -136,12 +149,10 @@ describe('SearchService — fused pagination', () => {
   test('degrades to keyword-only when no embedding client is configured', async () => {
     const db = makeDb();
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'rust one',
     });
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/b',
       title: 'rust two',
     });
@@ -150,7 +161,6 @@ describe('SearchService — fused pagination', () => {
       config: testConfig(),
       vector: createVectorProvider(new StubVectorIndex(['missing']), 'memory'),
       embeddings: undefined,
-      datasetId: db.datasetId,
     });
 
     const response = await service.search({
@@ -164,54 +174,76 @@ describe('SearchService — fused pagination', () => {
     expect(response.total).toBe(2);
   });
 
-  // The dataset boundary is pushed into the vector query (MODEL.md principle
-  // 1): semantic search is dataset-scoped exactly like keyword search.
-  test('pushes the dataset boundary into the semantic query', async () => {
+  test('date-bounded searches stay keyword-only', async () => {
     const db = makeDb();
+    createBookmark(db, { url: 'https://example.com/a', title: 'rust one' });
+    const vector = new StubVectorIndex(['x']);
+    const service = createSearchService({
+      db,
+      config: testConfig(),
+      vector: createVectorProvider(vector, 'memory'),
+      embeddings: stubEmbeddings,
+    });
+
+    const response = await service.search({
+      q: 'rust',
+      mode: 'hybrid',
+      ...BASE,
+      dateFrom: 0,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.mode).toBe('keyword');
+    expect(vector.searchFilters).toEqual([]); // the vector query was never made
+  });
+
+  // The filters are pushed into the vector query (server-side on Qdrant,
+  // client-side overfetch on the fallback) — no dataset axis is left (MODEL.md
+  // principle 1); category/tag filters are the only predicates.
+  test('pushes the category/tag filters into the semantic query', async () => {
+    const db = makeDb();
+    const category = createCategory(db, { name: 'Dev' });
+    const tag = createTag(db, { name: 'rust' });
     const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'rust one',
+      categoryId: category.id,
     });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
     const vector = new StubVectorIndex([bookmark.id]);
     const service = createSearchService({
       db,
       config: testConfig(),
       vector: createVectorProvider(vector, 'memory'),
       embeddings: stubEmbeddings,
-      datasetId: db.datasetId,
     });
 
-    await service.search({ q: 'rust', mode: 'semantic', ...BASE, limit: 10, offset: 0 });
-    expect(vector.searchFilters.at(-1)).toMatchObject({ datasetId: db.datasetId });
-
-    // An explicit input datasetId wins, matching the keyword path's precedence.
-    const other = '00000000-0000-7000-8000-000000000001';
     await service.search({
       q: 'rust',
       mode: 'semantic',
       ...BASE,
-      datasetId: other,
+      categoryId: category.id,
+      tagId: tag.id,
       limit: 10,
       offset: 0,
     });
-    expect(vector.searchFilters.at(-1)).toMatchObject({ datasetId: other });
+    expect(vector.searchFilters.at(-1)).toEqual({ categoryId: category.id, tagId: tag.id });
   });
 });
 
 describe('SearchService — chatHits', () => {
   test('projects compact LLM-friendly hits with resolved tag and category names', async () => {
     const { service, db } = makeService();
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Design' });
+    const category = createCategory(db, { name: 'Design' });
     const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/palette',
       title: 'color tools',
       description: 'palette generators',
       categoryId: category.id,
       metadata: { image: { ogImageUrl: 'https://img.test/palette.png', screenshotPath: null } },
     });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'color' });
+    const tag = createTag(db, { name: 'color' });
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
 
     const hits = await service.chatHits('color', 5);
@@ -237,7 +269,7 @@ describe('SearchService — chatHits', () => {
 
   test('nulls the image for bookmarks without scrape metadata', async () => {
     const { service, db } = makeService();
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/1', title: 'one' });
+    createBookmark(db, { url: 'https://example.com/1', title: 'one' });
 
     const [hit] = await service.chatHits('one', 5);
 
@@ -246,7 +278,7 @@ describe('SearchService — chatHits', () => {
 
   test('answers blank queries with no hits', async () => {
     const { service, db } = makeService();
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/1', title: 'one' });
+    createBookmark(db, { url: 'https://example.com/1', title: 'one' });
 
     expect(await service.chatHits('', 5)).toEqual([]);
     expect(await service.chatHits('   ', 5)).toEqual([]);
@@ -254,12 +286,43 @@ describe('SearchService — chatHits', () => {
 
   test('caps hits at the requested limit', async () => {
     const { service, db } = makeService();
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/a', title: 'rust a' });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/b', title: 'rust b' });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/c', title: 'rust c' });
+    createBookmark(db, { url: 'https://example.com/a', title: 'rust a' });
+    createBookmark(db, { url: 'https://example.com/b', title: 'rust b' });
+    createBookmark(db, { url: 'https://example.com/c', title: 'rust c' });
 
     const hits = await service.chatHits('rust', 2);
 
     expect(hits).toHaveLength(2);
   });
 });
+
+describe('SearchService — aggregates', () => {
+  test('counts bookmarks, invalid ones, and per-category/tag totals', async () => {
+    const { service, db } = makeService();
+    const category = createCategory(db, { name: 'Dev' });
+    const first = createBookmark(db, {
+      url: 'https://example.com/1',
+      title: 'one',
+      categoryId: category.id,
+    });
+    const second = createBookmark(db, { url: 'https://example.com/2', title: 'two' });
+    updateStatus(db, second.id, 'invalid');
+    const tag = createTag(db, { name: 'rust' });
+    assignTag(db, { bookmarkId: first.id, tagId: tag.id, source: 'user' });
+
+    const aggregates = service.aggregates();
+
+    expect(aggregates.total).toBe(2);
+    expect(aggregates.invalidCount).toBe(1);
+    expect(aggregates.categories).toEqual([
+      { id: category.id, parentId: null, name: 'Dev', count: 1 },
+    ]);
+    expect(aggregates.tags).toEqual([{ id: tag.id, name: 'rust', status: 'active', count: 1 }]);
+  });
+});
+
+/** Flips a bookmark to `invalid` directly (db-level, no service involved). */
+function updateStatus(db: ReturnType<typeof makeDb>, id: string, status: 'invalid'): void {
+  // Ids are 16-byte BLOBs (MODEL.md); bind the bytes, not the string form.
+  db.query('UPDATE bookmarks SET status = ? WHERE id = ?').run(status, uuidToBytes(id));
+}

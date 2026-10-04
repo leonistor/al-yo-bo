@@ -1,7 +1,6 @@
-import type { ClassifierClient } from '@al-yo-bo/classifier';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
-import type { ExtractionClient } from '@al-yo-bo/importer';
+import type { AiHealthReport } from '@al-yo-bo/ai';
 
+import type { CoreAi } from '../ai.ts';
 import type { CoreConfig } from '../config.ts';
 import type { ScrapeFn } from '../scrape.ts';
 import type { ScreenshotClient } from '../screenshot.ts';
@@ -12,22 +11,6 @@ export interface HealthJobs {
   pendingCount(): number;
 }
 
-/** Optional chat availability supplied by the app edge (core does not own chat config). */
-export interface ChatHealth {
-  available: boolean;
-  model: string | null;
-}
-
-/** Optional extraction/screenshot availability supplied by the app edge. */
-export interface ExtractHealth {
-  available: boolean;
-  provider: 'llm' | 'fallback';
-}
-
-export interface ScreenshotHealth {
-  available: boolean;
-}
-
 export interface HealthReport {
   status: 'ok';
   version: '0.0.0';
@@ -35,82 +18,53 @@ export interface HealthReport {
     backend: 'qdrant' | 'memory';
     indexed: number;
   };
-  embeddings: {
-    enabled: boolean;
-    model: string | null;
-  };
+  /**
+   * AI-layer capability probes (ARCHITECTURE §8): ollaya/ollama reachability,
+   * chat availability, embeddings/classifier/extract configuration. Composed
+   * from the injected layer so core never re-implements a probe.
+   */
+  ai: AiHealthReport;
   enrichment: {
+    /** The scraper is injected AND its html-to-markdown binary resolves on PATH. */
     scrapeAvailable: boolean;
     jobsPending: number;
   };
-  classifier: {
+  screenshot: {
     available: boolean;
-    model: string;
-    reachable: boolean;
   };
-  chat: ChatHealth;
-  extract: ExtractHealth;
-  screenshot: ScreenshotHealth;
 }
 
 export interface HealthServiceDeps {
   vector: VectorProvider;
   config: CoreConfig;
-  embeddings?: EmbeddingClient;
+  ai: CoreAi;
   jobs?: HealthJobs;
   scrape?: ScrapeFn;
-  classifier?: ClassifierClient;
-  /** LLM extraction port; `null` falls back to the deterministic parser. */
-  extract?: ExtractionClient | null;
   /** Screenshot capture port; absent = screenshot jobs are a no-op. */
   screenshot?: ScreenshotClient | null;
+  /** Binary resolution override (tests); defaults to Bun.which. */
+  hasBinary?: (binary: string) => boolean;
 }
 
 export interface HealthService {
-  /**
-   * `chat` is passed per call rather than stored on the long-lived service: core
-   * has no chat config of its own, and the app edge is the only owner of that
-   * concern. Defaults to unavailable so core can report health standalone.
-   */
-  health(chat?: ChatHealth): Promise<HealthReport>;
+  health(): Promise<HealthReport>;
 }
-
-/** Cached Ollaya reachability probe (health only; 30 s TTL, sub-second timeout). */
-const PROBE_TTL_MS = 30_000;
-const PROBE_TIMEOUT_MS = 750;
-const DEFAULT_CHAT: ChatHealth = { available: false, model: null };
 
 /**
  * Aggregates the optional-subsystem capability report into a single value the
- * app edge can serialize directly (ARCHITECTURE §1.5: every sidecar is optional,
- * so health is descriptive rather than a liveness gate). Reachability probing is
- * per-instance state — a server may run several cores (e.g. tests) without the
- * probes clobbering each other.
+ * app edge can serialize directly (ARCHITECTURE §1.5: every sidecar is
+ * optional, so health is descriptive rather than a liveness gate). The AI
+ * probes come from the injected layer (§8); Qdrant reachability is reported as
+ * the vector backend label + indexed count; the scrape check resolves the
+ * html-to-markdown binary exactly like the scrape ladder does (§10).
  */
 export function createHealthService(deps: HealthServiceDeps): HealthService {
-  const { vector, config, embeddings, jobs, scrape, classifier, extract, screenshot } = deps;
-  let probe: { at: number; reachable: boolean } | null = null;
-
-  async function probeOllaya(): Promise<boolean> {
-    if (probe && Date.now() - probe.at < PROBE_TTL_MS) {
-      return probe.reachable;
-    }
-    let reachable = false;
-    try {
-      const response = await fetch(config.ollaya.baseUrl.replace(/\/$/, '') + '/', {
-        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      });
-      // 4xx responses still prove the Ollaya daemon is up and answering.
-      reachable = response.ok;
-    } catch {
-      reachable = false;
-    }
-    probe = { at: Date.now(), reachable };
-    return reachable;
-  }
+  const { vector, config, ai, jobs, scrape, screenshot } = deps;
+  // Bun.which returns null (not '') when the binary is missing.
+  const hasBinary = deps.hasBinary ?? ((binary: string) => Bun.which(binary) !== null);
 
   return {
-    async health(chat = DEFAULT_CHAT) {
+    async health() {
       const index = vector.current();
       return {
         status: 'ok' as const,
@@ -119,23 +73,10 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
           backend: vector.backend(),
           indexed: index.size,
         },
-        embeddings: {
-          enabled: Boolean(embeddings),
-          model: config.embeddings.model ?? null,
-        },
+        ai: await ai.health.report(),
         enrichment: {
-          scrapeAvailable: Boolean(scrape),
+          scrapeAvailable: Boolean(scrape) && hasBinary(config.scrape.binary),
           jobsPending: jobs?.pendingCount() ?? 0,
-        },
-        classifier: {
-          available: Boolean(classifier),
-          model: config.ollaya.model,
-          reachable: classifier ? await probeOllaya() : false,
-        },
-        chat,
-        extract: {
-          available: true, // always available — the deterministic fallback always works
-          provider: extract ? 'llm' : 'fallback',
         },
         screenshot: {
           available: Boolean(screenshot),

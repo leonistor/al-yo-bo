@@ -4,23 +4,25 @@
  * (port/host), storage paths, and the Qdrant serving sidecar are constructed at
  * the app edge and never reach the services. Keeping the port narrow is what
  * makes `@al-yo-bo/core` reusable and testable without an HTTP server.
+ *
+ * The dataset axis is gone (MODEL.md principle 1 — one workspace), so there is
+ * no scoping resolution here or anywhere else in core. `autoAssignThreshold`
+ * mirrors the AI layer's `AUTO_ASSIGN_THRESHOLD`: one env source, two typed
+ * views — the server threads the same value into both.
  */
 export interface CoreConfig {
-  /** Probability at/above which the classifier may auto-assign an active tag. */
+  /** Probability at/above which the classifier may auto-assign an active tag (§7 stage 4). */
   autoAssignThreshold: number;
   /**
-   * Fallback dataset name used when the profile has no active-dataset
-   * pointer (the pointer is the primary mechanism — MODEL.md principle 8).
+   * Query-embedding identity; semantic search is off without a model. Also the
+   * id stored in `bookmark_embeddings.model` — the configured model, never the
+   * provider echo (§6/§8, M4).
    */
-  defaultDataset: string;
-  /** Query-embedding identity; semantic search is off without a model. */
   embeddings: {
     model?: string;
   };
-  /** Ollaya decision daemon + the model used for classification questions. */
+  /** Ollaya decision-model alias used for classification questions (§7 stage 3). */
   ollaya: {
-    baseUrl: string;
-    apiKey?: string;
     model: string;
   };
   /** Page enrichment options; see scrape.ts. */

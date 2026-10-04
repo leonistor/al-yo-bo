@@ -7,22 +7,26 @@
  * Ollaya is optional (§1.5): without a classifier client this degrades to a
  * no-op — bookmarks stay browsable, searchable and manually taggable.
  *
- * Phase 0 simplification: the classifier never creates vocabulary. Unknown
- * labels are persisted as `unknown_classification_labels` evidence rows
- * (MODEL.md) and never become assignments; the operator can choose to add a
- * matching tag later.
+ * Candidate set (decided, §7 stage 0): ALL `active` tags — tags have no
+ * category and there is no scoping axis left (MODEL.md principles 1-2). The
+ * per-call cap below keeps run size bounded; candidate-set precision as the
+ * vocabulary grows is a §13 revisit trigger.
+ *
+ * The classifier never creates vocabulary (MODEL.md principle 5): unknown
+ * labels are persisted as `unknown_classification_labels` evidence rows and
+ * never become assignments.
  */
 
 import type { Database } from 'bun:sqlite';
 
-import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/classifier';
+import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/ai';
 import {
   assignTag,
+  candidatesForBookmark,
   createClassificationResult,
   createClassificationRun,
   createUnknownClassificationLabel,
   getBookmarksWithTagsByIds,
-  listActiveTagsForScope,
   listUserTagIds,
   reconcileClassifierAssignments,
 } from '@al-yo-bo/db';
@@ -97,23 +101,14 @@ export function buildQuestions(tagNames: string[]): Record<string, NoulQuestion>
 }
 
 /**
- * Candidate tags keyed by name. Candidates are active tags in the bookmark's
- * dataset (narrowed to the bookmark's category scope when it has one); duplicate
- * names across scopes collapse to one question (the scoped tag wins) because
- * question labels are tag names.
+ * Candidate tags keyed by name. Candidates are ALL `active` tags (ARCHITECTURE
+ * §7 stage 0); tag names are globally unique (MODEL.md), so the map is a pure
+ * label → tag lookup with no scope-collision handling left to do.
  */
-function candidatesForBookmark(db: Database, bookmark: BookmarkWithTags): Map<string, Tag> {
-  const tags = listActiveTagsForScope(db, bookmark.datasetId, bookmark.categoryId);
+function candidateTags(db: Database, bookmarkId: string): Map<string, Tag> {
   const map = new Map<string, Tag>();
-  for (const tag of tags) {
+  for (const tag of candidatesForBookmark(db, bookmarkId)) {
     map.set(tag.name, tag);
-  }
-  if (bookmark.categoryId) {
-    for (const tag of tags) {
-      if (tag.categoryId === bookmark.categoryId) {
-        map.set(tag.name, tag); // scoped tag wins a name collision
-      }
-    }
   }
   return map;
 }
@@ -136,7 +131,7 @@ export async function classifyBookmark(
     return { status: 'missing', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
   }
 
-  const candidates = candidatesForBookmark(db, bookmark);
+  const candidates = candidateTags(db, bookmarkId);
   if (candidates.size === 0) {
     return { status: 'skipped', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
   }
@@ -144,7 +139,13 @@ export async function classifyBookmark(
   const state = buildStateString(bookmark);
   const userTagIds = new Set(listUserTagIds(db, bookmarkId));
   const allNames = [...candidates.keys()];
-  const outcome: ClassifyOutcome = { status: 'classified', runs: 0, assigned: 0, retracted: 0, unknown: 0 };
+  const outcome: ClassifyOutcome = {
+    status: 'classified',
+    runs: 0,
+    assigned: 0,
+    retracted: 0,
+    unknown: 0,
+  };
   /** Tags this pass qualified, across every batch run. */
   const qualifiedTagIds = new Set<string>();
   /** Runs created by this pass (the authoritative evidence for `selected`). */
@@ -178,8 +179,8 @@ export async function classifyBookmark(
     });
 
     if (qualifies) {
-      // assignTag never overwrites user rows (MODEL.md), so this is safe even
-      // if the user row appeared mid-run.
+      // assignTag never overwrites user/import rows (MODEL.md / ARCHITECTURE
+      // §7 "User rows win"), so this is safe even if a user row appeared mid-run.
       assignTag(db, {
         bookmarkId,
         tagId: tag.id,
@@ -234,12 +235,13 @@ export async function classifyBookmark(
     }
   }
 
-  // Recompute the effective state under the current policy: retract classifier
-  // assignments this pass did not re-qualify and reconcile `selected` flags.
-  // Runs after all batches so qualification is the union across runs.
+  // Recompute the effective state under the current policy (ARCHITECTURE §7
+  // "Retraction"): retract classifier assignments this pass did not re-qualify
+  // and reconcile `selected` flags — effective state only, evidence rows stay
+  // immutable (MODEL.md principle 4). Runs after all batches so qualification
+  // is the union across runs.
   outcome.retracted = reconcileClassifierAssignments(db, {
     bookmarkId,
-    datasetId: bookmark.datasetId,
     qualifiedTagIds: [...qualifiedTagIds],
     runIds,
   }).retracted;
