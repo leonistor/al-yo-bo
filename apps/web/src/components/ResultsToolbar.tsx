@@ -1,4 +1,10 @@
-import { Grid3x3Icon, LayoutGridIcon, ListIcon, RefreshCwIcon } from 'lucide-react';
+import {
+  Grid3x3Icon,
+  LayoutGridIcon,
+  ListIcon,
+  RefreshCwIcon,
+  Rows3Icon,
+} from 'lucide-react';
 import { useCallback } from 'react';
 
 import type { BookmarkListStatus, BookmarkSort } from '@al-yo-bo/shared';
@@ -82,6 +88,7 @@ export function ResultsToolbar({
   );
 
   const selectListLayout = useCallback(() => onLayoutChange('list'), [onLayoutChange]);
+  const selectCompactLayout = useCallback(() => onLayoutChange('compact'), [onLayoutChange]);
   const selectGridLayout = useCallback(() => onLayoutChange('grid'), [onLayoutChange]);
   const selectDenseLayout = useCallback(() => onLayoutChange('dense'), [onLayoutChange]);
 
@@ -140,6 +147,15 @@ export function ResultsToolbar({
             onClick={selectListLayout}
           >
             <ListIcon />
+          </Button>
+          <Button
+            variant={layout === 'compact' ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            aria-label="Compact view"
+            aria-pressed={layout === 'compact'}
+            onClick={selectCompactLayout}
+          >
+            <Rows3Icon />
           </Button>
           <Button
             variant={layout === 'grid' ? 'secondary' : 'ghost'}

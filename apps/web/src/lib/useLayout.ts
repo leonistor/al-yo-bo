@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 
 import { createSafeStorage } from '@/lib/storage';
 
-export type Layout = 'list' | 'grid' | 'dense';
+export type Layout = 'list' | 'grid' | 'dense' | 'compact';
 
 const STORAGE_KEY = 'al-yo-bo:layout';
 
@@ -10,7 +10,7 @@ const STORAGE_KEY = 'al-yo-bo:layout';
 const storage = createSafeStorage('al-yo-bo:probe');
 
 function parseLayout(value: string | null): Layout {
-  return value === 'grid' || value === 'dense' ? value : 'list';
+  return value === 'grid' || value === 'dense' || value === 'compact' ? value : 'list';
 }
 
 export function useLayout(): [Layout, (layout: Layout) => void] {

@@ -16,6 +16,7 @@ import {
   MonitorIcon,
   MoonIcon,
   RefreshCwIcon,
+  Rows3Icon,
   SparklesIcon,
   SunIcon,
   TypeIcon,
@@ -157,6 +158,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: LucideIcon }[] = [
 
 const LAYOUT_OPTIONS: { value: Layout; label: string; icon: LucideIcon }[] = [
   { value: 'list', label: 'List', icon: ListIcon },
+  { value: 'compact', label: 'Compact', icon: Rows3Icon },
   { value: 'grid', label: 'Grid', icon: LayoutGridIcon },
   { value: 'dense', label: 'Dense', icon: Grid3x3Icon },
 ];

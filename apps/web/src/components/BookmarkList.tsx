@@ -11,6 +11,7 @@ import { memo, useCallback, useMemo, useRef } from 'react';
 
 import { BookmarkThumb } from '@/components/BookmarkThumb';
 import { DenseBookmarkCard } from '@/components/DenseBookmarkCard';
+import { DenseBookmarkRow } from '@/components/DenseBookmarkRow';
 import { FilterTagPill } from '@/components/FilterTagPill';
 import { RowActions, type RowAction } from '@/components/RowActions';
 import { TagPill } from '@/components/TagPill';
@@ -36,6 +37,9 @@ const LIST_ITEM_ELEMENT = <li />;
 
 /** Dense tile grid (DenseBookmarkCard): 2/3/4/5 columns by breakpoint. */
 const DENSE_GRID_CLASSES = 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+
+/** Vertical stack for the compact layout (DenseBookmarkRow): tighter than the card gap. */
+const LIST_STACK_CLASSES = 'flex flex-col gap-1.5';
 
 interface BookmarkListProps {
   items: BookmarkWithTags[];
@@ -63,6 +67,22 @@ function CardSkeleton({ layout }: { layout: Layout }) {
         <div className="flex min-w-0 flex-col gap-1">
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-3 w-1/2" />
+        </div>
+      </Card>
+    );
+  }
+  if (layout === 'compact') {
+    // Row-shaped skeleton mirroring DenseBookmarkRow's anatomy.
+    return (
+      <Card className="w-full flex-row items-center gap-2 p-2" aria-hidden>
+        <div className="aspect-video w-16 shrink-0 rounded-md bg-muted" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-3 w-1/3" />
+        </div>
+        <div className="flex items-center gap-0.5">
+          <Skeleton className="size-7 rounded-md" />
+          <Skeleton className="size-7 rounded-md" />
         </div>
       </Card>
     );
@@ -102,8 +122,8 @@ function CardSkeleton({ layout }: { layout: Layout }) {
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithTags;
-  /** Full cards render in the list/grid layouts; dense uses DenseBookmarkCard. */
-  layout: Exclude<Layout, 'dense'>;
+  /** Full cards render in the list/grid layouts; dense uses DenseBookmarkCard, compact uses DenseBookmarkRow. */
+  layout: Exclude<Layout, 'dense' | 'compact'>;
   onOpen: (bookmark: BookmarkWithTags) => void;
   onDelete: (bookmark: BookmarkWithTags) => void;
   /** Active tag filter; renders the matching pill as `selected`. */
@@ -311,7 +331,7 @@ export function BookmarkList({
     onActivate: onOpen,
     onDelete,
     // Dense tiles navigate like the grid: column-aware arrows.
-    mode: layout === 'list' ? 'list' : 'grid',
+    mode: layout === 'list' || layout === 'compact' ? 'list' : 'grid',
     getColumnCount: layout === 'dense' ? getDenseColumnCount : getGridColumnCount,
     focusSelector: '[data-title-button]',
   });
@@ -328,7 +348,11 @@ export function BookmarkList({
     if (layout === 'dense') {
       return <div className={DENSE_GRID_CLASSES}>{skeletons}</div>;
     }
-    return <div className="flex flex-col gap-2">{skeletons}</div>;
+    return (
+      <div className={layout === 'compact' ? LIST_STACK_CLASSES : 'flex flex-col gap-2'}>
+        {skeletons}
+      </div>
+    );
   }
 
   if (items.length === 0) {
@@ -388,7 +412,9 @@ export function BookmarkList({
           ? DENSE_GRID_CLASSES
           : layout === 'grid'
             ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
-            : 'flex flex-col gap-2',
+            : layout === 'compact'
+              ? LIST_STACK_CLASSES
+              : 'flex flex-col gap-2',
       )}
     >
       {items.map((bookmark, index) =>
@@ -400,6 +426,17 @@ export function BookmarkList({
             active={activeId === bookmark.id}
             listItem
             onOpen={onOpen}
+            onKeyDown={handleKeyDown}
+          />
+        ) : layout === 'compact' ? (
+          <DenseBookmarkRow
+            key={bookmark.id}
+            bookmark={bookmark}
+            index={index}
+            active={activeId === bookmark.id}
+            listItem
+            onOpen={onOpen}
+            onDelete={onDelete}
             onKeyDown={handleKeyDown}
           />
         ) : (

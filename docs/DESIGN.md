@@ -37,9 +37,9 @@
 | Bookmark titles, sheet titles          | `text-base` |
 | Page titles (`h1` in main column)      | `text-lg`   |
 
-**Spacing rhythm:** main column `p-4` · cards `p-3` · dense tiles `p-2` (dense grid + chat
-results) · inline control gaps `gap-2` · section gaps `gap-3` · chrome (`Topbar`, `Sidebar`)
-`px-3 sm:px-4`.
+**Spacing rhythm:** main column `p-4` · cards `p-3` · dense tiles and compact list rows `p-2`
+(dense grid + chat results + `DenseBookmarkRow`) · inline control gaps `gap-2` · section gaps
+`gap-3` · chrome (`Topbar`, `Sidebar`) `px-3 sm:px-4`.
 
 **Elevation policy:** flat. All static surfaces are separated by `1px` borders (`border-border`,
 `border-sidebar-border`) and surface tint — never shadows. `shadow-sm` is allowed **only on
@@ -84,7 +84,7 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 │ bg-sidebar│ ──────────────────────────────────────────│
 │ border-r │ main (p-4)                                 │
 │          │  ┌ Results toolbar (row 2 of the header)   │
-│          │  ├ list / grid / dense (scrolls)           │
+│          │  ├ list / compact / grid / dense (scrolls)  │
 │          │  └ pagination                              │
 │          │                      [chat 24rem, optional]│
 └──────────┴────────────────────────────────────────────┘
@@ -132,8 +132,9 @@ the tinted sidebar by surface and border, never by shadow. Left→right:
 ### Results toolbar (content header, row 2)
 
 Sits at the top of `main`, directly above the list: result count (`aria-live`, `text-sm
-text-muted-foreground`) and Active/Invalid segmented control on the left; sort select, list/grid/
-dense segmented control (List / LayoutGrid / Grid3x3), refresh on the right. Sort options fold
+text-muted-foreground`) and Active/Invalid segmented control on the left; sort select, list/
+compact/grid/dense four-way segmented control (List / Rows3 / LayoutGrid / Grid3x3), refresh on
+the right. Sort options fold
 direction in: Newest / Oldest / Recently updated / Title A–Z / Title Z–A.
 
 ## Components (shadcn/ui on base-ui)
@@ -215,6 +216,24 @@ description, date, or action row (everything else lives in the detail sheet).
 - Conscious omissions: no Invalid badge (invalid bookmarks stay fully represented in list/grid);
   no per-hit dismiss in chat (chat is a view, never a second library).
 
+### DenseBookmarkRow — the compact layout row
+
+`src/components/DenseBookmarkRow.tsx` — the `compact` layout's row form, the horizontal
+counterpart of the dense tile. One line, three zones: a small thumbnail on the left
+(`aspect-video w-16`, `rounded-md`, via `BookmarkThumb`), a middle column with the title button
+(`text-sm font-medium truncate`, the row's primary control — `data-row-focus`, opens the detail
+sheet) above the host external link (`text-xs text-primary`, trailing `ExternalLinkIcon` `size-3`),
+and a right-aligned `RowActions` cluster (open in new tab + delete) revealed on hover /
+`group-focus-within`. The `list` layout is a different mode: it keeps rendering full
+`BookmarkCard`s (thumb, host, description, tag pills) in a `gap-2` vertical stack; `compact`
+stacks rows at `gap-1.5`.
+
+- Row chrome follows the managed-list language: `rounded-lg border bg-card p-2`,
+  `hover:bg-accent/50`, focus ring inside, stagger entrance capped at the first 10 rows.
+- Conscious omissions, same rule as the dense tile: no description, tag pills, or date (they live
+  in the detail sheet) and no Invalid badge (invalid bookmarks stay fully represented in
+  list/grid).
+
 ### List rows & actions — the one managed-list language
 
 Shared primitives under `src/components/` used by every list-like page (Vocabulary, review queue,
@@ -260,7 +279,8 @@ meta/captions `text-xs`. Transitions follow the 150 ms hover / 200 ms state toke
     display button. Each field commits independently to `PATCH /api/profile`; no global Save.
 - **Preferences card** — three `SegmentedControl`s:
   - Theme: Sun/Moon/Monitor → light/dark/system, persisted by `lib/useTheme`.
-  - Layout: List/LayoutGrid/Grid3x3 → list/grid/dense, persisted by `lib/useLayout`.
+   - Layout: List/Rows3/LayoutGrid/Grid3x3 → list/compact/grid/dense, persisted by
+     `lib/useLayout`.
   - Default search mode: Type/Sparkles/Combine → keyword/semantic/hybrid, persisted by
     `lib/useDefaultSearchMode`.
 - **Dataset card** — active dataset read-only with caption explaining that switching happens
