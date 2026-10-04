@@ -27,7 +27,6 @@ export interface SyncRecord {
 }
 
 export interface SyncPayload {
-  datasetId: string;
   categoryId: string | null;
   tagIds: string[];
 }
@@ -42,14 +41,13 @@ export interface SyncReport {
 }
 
 /** Filterable payload keys, each backed by a keyword index on the collection. */
-const FIELD_DATASET = 'datasetId';
 const FIELD_CATEGORY = 'categoryId';
 const FIELD_TAGS = 'tagIds';
 const BATCH_SIZE = 200;
 const SCROLL_LIMIT = 1000;
 
 /**
- * Payload stamped on every point. `datasetId`/`categoryId`/`tagIds` are omitted
+ * Payload stamped on every point. `categoryId`/`tagIds` are omitted
  * when absent so payload-only syncs never accidentally clear filter fields.
  */
 export function buildPointPayload(
@@ -62,7 +60,6 @@ export function buildPointPayload(
     dims,
     ...(payload
       ? {
-          [FIELD_DATASET]: payload.datasetId,
           [FIELD_CATEGORY]: payload.categoryId,
           [FIELD_TAGS]: payload.tagIds,
         }
@@ -77,13 +74,10 @@ export function buildPointPayload(
  * entirely.
  */
 export function buildVectorFilter(filter?: VectorFilter): Schemas['Filter'] | undefined {
-  if (filter?.datasetId === undefined && filter?.categoryId === undefined && filter?.tagId === undefined) {
+  if (filter?.categoryId === undefined && filter?.tagId === undefined) {
     return undefined;
   }
   const must: Schemas['Condition'][] = [];
-  if (filter?.datasetId !== undefined) {
-    must.push({ key: FIELD_DATASET, match: { value: filter.datasetId } });
-  }
   if (filter?.categoryId !== undefined) {
     must.push({ key: FIELD_CATEGORY, match: { value: filter.categoryId } });
   }
@@ -217,10 +211,11 @@ export class QdrantIndex implements VectorIndex {
     const shapeMatches = params?.size === dims && params.distance === 'Cosine';
     if (shapeMatches && modelMatches) {
       // Compatible collection. createPayloadIndex is idempotent (a same-schema
-      // index is `AlreadyBuilt`, not an error), so the three filterable fields
-      // are simply re-ensured — this upgrades pre-`datasetId` collections in
-      // place, and `sync` rewrites every payload right after.
-      await this.createPayloadIndexes([FIELD_DATASET, FIELD_CATEGORY, FIELD_TAGS]);
+      // index is `AlreadyBuilt`, not an error), so the filterable fields
+      // are simply re-ensured — this upgrades collections written before the
+      // current payload schema in place, and `sync` rewrites every payload
+      // right after.
+      await this.createPayloadIndexes([FIELD_CATEGORY, FIELD_TAGS]);
       return false;
     }
 
@@ -235,9 +230,9 @@ export class QdrantIndex implements VectorIndex {
       vectors: { size: dims, distance: 'Cosine' },
       metadata: { model },
     });
-    // Keyword indexes make the dataset/category/tag filters server-side
+    // Keyword indexes make the category/tag filters server-side
     // instead of a payload scan.
-    await this.createPayloadIndexes([FIELD_DATASET, FIELD_CATEGORY, FIELD_TAGS]);
+    await this.createPayloadIndexes([FIELD_CATEGORY, FIELD_TAGS]);
   }
 
   /** Creates keyword payload indexes for every field (idempotent server-side). */
@@ -357,7 +352,7 @@ export class QdrantIndex implements VectorIndex {
             dims,
             resolvePayload
               ? resolvePayload(record.bookmarkId)
-              : { datasetId: '', categoryId: null, tagIds: [] },
+              : { categoryId: null, tagIds: [] },
           ),
         })),
       });

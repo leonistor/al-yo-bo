@@ -1,7 +1,6 @@
 import type { RankedCandidate, VectorFilter, VectorIndex, VectorPayloadPatch, VectorUpsert } from '@al-yo-bo/shared';
 
 export interface FallbackPayload {
-  datasetId: string;
   categoryId: string | null;
   tagIds: string[];
 }
@@ -20,9 +19,6 @@ function matchesFilter(payload: FallbackPayload | undefined, filter: VectorFilte
   if (!payload) {
     return false;
   }
-  if (filter.datasetId !== undefined && payload.datasetId !== filter.datasetId) {
-    return false;
-  }
   if (filter.categoryId !== undefined && payload.categoryId !== filter.categoryId) {
     return false;
   }
@@ -35,7 +31,7 @@ function matchesFilter(payload: FallbackPayload | undefined, filter: VectorFilte
 /**
  * Client-side payload filter shared by the fallback search and the standalone
  * filtering decorator, so an index that cannot filter server-side (the
- * in-memory `KnnIndex`) enforces identical dataset/category/tag semantics no
+ * in-memory `KnnIndex`) enforces identical category/tag semantics no
  * matter which backend path built it. Ranking is left untouched: filtered hits
  * keep the rank they earned in the wider overfetch window.
  */
@@ -182,8 +178,8 @@ export interface FilteringVectorIndexOptions {
  *
  * `KnnIndex` stores vectors only, so it ignores the `search` filter. When it is
  * the *primary* — no Qdrant URL configured, or Qdrant unreachable at boot — it
- * must still honor dataset/category/tag scoping, otherwise degraded semantic
- * search leaks bookmarks across datasets. This decorator gives every backend
+ * must still honor category/tag scoping, otherwise degraded semantic search
+ * ignores the active filters. This decorator gives every backend
  * path identical filter semantics (ARCHITECTURE §6) by reusing the same
  * overfetch-and-filter logic as `FallbackVectorIndex`.
  *

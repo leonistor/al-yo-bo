@@ -10,16 +10,10 @@ export type SearchMode = 'keyword' | 'semantic' | 'hybrid';
 
 export type BookmarkSort = 'created_at' | 'updated_at' | 'title';
 
-export interface Dataset {
-  id: string;
-  name: string;
-  createdAt: number;
-}
-
 /**
- * The single user's profile — identity plus the active-dataset pointer. The
- * profile is the person; datasets are content workspaces (MODEL.md). The row
- * is a singleton (fixed sentinel id) and never deletable.
+ * The single user's profile — identity only. The profile is the person
+ * (MODEL.md principle 8); the row is a singleton (fixed sentinel id) and never
+ * deletable.
  */
 export interface Profile {
   id: string;
@@ -27,33 +21,32 @@ export interface Profile {
   githubUsername: string | null;
   /** Avatar file name under `<DATA_DIR>/profile/`, when one was uploaded. */
   avatarPath: string | null;
-  /** Dataset the running app scopes to; null falls back to `DEFAULT_DATASET`. */
-  activeDatasetId: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
-export interface Section {
+/**
+ * A node of the orderable category tree (MODEL.md principle 2). `parentId` is
+ * null for roots; siblings are unique by name and ordered by the fractional
+ * `sortOrder` key. Depth is unlimited; cycles are prevented in the app layer.
+ */
+export interface Category {
   id: string;
-  datasetId: string;
+  parentId: string | null;
+  /** App-generated fractional index key, lexicographically ordered among siblings. */
+  sortOrder: string;
   name: string;
   description: string | null;
   createdAt: number;
 }
 
-export interface Category {
-  id: string;
-  datasetId: string;
-  sectionId: string | null;
-  name: string;
-  description: string | null;
-  createdAt: number;
+/** A category with its children nested — the shape the sidebar and MCP consume. */
+export interface CategoryNode extends Category {
+  children: CategoryNode[];
 }
 
 export interface Tag {
   id: string;
-  datasetId: string;
-  categoryId: string | null;
   name: string;
   description: string | null;
   /** Lifecycle: `active` is normal; `deprecated` keeps the row for evidence but excludes it from new assignments. */
@@ -63,7 +56,6 @@ export interface Tag {
 
 export interface Bookmark {
   id: string;
-  datasetId: string;
   url: string;
   title: string | null;
   description: string | null;
@@ -99,15 +91,10 @@ export interface BookmarkWithTags extends Bookmark {
   image?: BookmarkImage;
 }
 
+/** Bookmark count per category (structure-agnostic; the tree is built client-side). */
 export interface CategoryAggregate {
   id: string;
-  name: string;
-  sectionId: string | null;
-  count: number;
-}
-
-export interface SectionAggregate {
-  id: string;
+  parentId: string | null;
   name: string;
   count: number;
 }
@@ -122,7 +109,6 @@ export interface TagAggregate {
 export interface Aggregates {
   total: number;
   invalidCount: number;
-  sections: SectionAggregate[];
   categories: CategoryAggregate[];
   tags: TagAggregate[];
 }
@@ -138,7 +124,6 @@ export interface RankedCandidate {
 export interface SearchQuery {
   q?: string;
   mode?: SearchMode;
-  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -170,16 +155,17 @@ export interface BookmarkListResponse {
 }
 
 /**
- * A bookmark extracted from arbitrary text. `category` is the most specific
- * category name available; the import pipeline auto-creates any missing
- * vocabulary as active. (Phase 0 simplification: there is no separate
- * `subsection` field — the markdown parser flattens H2/H3 into one category.)
+ * A bookmark extracted from arbitrary text. `categoryPath` is the tree-native
+ * ancestor chain (markdown H2 → level-1, H3 → child); the import pipeline
+ * resolves it against the tree and auto-creates any missing categories/tags as
+ * active.
  */
 export interface ImportedBookmark {
   url: string;
   title: string | null;
   description: string | null;
-  category: string | null;
+  /** Ancestor chain from the root, e.g. `["dev", "web", "2024"]`. */
+  categoryPath: string[];
   priority: number | null;
   /** Tag names declared in the source (frontmatter, etc.). */
   tags: string[];
@@ -204,7 +190,7 @@ export interface ImportReport {
   tagsAssigned: number;
   parsed: number;
   bookmarks: ImportedBookmark[];
-  /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §8). */
+  /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §10). */
   addedIds: string[];
 }
 
@@ -224,10 +210,13 @@ export interface ExportFilters {
   dateTo?: number;
 }
 
-/** A hydrated bookmark plus resolved vocabulary names, ready for serialization. */
+/**
+ * A hydrated bookmark plus resolved vocabulary names, ready for serialization.
+ * `categoryPath` is the ancestor chain from the root — the one path grammar
+ * shared by every format (ARCHITECTURE §7 export).
+ */
 export interface ExportBookmarkRow extends BookmarkWithTags {
-  categoryName: string | null;
-  sectionName: string | null;
+  categoryPath: string[];
 }
 
 /** One produced export artifact, before transport packaging (zip lives at the server edge). */
@@ -236,3 +225,12 @@ export interface ExportedFile {
   contentType: string;
   content: string;
 }
+
+/** Coarse domain events emitted by core services (ARCHITECTURE §9). */
+export type DomainEvent =
+  | { topic: 'bookmarks.changed'; bookmarkIds?: string[] }
+  | { topic: 'categories.changed' }
+  | { topic: 'tags.changed' }
+  | { topic: 'profile.changed' }
+  | { topic: 'jobs.changed'; bookmarkId?: string; job?: string }
+  | { topic: 'invalidate-all' };

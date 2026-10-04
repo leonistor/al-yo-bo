@@ -21,12 +21,6 @@ describe('buildVectorFilter', () => {
     expect(buildVectorFilter({})).toBeUndefined();
   });
 
-  test('matches datasetId by value', () => {
-    expect(buildVectorFilter({ datasetId: 'd1' })).toEqual({
-      must: [{ key: 'datasetId', match: { value: 'd1' } }],
-    });
-  });
-
   test('matches categoryId by value', () => {
     expect(buildVectorFilter({ categoryId: 'c1' })).toEqual({
       must: [{ key: 'categoryId', match: { value: 'c1' } }],
@@ -40,9 +34,8 @@ describe('buildVectorFilter', () => {
   });
 
   test('ANDs all present conditions in a single must list', () => {
-    expect(buildVectorFilter({ datasetId: 'd1', categoryId: 'c1', tagId: 't1' })).toEqual({
+    expect(buildVectorFilter({ categoryId: 'c1', tagId: 't1' })).toEqual({
       must: [
-        { key: 'datasetId', match: { value: 'd1' } },
         { key: 'categoryId', match: { value: 'c1' } },
         { key: 'tagIds', match: { any: ['t1'] } },
       ],
@@ -55,13 +48,12 @@ describe('buildPointPayload', () => {
     expect(buildPointPayload('m', 3)).toEqual({ model: 'm', dims: 3 });
   });
 
-  test('adds datasetId, categoryId and tagIds when provided', () => {
+  test('adds categoryId and tagIds when provided', () => {
     expect(
-      buildPointPayload('m', 3, { datasetId: 'd', categoryId: 'c', tagIds: ['t'] }),
+      buildPointPayload('m', 3, { categoryId: 'c', tagIds: ['t'] }),
     ).toEqual({
       model: 'm',
       dims: 3,
-      datasetId: 'd',
       categoryId: 'c',
       tagIds: ['t'],
     });
@@ -69,11 +61,10 @@ describe('buildPointPayload', () => {
 
   test('keeps a null category explicit', () => {
     expect(
-      buildPointPayload('m', 3, { datasetId: 'd', categoryId: null, tagIds: [] }),
+      buildPointPayload('m', 3, { categoryId: null, tagIds: [] }),
     ).toEqual({
       model: 'm',
       dims: 3,
-      datasetId: 'd',
       categoryId: null,
       tagIds: [],
     });

@@ -9,9 +9,9 @@ import {
 
 /** One bookmark's filterable state, mirroring what the server resolves from SQLite. */
 const PAYLOADS = new Map<string, FallbackPayload>([
-  ['a', { datasetId: 'd', categoryId: 'cat', tagIds: ['t1'] }],
-  ['b', { datasetId: 'd', categoryId: 'other', tagIds: [] }],
-  ['c', { datasetId: 'other', categoryId: 'cat', tagIds: ['t1'] }],
+  ['a', { categoryId: 'cat', tagIds: ['t1'] }],
+  ['b', { categoryId: 'other', tagIds: [] }],
+  ['c', { categoryId: 'cat', tagIds: ['t1'] }],
 ]);
 
 function record(bookmarkId: string, vector: number[]) {
@@ -33,9 +33,9 @@ function memoryIndex(): FilteringVectorIndex {
 }
 
 describe('FilteringVectorIndex', () => {
-  test('scopes the in-memory path to the active dataset', async () => {
-    const out = await memoryIndex().search(new Float32Array([1, 0]), 3, { datasetId: 'd' });
-    expect(out.map((hit) => hit.bookmarkId)).toEqual(['a', 'b']);
+  test('scopes results by category, excluding non-matching candidates', async () => {
+    const out = await memoryIndex().search(new Float32Array([1, 0]), 3, { categoryId: 'other' });
+    expect(out.map((hit) => hit.bookmarkId)).toEqual(['b']);
   });
 
   test('applies category filters and keeps earned ranks', async () => {
@@ -63,7 +63,7 @@ describe('FilteringVectorIndex', () => {
     await index.upsert({
       bookmarkId: 'b',
       vector: Float32Array.from([0, 1]),
-      payload: { model: 'test', dims: 2, datasetId: 'd', categoryId: null, tagIds: [] },
+      payload: { model: 'test', dims: 2, categoryId: null, tagIds: [] },
     });
     expect(index.size).toBe(2);
 

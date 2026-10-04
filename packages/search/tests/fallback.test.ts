@@ -19,7 +19,7 @@ const rank = (id: string, position: number, score: number): RankedCandidate => (
 const point = (bookmarkId: string): VectorUpsert => ({
   bookmarkId,
   vector: new Float32Array([1, 0]),
-  payload: { model: 'test', dims: 2, datasetId: 'd', categoryId: null, tagIds: [] },
+  payload: { model: 'test', dims: 2, categoryId: null, tagIds: [] },
 });
 
 class StubVectorIndex implements VectorIndex {
@@ -114,9 +114,9 @@ describe('FallbackVectorIndex', () => {
     const index = new FallbackVectorIndex(primary, fallback, {
       resolvePayloads: () =>
         new Map([
-          ['a', { datasetId: 'd', categoryId: 'cat', tagIds: [] }],
-          ['b', { datasetId: 'd', categoryId: 'other', tagIds: [] }],
-          ['c', { datasetId: 'other', categoryId: 'cat', tagIds: [] }],
+          ['a', { categoryId: 'cat', tagIds: [] }],
+          ['b', { categoryId: 'other', tagIds: [] }],
+          ['c', { categoryId: 'cat', tagIds: ['t1'] }],
         ]),
       overfetchFactor: 4,
     });
@@ -127,9 +127,9 @@ describe('FallbackVectorIndex', () => {
     expect(out.map((hit) => hit.rank)).toEqual([1, 3]);
   });
 
-  // The dataset boundary must hold on the fallback path too (MODEL.md
-  // principle 1): candidates from other datasets never reach fusion.
-  test('filters candidates from other datasets out of the fallback path', async () => {
+  // Category/tag scoping must hold on the fallback path too: candidates outside
+  // the filter never reach fusion.
+  test('filters candidates outside the tag filter out of the fallback path', async () => {
     const primary = new StubVectorIndex();
     primary.failure = new Error('qdrant down');
     const fallback = new StubVectorIndex([
@@ -140,14 +140,14 @@ describe('FallbackVectorIndex', () => {
     const index = new FallbackVectorIndex(primary, fallback, {
       resolvePayloads: () =>
         new Map([
-          ['a', { datasetId: 'd', categoryId: null, tagIds: [] }],
-          ['c', { datasetId: 'other', categoryId: null, tagIds: [] }],
-          ['d', { datasetId: 'd', categoryId: null, tagIds: [] }],
+          ['a', { categoryId: null, tagIds: ['t1'] }],
+          ['c', { categoryId: null, tagIds: [] }],
+          ['d', { categoryId: null, tagIds: ['t1'] }],
         ]),
       overfetchFactor: 4,
     });
 
-    const out = await index.search(new Float32Array([1, 0]), 2, { datasetId: 'd' });
+    const out = await index.search(new Float32Array([1, 0]), 2, { tagId: 't1' });
     expect(out.map((hit) => hit.bookmarkId)).toEqual(['a', 'd']);
   });
 
