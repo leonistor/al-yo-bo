@@ -198,10 +198,12 @@ describe('SearchService — fused pagination', () => {
     expect(vector.searchFilters).toEqual([]); // the vector query was never made
   });
 
-  // The filters are pushed into the vector query (server-side on Qdrant,
-  // client-side overfetch on the fallback) — no dataset axis is left (MODEL.md
-  // principle 1); category/tag filters are the only predicates.
-  test('pushes the category/tag filters into the semantic query', async () => {
+  // The tag filter is pushed into the vector query (server-side on Qdrant,
+  // client-side overfetch on the fallback); the category filter is NOT: both
+  // backends do single-category payload equality, so pushing it down would
+  // drop bookmarks shelved in child categories. The subtree filter runs
+  // client-side against the same recursive CTE the keyword path uses.
+  test('pushes the tag filter into the semantic query but not the category filter', async () => {
     const db = makeDb();
     const category = createCategory(db, { name: 'Dev' });
     const tag = createTag(db, { name: 'rust' });
@@ -228,7 +230,106 @@ describe('SearchService — fused pagination', () => {
       limit: 10,
       offset: 0,
     });
-    expect(vector.searchFilters.at(-1)).toEqual({ categoryId: category.id, tagId: tag.id });
+    expect(vector.searchFilters.at(-1)).toEqual({ tagId: tag.id });
+  });
+
+  // Regression: a parent-category filter must surface semantic hits shelved
+  // in a child category, matching the keyword path's subtree semantics.
+  test('semantic candidates match the whole category subtree', async () => {
+    const db = makeDb();
+    const parent = createCategory(db, { name: 'Dev' });
+    const child = createCategory(db, { name: 'Web', parentId: parent.id });
+    const inChild = createBookmark(db, {
+      url: 'https://example.com/child',
+      title: 'unmatched title',
+      categoryId: child.id,
+    });
+    const inParent = createBookmark(db, {
+      url: 'https://example.com/parent',
+      title: 'unmatched title',
+      categoryId: parent.id,
+    });
+    // Semantic-only hits (no keyword match for the query) so the fused result
+    // comes from the semantic candidate list.
+    const vector = new StubVectorIndex([inChild.id, inParent.id]);
+    const service = createSearchService({
+      db,
+      config: testConfig(),
+      vector: createVectorProvider(vector, 'memory'),
+      embeddings: stubEmbeddings,
+    });
+
+    const response = await service.search({
+      q: 'zzz-no-keyword-match',
+      mode: 'semantic',
+      ...BASE,
+      categoryId: parent.id,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.mode).toBe('semantic');
+    expect(response.items.map((item) => item.id)).toEqual([inChild.id, inParent.id]);
+    // The filter pushed down must not narrow to the parent id alone.
+    expect(vector.searchFilters.at(-1)).toBeUndefined();
+  });
+
+  test('semantic candidates exclude bookmarks outside the filtered subtree', async () => {
+    const db = makeDb();
+    const parent = createCategory(db, { name: 'Dev' });
+    const child = createCategory(db, { name: 'Web', parentId: parent.id });
+    const elsewhere = createCategory(db, { name: 'Gardening' });
+    const inChild = createBookmark(db, {
+      url: 'https://example.com/child',
+      title: 'unmatched title',
+      categoryId: child.id,
+    });
+    const inElsewhere = createBookmark(db, {
+      url: 'https://example.com/elsewhere',
+      title: 'unmatched title',
+      categoryId: elsewhere.id,
+    });
+    const uncategorized = createBookmark(db, {
+      url: 'https://example.com/none',
+      title: 'unmatched title',
+    });
+    const vector = new StubVectorIndex([uncategorized.id, inElsewhere.id, inChild.id]);
+    const service = createSearchService({
+      db,
+      config: testConfig(),
+      vector: createVectorProvider(vector, 'memory'),
+      embeddings: stubEmbeddings,
+    });
+
+    const response = await service.search({
+      q: 'zzz-no-keyword-match',
+      mode: 'semantic',
+      ...BASE,
+      categoryId: parent.id,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.items.map((item) => item.id)).toEqual([inChild.id]);
+  });
+
+  // An all-undefined filter would still be truthy and make the decorators
+  // overfetch 8x + batch-resolve payloads for nothing — with no filters, no
+  // filter object must reach the vector index at all.
+  test('passes no filter to the vector index when no filters are set', async () => {
+    const db = makeDb();
+    const bookmark = createBookmark(db, { url: 'https://example.com/a', title: 'rust one' });
+    const vector = new StubVectorIndex([bookmark.id]);
+    const service = createSearchService({
+      db,
+      config: testConfig(),
+      vector: createVectorProvider(vector, 'memory'),
+      embeddings: stubEmbeddings,
+    });
+
+    await service.search({ q: 'rust', mode: 'semantic', ...BASE, limit: 10, offset: 0 });
+
+    expect(vector.searchFilters.at(-1)).toBeUndefined();
   });
 });
 

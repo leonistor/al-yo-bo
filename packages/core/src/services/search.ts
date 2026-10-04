@@ -4,11 +4,13 @@ import type { EmbeddingClient } from '@al-yo-bo/ai';
 import {
   countKeywordMatches,
   getAggregates,
+  getBookmarkCategoryIds,
   getBookmarkStatuses,
   getBookmarksWithTagsByIds,
   keywordSearch,
   listBookmarks,
   listCategories,
+  listCategorySubtreeIds,
 } from '@al-yo-bo/db';
 import { fuseSearch } from '@al-yo-bo/search';
 import {
@@ -53,6 +55,45 @@ export interface SearchService {
   chatHits(query: string, limit: number): Promise<BookmarkHit[]>;
   /** Library browse/stats read (counts per category/tag); owned here alongside search. */
   aggregates(): Aggregates;
+}
+
+/**
+ * Widens the vector-query window when the category filter is applied
+ * client-side, so candidates that survive the subtree filter can still fill
+ * the requested window. Mirrors the fallback decorators' overfetch factor
+ * (packages/search/src/fallback.ts).
+ */
+const SUBTREE_FILTER_OVERFETCH = 8;
+
+/**
+ * Drops semantic candidates shelved outside the requested category subtree.
+ * The vector backends only support single-category payload equality, so
+ * pushing the categoryId down would silently drop bookmarks in child
+ * categories — instead the subtree id set (same recursive CTE as the keyword
+ * filter) is matched client-side. Survival is decided by each candidate's own
+ * category, batched in one lookup; unknown ids (already deleted) are dropped,
+ * and survivors are re-ranked 1..n so RRF fusion stays coherent.
+ */
+function filterCandidatesBySubtree(
+  db: Database,
+  candidates: RankedCandidate[],
+  categoryId: string,
+  window: number,
+): RankedCandidate[] {
+  const subtreeIds = new Set(listCategorySubtreeIds(db, categoryId));
+  const categoryIds = getBookmarkCategoryIds(
+    db,
+    candidates.map((candidate) => candidate.bookmarkId),
+  );
+  // Object.assign instead of a spread (oxc/no-map-spread): fresh copies, so the
+  // fused candidates the caller still holds are never mutated.
+  return candidates
+    .filter((candidate) => {
+      const ownCategory = categoryIds.get(candidate.bookmarkId);
+      return ownCategory !== undefined && ownCategory !== null && subtreeIds.has(ownCategory);
+    })
+    .slice(0, Math.max(0, window))
+    .map((candidate, index) => Object.assign({}, candidate, { rank: index + 1 }));
 }
 
 /**
@@ -115,13 +156,25 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
       if (!queryVector) {
         return [];
       }
-      // Category/tag filters are pushed into the vector query together
-      // (server-side on Qdrant, client-side overfetch on the in-memory
-      // fallback) so semantic hits honor the same filters as keyword search.
-      return await index.search(queryVector, input.offset + input.limit, {
-        categoryId: input.categoryId,
-        tagId: input.tagId,
-      });
+      // The category filter matches the whole subtree (keyword parity), which
+      // neither vector backend can express — both do single-category payload
+      // equality. So the categoryId is deliberately NOT pushed down; the
+      // subtree filter is applied client-side after an overfetch (same
+      // overfetch-and-filter pattern the fallback decorators use), and only
+      // the tag filter is pushed into the vector query. The filter object is
+      // built only when a field is actually set: an all-undefined filter is
+      // still truthy, and the decorators would needlessly overfetch 8x and
+      // batch-resolve payloads on every query.
+      const window = input.offset + input.limit;
+      const filter = input.tagId !== undefined ? { tagId: input.tagId } : undefined;
+      const candidates = await index.search(
+        queryVector,
+        input.categoryId !== undefined ? window * SUBTREE_FILTER_OVERFETCH : window,
+        filter,
+      );
+      return input.categoryId !== undefined
+        ? filterCandidatesBySubtree(db, candidates, input.categoryId, window)
+        : candidates;
     } catch (error) {
       console.warn('semantic search unavailable; returning keyword-only results', error);
       return [];

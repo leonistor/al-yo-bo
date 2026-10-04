@@ -18,6 +18,7 @@ import {
   CategoryCycleError,
   getAggregates,
   getBookmarkById,
+  getBookmarkCategoryIds,
   getBookmarkStatuses,
   getBookmarksWithTagsByIds,
   getBookmarkTags,
@@ -34,6 +35,7 @@ import {
   listBookmarks,
   listBookmarksForExport,
   listCategoryPath,
+  listCategorySubtreeIds,
   listEmbeddingModelMismatches,
   listTags,
   listUnknownClassificationLabels,
@@ -265,6 +267,18 @@ describe('category tree', () => {
     expect(listCategoryPath(db, root.id).map((c) => c.name)).toEqual(['dev']);
   });
 
+  test('listCategorySubtreeIds returns the root and every descendant, nothing else', () => {
+    const root = createCategory(db, { name: 'dev' });
+    const mid = createCategory(db, { name: 'web', parentId: root.id });
+    const leaf = createCategory(db, { name: '2024', parentId: mid.id });
+    createCategory(db, { name: 'unrelated' });
+
+    expect(listCategorySubtreeIds(db, root.id).toSorted()).toEqual(
+      [root.id, mid.id, leaf.id].toSorted(),
+    );
+    expect(listCategorySubtreeIds(db, leaf.id)).toEqual([leaf.id]);
+  });
+
   test('moveCategory re-parents with a fresh sibling key', () => {
     const parentA = createCategory(db, { name: 'a' });
     const parentB = createCategory(db, { name: 'b' });
@@ -388,6 +402,22 @@ describe('bookmark status', () => {
     expect(statuses.get(invalid.id)).toBe('invalid');
     expect(statuses.has(unknown)).toBe(false);
     expect(getBookmarkStatuses(db, []).size).toBe(0);
+  });
+
+  test('getBookmarkCategoryIds batches id → category lookups with null for uncategorized', () => {
+    const category = createCategory(db, { name: 'shelved' });
+    const categorized = createBookmark(db, {
+      url: 'https://bc-categorized.test',
+      categoryId: category.id,
+    });
+    const plain = createBookmark(db, { url: 'https://bc-plain.test' });
+    const unknown = '00000000-0000-0000-0000-000000000000';
+
+    const categories = getBookmarkCategoryIds(db, [categorized.id, plain.id, unknown]);
+    expect(categories.get(categorized.id)).toBe(category.id);
+    expect(categories.get(plain.id)).toBeNull();
+    expect(categories.has(unknown)).toBe(false);
+    expect(getBookmarkCategoryIds(db, []).size).toBe(0);
   });
 
   test('IN-list lookups chunk past SQLite host-parameter limits', () => {

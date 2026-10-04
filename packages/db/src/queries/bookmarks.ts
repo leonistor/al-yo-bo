@@ -317,6 +317,45 @@ export function getBookmarkStatuses(db: Database, ids: string[]): Map<string, Bo
 }
 
 /**
+ * Ids of one category and its whole subtree (MODEL.md principle 2), reusing
+ * the `CATEGORY_SUBTREE_IN` fragment so callers can never drift from the SQL
+ * category filter's subtree semantics. Semantic search needs the id set to
+ * apply the category filter client-side: the vector backends only support
+ * single-category payload equality, which would drop bookmarks shelved in a
+ * child of the filtered category (see core's `semanticCandidates`).
+ */
+export function listCategorySubtreeIds(db: Database, categoryId: string): string[] {
+  return prepared<{ id: Uint8Array }, [Uint8Array]>(
+    db,
+    `SELECT id FROM categories WHERE id ${CATEGORY_SUBTREE_IN}`,
+  )
+    .all(uuidToBytes(categoryId))
+    .map((row) => bytesToUuid(row.id));
+}
+
+/**
+ * Batched id → category lookup (mirrors `getBookmarkStatuses`) for callers
+ * filtering a candidate list client-side. Uncategorized bookmarks map to
+ * `null`; unknown ids are absent from the map.
+ */
+export function getBookmarkCategoryIds(db: Database, ids: string[]): Map<string, string | null> {
+  const categoryIds = new Map<string, string | null>();
+  for (const chunk of chunkIds(ids)) {
+    const placeholders = chunk.map(() => '?').join(', ');
+    // Dynamic arity (varies with chunk size) — intentionally not cached.
+    const rows = db
+      .query<{ id: Uint8Array; category_id: Uint8Array | null }, Uint8Array[]>(
+        `SELECT id, category_id FROM bookmarks WHERE id IN (${placeholders})`,
+      )
+      .all(...chunk.map(uuidToBytes));
+    for (const row of rows) {
+      categoryIds.set(bytesToUuid(row.id), row.category_id ? bytesToUuid(row.category_id) : null);
+    }
+  }
+  return categoryIds;
+}
+
+/**
  * Startup-reconciliation input (ARCHITECTURE §10): bookmarks that have never been
  * successfully scraped. A failed scrape leaves `scraped_at` NULL, so it is
  * retried on the next server start.
