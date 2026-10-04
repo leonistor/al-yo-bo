@@ -112,11 +112,13 @@ interface AppOptions {
   classifier?: ClassifierClient;
   avatarStore?: AvatarStore;
   reindex?: () => Promise<{ vectorBackend: 'qdrant' | 'memory' }>;
+  /** Extra env values merged into the test config (e.g. OLLAMA_CHAT_MODEL). */
+  env?: Record<string, string>;
 }
 
 /** Builds a core (with the stub subsystems) over an already-seeded db, then the app. */
 function buildApp(db: Database, options: AppOptions = {}, hub = new EventHub()) {
-  const config: ServerConfig = loadConfig({ DATA_DIR: '/tmp/al-yo-bo-api-test' });
+  const config: ServerConfig = loadConfig({ DATA_DIR: '/tmp/al-yo-bo-api-test', ...options.env });
   const core = createCore({
     db,
     config,
@@ -602,6 +604,19 @@ describe('chat API', () => {
     // path is covered above; here we assert ordering via the same stub config.
     const response = await app.request('/api/chat', { method: 'POST', body: 'not json' });
     expect([400, 503]).toContain(response.status);
+  });
+
+  test('a malformed UI-message shape is a 400, not a 500', async () => {
+    const { app } = makeApp({ env: { OLLAMA_CHAT_MODEL: 'stub-model' } });
+    const response = await app.request('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // `parts` is not an array: convertToModelMessages would throw a TypeError
+      // that used to surface through onError as a 500.
+      body: JSON.stringify({ messages: [{ id: '1', role: 'user', parts: 'nope' }] }),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { type: string }).type).toContain('validation');
   });
 });
 

@@ -55,13 +55,15 @@ export function createChatHandler(options: ChatHandlerOptions) {
       throw new ChatUnavailableError('Chat is not configured (set OLLAMA_CHAT_MODEL)');
     }
 
-    let messages: UIMessage[];
+    let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
     try {
       const body = (await c.req.json()) as { messages?: unknown };
       if (!Array.isArray(body.messages)) {
         throw new Error('messages must be an array');
       }
-      messages = body.messages as UIMessage[];
+      // Shape-check the UI messages here too: malformed parts throw inside
+      // convertToModelMessages, which would otherwise surface as a 500.
+      modelMessages = await convertToModelMessages(body.messages as UIMessage[]);
     } catch {
       return c.json(
         {
@@ -80,7 +82,7 @@ export function createChatHandler(options: ChatHandlerOptions) {
     const result = streamText({
       model: ollama(chatModel),
       system: SYSTEM_PROMPT,
-      messages: await convertToModelMessages(messages),
+      messages: modelMessages,
       stopWhen: isStepCount(maxSteps),
       tools: {
         searchBookmarks: tool({
