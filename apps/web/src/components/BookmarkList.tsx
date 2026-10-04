@@ -10,7 +10,7 @@ import {
 import { memo, useCallback, useMemo, useRef } from 'react';
 
 import { BookmarkThumb } from '@/components/BookmarkThumb';
-import { CompactBookmarkCard } from '@/components/CompactBookmarkCard';
+import { DenseBookmarkCard } from '@/components/DenseBookmarkCard';
 import { FilterTagPill } from '@/components/FilterTagPill';
 import { RowActions, type RowAction } from '@/components/RowActions';
 import { TagPill } from '@/components/TagPill';
@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
 /** Stable <li> element for semantic list rendering; avoids inline JSX-as-prop. */
 const LIST_ITEM_ELEMENT = <li />;
 
-/** Dense tile grid (CompactBookmarkCard): 2/3/4/5 columns by breakpoint. */
+/** Dense tile grid (DenseBookmarkCard): 2/3/4/5 columns by breakpoint. */
 const DENSE_GRID_CLASSES = 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
 
 interface BookmarkListProps {
@@ -102,7 +102,7 @@ function CardSkeleton({ layout }: { layout: Layout }) {
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithTags;
-  /** Full cards render in the list/grid layouts; dense uses CompactBookmarkCard. */
+  /** Full cards render in the list/grid layouts; dense uses DenseBookmarkCard. */
   layout: Exclude<Layout, 'dense'>;
   onOpen: (bookmark: BookmarkWithTags) => void;
   onDelete: (bookmark: BookmarkWithTags) => void;
@@ -393,7 +393,7 @@ export function BookmarkList({
     >
       {items.map((bookmark, index) =>
         layout === 'dense' ? (
-          <CompactBookmarkCard
+          <DenseBookmarkCard
             key={bookmark.id}
             bookmark={bookmark}
             index={index}

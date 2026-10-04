@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 /** Stable <li> element for semantic list rendering; avoids inline JSX-as-prop. */
 const LIST_ITEM_ELEMENT = <li />;
 
-interface CompactBookmarkCardProps {
+interface DenseBookmarkCardProps {
   bookmark: BookmarkWithTags;
   /** Primary activation; caller-owned: detail sheet in the library, external tab in chat. */
   onOpen: (bookmark: BookmarkWithTags) => void;
@@ -34,14 +34,14 @@ interface CompactBookmarkCardProps {
  * primary keyboard control (`data-row-focus`), the thumbnail is a mouse-only
  * click affordance, and the host link opens the URL in a new tab.
  */
-export const CompactBookmarkCard = memo(function CompactBookmarkCard({
+export const DenseBookmarkCard = memo(function DenseBookmarkCard({
   bookmark,
   onOpen,
   active,
   index,
   listItem,
   onKeyDown,
-}: CompactBookmarkCardProps) {
+}: DenseBookmarkCardProps) {
   const title = bookmark.title ?? bookmark.url;
   const isActive = active ?? true;
   const cardIndex = index ?? 0;

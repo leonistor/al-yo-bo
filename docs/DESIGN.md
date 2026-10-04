@@ -37,7 +37,7 @@
 | Bookmark titles, sheet titles          | `text-base` |
 | Page titles (`h1` in main column)      | `text-lg`   |
 
-**Spacing rhythm:** main column `p-4` · cards `p-3` · compact tiles `p-2` (dense grid + chat
+**Spacing rhythm:** main column `p-4` · cards `p-3` · dense tiles `p-2` (dense grid + chat
 results) · inline control gaps `gap-2` · section gaps `gap-3` · chrome (`Topbar`, `Sidebar`)
 `px-3 sm:px-4`.
 
@@ -195,9 +195,9 @@ Sections, category groups, and the Tags group; reused wherever a collapsible gro
 - Content height animation `200ms`; keyboard operable via the base-ui trigger.
 - Open/closed state persists (sidebar: `ayb:sidebar:sections`).
 
-### CompactBookmarkCard + BookmarkThumb — the dense tile
+### DenseBookmarkCard + BookmarkThumb — the dense tile
 
-`src/components/CompactBookmarkCard.tsx` — thumbnail-led tile with only **screenshot, title, and
+`src/components/DenseBookmarkCard.tsx` — thumbnail-led tile with only **screenshot, title, and
 link**. Used by the library's `dense` layout and the chat tool-result surface; no tags,
 description, date, or action row (everything else lives in the detail sheet).
 
@@ -370,7 +370,7 @@ opacity-only.
   messages stay plain text.
 - **Cite** copies a markdown list of source bookmarks from the current assistant message's
   `searchBookmarks` tool results; standard Sonner toast feedback.
-- The chat tool-result surface reuses `CompactBookmarkCard` (and therefore `BookmarkThumb` and the
+- The chat tool-result surface reuses `DenseBookmarkCard` (and therefore `BookmarkThumb` and the
   shared imagery fallback chain) from the library, in a two-column tile grid that fits the panel.
 
 ## Accessibility checklist

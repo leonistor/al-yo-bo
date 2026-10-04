@@ -14,7 +14,7 @@ export interface BookmarkHit {
   /**
    * Imagery references for the UI's thumbnail fallback chain. Not part of what
    * the model reasons about — the tool output streams to the client, which
-   * renders the hit as a CompactBookmarkCard.
+   * renders the hit as a DenseBookmarkCard.
    */
   image: BookmarkImage | null;
   updatedAt: number;

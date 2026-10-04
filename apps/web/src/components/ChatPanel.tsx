@@ -23,7 +23,7 @@ import {
 import { MessageScroller } from '@/components/agents/message-scroller';
 import { PromptInput } from '@/components/agents/prompt-input';
 import { StreamingResponse } from '@/components/agents/streaming-response';
-import { CompactBookmarkCard } from '@/components/CompactBookmarkCard';
+import { DenseBookmarkCard } from '@/components/DenseBookmarkCard';
 import { Button } from '@/components/ui/button';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
@@ -72,7 +72,7 @@ function messageText(message: ChatMessage): string {
 
 /**
  * Adapts a compact chat hit to the bookmark view model so the tool-result
- * surface renders through `CompactBookmarkCard` (DESIGN.md §Chat). The server
+ * surface renders through `DenseBookmarkCard` (DESIGN.md §Chat). The server
  * hit carries `image`, so tiles show the real screenshot; missing imagery
  * degrades to the tile's placeholder thumbnail.
  */
@@ -161,7 +161,7 @@ function CopyMessageButton({ text }: { text: string }) {
 
 /**
  * Renders the `searchBookmarks` tool lifecycle: a live agent-activity row while
- * the search runs, then the hits as compact tiles. Chat is a view, never a
+ * the search runs, then the hits as dense tiles. Chat is a view, never a
  * second library — a tile's primary action opens the URL externally, and
  * curation (tags, deletion) happens in the library surfaces.
  */
@@ -215,7 +215,7 @@ function SearchBookmarksTool({ part }: { part: Extract<ChatPart, { type: 'tool-s
         <ul className="grid w-full grid-cols-2 gap-2" aria-label="Bookmarks found">
           {hits.map((hit) => (
             <li key={hit.id}>
-              <CompactBookmarkCard
+              <DenseBookmarkCard
                 bookmark={toBookmarkWithTags(hit)}
                 onOpen={openBookmark}
               />
