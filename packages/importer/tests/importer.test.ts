@@ -1,17 +1,18 @@
+import type { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import {
-  createDataset,
+  createCategory,
   createTag,
   getBookmarkByUrl,
-  getCategoryByName,
+  getCategoryBySiblingName,
+  getCategoryTree,
   getTagByName,
   openDatabase,
   setTagStatus,
   setupDatabase,
   updateBookmark,
 } from '@al-yo-bo/db';
-import { uuidToBytes } from '@al-yo-bo/shared';
 
 import { ingestBookmarks, parseCollection, resolveVocabulary } from '../src/index.ts';
 
@@ -31,43 +32,63 @@ const SAMPLE = `# stray title
 - ** Fresh editor: https://getfresh.dev/docs/getting-started/
 `;
 
-function freshDb() {
+function freshDb(): Database {
   const db = openDatabase(':memory:');
   setupDatabase(db);
-  const datasetId = createDataset(db, 'test').id;
-  return { db, datasetId };
+  return db;
 }
 
 describe('parseCollection', () => {
-  test('maps headings, notes, priorities and multiple URLs', () => {
+  test('maps the heading tree into categoryPath chains', () => {
     const { bookmarks, skipped } = parseCollection(SAMPLE);
     expect(bookmarks.length).toBe(5);
     expect(skipped).toBe(1);
 
     const nviwatch = bookmarks[0];
     expect(nviwatch?.url).toBe('https://github.com/msminhas93/nviwatch');
-    expect(nviwatch?.category).toBe('dev');
+    expect(nviwatch?.categoryPath).toEqual(['dev']);
     expect(nviwatch?.title).toBe('nviwatch (nviwatch --watch 3000 --cpu)');
     expect(nviwatch?.priority).toBeNull();
 
     const yaziAlt = bookmarks[2];
     expect(yaziAlt?.url).toBe('https://github.com/AnirudhG07/awesome-yazi');
-    expect(yaziAlt?.category).toBe('dev');
+    expect(yaziAlt?.categoryPath).toEqual(['dev']);
 
     const prioritized = bookmarks[3];
     expect(prioritized?.priority).toBe(3);
-    expect(prioritized?.category).toBe('essentials');
+    // H3 is the child of the current H2 — the ancestor chain, not a flat name.
+    expect(prioritized?.categoryPath).toEqual(['terminal trove', 'essentials']);
     expect(prioritized?.title).toBe('Yazi');
   });
 
-  test('H3 context is folded into the single category field', () => {
-    const { bookmarks } = parseCollection(SAMPLE);
-    // Bookmarks under the H3 heading pick up that name; the H2 name never appears
-    // because the H3 wins while we are inside the H3 block.
-    expect(bookmarks.some((bookmark) => bookmark.category === 'essentials')).toBe(true);
-    expect(bookmarks.every((bookmark) => bookmark.category !== 'terminal trove')).toBe(true);
-    // Bookmarks under the H2-only block carry the H2 name directly.
-    expect(bookmarks.some((bookmark) => bookmark.category === 'dev')).toBe(true);
+  test('an H2 resets the path; bullets before any heading are uncategorized', () => {
+    const { bookmarks } = parseCollection(`- loose: https://example.com/loose
+
+## dev
+
+- a: https://example.com/a
+
+### sub
+
+- b: https://example.com/b
+
+## other
+
+- c: https://example.com/c
+`);
+    expect(bookmarks[0]?.categoryPath).toEqual([]);
+    expect(bookmarks[1]?.categoryPath).toEqual(['dev']);
+    expect(bookmarks[2]?.categoryPath).toEqual(['dev', 'sub']);
+    // The second H2 replaces the whole chain, not just the last segment.
+    expect(bookmarks[3]?.categoryPath).toEqual(['other']);
+  });
+
+  test('a stray H3 with no preceding H2 promotes to level-1', () => {
+    const { bookmarks } = parseCollection(`### orphan
+
+- a: https://example.com/a
+`);
+    expect(bookmarks[0]?.categoryPath).toEqual(['orphan']);
   });
 
   test('strips trailing punctuation from URLs', () => {
@@ -76,9 +97,7 @@ describe('parseCollection', () => {
   });
 
   test('keeps a URL whose trailing bracket closes an opener inside the URL', () => {
-    const { bookmarks } = parseCollection(
-      '- wiki: (see https://en.wikipedia.org/wiki/Foo_(bar)).',
-    );
+    const { bookmarks } = parseCollection('- wiki: (see https://en.wikipedia.org/wiki/Foo_(bar)).');
     expect(bookmarks[0]?.url).toBe('https://en.wikipedia.org/wiki/Foo_(bar)');
   });
 
@@ -98,7 +117,7 @@ tags: [imported, dev]
 `);
     expect(bookmarks.length).toBe(1);
     expect(bookmarks[0]?.tags).toEqual(['imported', 'dev']);
-    expect(bookmarks[0]?.category).toBe('dev');
+    expect(bookmarks[0]?.categoryPath).toEqual(['dev']);
   });
 
   test('merges tags from concatenated frontmatter blocks positionally', () => {
@@ -133,8 +152,8 @@ tags: [beta]
 
 - y: https://example.com/y
 `);
-    expect(bookmarks[0]?.category).toBe('dev');
-    expect(bookmarks[1]?.category).toBe('later');
+    expect(bookmarks[0]?.categoryPath).toEqual(['dev']);
+    expect(bookmarks[1]?.categoryPath).toEqual(['later']);
     expect(bookmarks.every((bookmark) => bookmark.tags.length === 0)).toBe(true);
   });
 
@@ -216,59 +235,77 @@ tags: [imported]
 });
 
 describe('resolveVocabulary', () => {
-  test('auto-creates categories and tags for unmatched names', () => {
-    const { db, datasetId } = freshDb();
+  test('auto-creates the category chain for unmatched paths', () => {
+    const db = freshDb();
     const { bookmarks } = parseCollection(SAMPLE);
 
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    const resolution = resolveVocabulary(db, bookmarks);
 
-    // Both unmatched names are resolved to ids (auto-create, no proposals).
-    expect(resolution.categoryIds.has('dev')).toBe(true);
-    expect(resolution.categoryIds.has('essentials')).toBe(true);
+    // Paths map to ids keyed by the ancestor chain; the tree gets the root and
+    // the H3 child under it.
+    const devId = resolution.categoryIds.get(JSON.stringify(['dev']));
+    expect(devId).toBeDefined();
+    expect(
+      resolution.categoryIds.get(JSON.stringify(['terminal trove', 'essentials'])),
+    ).toBeDefined();
     expect(resolution.tagIds.size).toBe(0);
-    // Active vocabulary rows exist for the previously-unmatched names.
-    expect(getCategoryByName(db, datasetId, 'dev')).not.toBeNull();
-    expect(getCategoryByName(db, datasetId, 'essentials')).not.toBeNull();
+    expect(resolution.categoriesCreated).toBe(3);
+    expect(getCategoryBySiblingName(db, null, 'dev')).not.toBeNull();
+    const troveId = getCategoryBySiblingName(db, null, 'terminal trove')?.id;
+    expect(getCategoryBySiblingName(db, troveId ?? null, 'essentials')).not.toBeNull();
   });
 
-  test('reuses existing active vocabulary and avoids duplicates', () => {
-    const { db, datasetId } = freshDb();
+  test('reuses existing vocabulary and creates only missing segments', () => {
+    const db = freshDb();
     const { bookmarks } = parseCollection(SAMPLE);
-    // Pre-create the category so resolveVocabulary must reuse it.
-    const devId = new Uint8Array(16).fill(1);
-    db.query(
-      'INSERT INTO categories (id, dataset_id, section_id, name, description) VALUES (?, ?, NULL, ?, NULL)',
-    ).run(devId, uuidToBytes(datasetId), 'dev');
+    // Pre-create the root so resolveVocabulary must reuse it.
+    const dev = createCategory(db, { name: 'dev' });
 
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    const resolution = resolveVocabulary(db, bookmarks);
 
-    // The pre-existing 'dev' category id is reused.
-    const devString = Array.from(devId, (b) => b.toString(16).padStart(2, '0')).join('');
-    const expected = `${devString.slice(0, 8)}-${devString.slice(8, 12)}-${devString.slice(12, 16)}-${devString.slice(16, 20)}-${devString.slice(20)}`;
-    expect(resolution.categoryIds.get('dev')).toBe(expected);
-    // Still auto-creates the unmatched category.
-    expect(resolution.categoryIds.has('essentials')).toBe(true);
+    expect(resolution.categoryIds.get(JSON.stringify(['dev']))).toBe(dev.id);
+    // Still auto-creates the unmatched root + child (2 instead of 3).
+    expect(resolution.categoriesCreated).toBe(2);
+    expect(
+      resolution.categoryIds.get(JSON.stringify(['terminal trove', 'essentials'])),
+    ).toBeDefined();
+  });
+
+  test('sibling-unique names resolve independently per parent', () => {
+    const db = freshDb();
+    const bookmarks = [
+      ...parseCollection('## web\n\n- a: https://example.com/a\n').bookmarks,
+      ...parseCollection('## books\n\n### web\n\n- b: https://example.com/b\n').bookmarks,
+    ];
+
+    const resolution = resolveVocabulary(db, bookmarks);
+
+    const webRoot = resolution.categoryIds.get(JSON.stringify(['web']));
+    const webChild = resolution.categoryIds.get(JSON.stringify(['books', 'web']));
+    expect(webRoot).toBeDefined();
+    expect(webChild).toBeDefined();
+    expect(webRoot).not.toBe(webChild);
   });
 
   test('frontmatter tags always resolve (auto-created if missing)', () => {
-    const { db, datasetId } = freshDb();
+    const db = freshDb();
     const { bookmarks } = parseCollection(`---
 tags: [imported, unknown]
 ---
 
 - x: https://example.com/tag-test
 `);
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    const resolution = resolveVocabulary(db, bookmarks);
 
     expect(resolution.tagIds.get('imported')).toBeDefined();
     expect(resolution.tagIds.get('unknown')).toBeDefined();
-    expect(getTagByName(db, datasetId, 'imported', null)).not.toBeNull();
-    expect(getTagByName(db, datasetId, 'unknown', null)).not.toBeNull();
+    expect(getTagByName(db, 'imported')).not.toBeNull();
+    expect(getTagByName(db, 'unknown')).not.toBeNull();
   });
 
   test('skips a previously deprecated tag instead of re-activating it', () => {
-    const { db, datasetId } = freshDb();
-    const deprecated = createTag(db, { datasetId, name: 'legacy' });
+    const db = freshDb();
+    const deprecated = createTag(db, { name: 'legacy' });
     setTagStatus(db, deprecated.id, 'deprecated');
     const { bookmarks } = parseCollection(`---
 tags: [legacy]
@@ -277,29 +314,30 @@ tags: [legacy]
 - x: https://example.com/deprecated-tag
 `);
 
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
+    const resolution = resolveVocabulary(db, bookmarks);
 
     expect(resolution.tagIds.has('legacy')).toBe(false);
     expect(resolution.skippedTags).toEqual(['legacy']);
     // The existing row stays deprecated; no new duplicate tag is created.
-    expect(getTagByName(db, datasetId, 'legacy', null)?.status).toBe('deprecated');
+    expect(getTagByName(db, 'legacy')?.status).toBe('deprecated');
   });
 });
 
 describe('ingest', () => {
   test('commits bookmarks with auto-created vocabulary and is idempotent', () => {
-    const { db, datasetId } = freshDb();
+    const db = freshDb();
     const { bookmarks, skipped } = parseCollection(SAMPLE);
 
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
-    const first = ingestBookmarks(db, datasetId, bookmarks, resolution, {
+    const resolution = resolveVocabulary(db, bookmarks);
+    const first = ingestBookmarks(db, bookmarks, resolution, {
       file: 'sample.md',
       skipped,
     });
     expect(first.added).toBe(5);
+    expect(first.categoriesCreated).toBe(3);
     expect(first.skipped).toBe(1);
 
-    const second = ingestBookmarks(db, datasetId, bookmarks, resolution, {
+    const second = ingestBookmarks(db, bookmarks, resolution, {
       file: 'sample.md',
       skipped,
     });
@@ -307,16 +345,34 @@ describe('ingest', () => {
     expect(second.updated).toBe(5);
   });
 
+  test('shelves imported bookmarks at the leaf of their category path', () => {
+    const db = freshDb();
+    const { bookmarks } = parseCollection(
+      '## dev\n\n### web\n\n- deep: https://example.com/deep\n',
+    );
+
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution);
+
+    expect(report.categoriesCreated).toBe(2);
+    const stored = getBookmarkByUrl(db, 'https://example.com/deep');
+    expect(stored).not.toBeNull();
+    const tree = getCategoryTree(db);
+    const dev = tree.find((node) => node.name === 'dev');
+    const leaf = dev?.children.find((node) => node.name === 'web');
+    expect(leaf?.id ?? null).toBe(stored?.categoryId ?? null);
+  });
+
   // Regression: re-import used to replace `metadata` wholesale, wiping
   // `scrape` provenance and `image` refs and re-triggering screenshot/og
   // discovery on every import (ARCHITECTURE §7 merge-by-URL).
   test('re-import merges metadata instead of replacing it', () => {
-    const { db, datasetId } = freshDb();
-    const { bookmarks } = parseCollection('- x: https://example.com/merge-meta');
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
-    ingestBookmarks(db, datasetId, bookmarks, resolution, { file: 'one.md' });
+    const db = freshDb();
+    const { bookmarks } = parseCollection('## dev\n\n- x: https://example.com/merge-meta');
+    const resolution = resolveVocabulary(db, bookmarks);
+    ingestBookmarks(db, bookmarks, resolution, { file: 'one.md' });
 
-    const existing = getBookmarkByUrl(db, datasetId, 'https://example.com/merge-meta');
+    const existing = getBookmarkByUrl(db, 'https://example.com/merge-meta');
     if (!existing) {
       throw new Error('initial import did not create the bookmark');
     }
@@ -328,52 +384,53 @@ describe('ingest', () => {
       },
     });
 
-    ingestBookmarks(db, datasetId, bookmarks, resolution, { file: 'two.md' });
+    ingestBookmarks(db, bookmarks, resolution, { file: 'two.md' });
 
-    const after = getBookmarkByUrl(db, datasetId, 'https://example.com/merge-meta');
+    const after = getBookmarkByUrl(db, 'https://example.com/merge-meta');
     expect(after?.metadata?.scrape).toEqual({
       finalUrl: 'https://example.com/final',
       truncated: false,
     });
     expect(after?.metadata?.image).toEqual({ screenshotPath: '/data/shots/x.png' });
-    // The importer's own block is refreshed to the latest file.
+    // The importer's own block is refreshed to the latest file/path.
     expect(after?.metadata?.import).toEqual({
       file: 'two.md',
-      category: null,
+      categoryPath: ['dev'],
       priority: null,
     });
   });
 
   test('ingests an empty list without touching the database', () => {
-    const { db, datasetId } = freshDb();
-    const report = ingestBookmarks(db, datasetId, [], {
+    const db = freshDb();
+    const report = ingestBookmarks(db, [], {
       categoryIds: new Map(),
       tagIds: new Map(),
       skippedTags: [],
+      categoriesCreated: 0,
     });
     expect(report.added).toBe(0);
     expect(report.parsed).toBe(0);
   });
 
   test('assigns frontmatter tags after auto-creating them', () => {
-    const { db, datasetId } = freshDb();
+    const db = freshDb();
     const { bookmarks } = parseCollection(`---
 tags: [imported, unknown]
 ---
 
 - x: https://example.com/tag-test
 `);
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
-    const report = ingestBookmarks(db, datasetId, bookmarks, resolution);
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution);
 
     expect(report.tagsAssigned).toBe(2);
-    expect(getTagByName(db, datasetId, 'imported', null)).not.toBeNull();
-    expect(getTagByName(db, datasetId, 'unknown', null)).not.toBeNull();
+    expect(getTagByName(db, 'imported')).not.toBeNull();
+    expect(getTagByName(db, 'unknown')).not.toBeNull();
   });
 
   test('does not assign a deprecated tag and surfaces a warning', () => {
-    const { db, datasetId } = freshDb();
-    const deprecated = createTag(db, { datasetId, name: 'legacy' });
+    const db = freshDb();
+    const deprecated = createTag(db, { name: 'legacy' });
     setTagStatus(db, deprecated.id, 'deprecated');
     const { bookmarks } = parseCollection(`---
 tags: [legacy]
@@ -381,8 +438,8 @@ tags: [legacy]
 
 - x: https://example.com/deprecated-tag
 `);
-    const resolution = resolveVocabulary(db, datasetId, bookmarks);
-    const report = ingestBookmarks(db, datasetId, bookmarks, resolution);
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution);
 
     expect(report.tagsAssigned).toBe(0);
     expect(report.warnings).toEqual([
@@ -394,11 +451,66 @@ tags: [legacy]
     expect(assignments?.count).toBe(0);
   });
 
-  test('parses a real collection file from docs/examples-mds', async () => {
-    const url = new URL('../../../docs/examples-mds/collect-Sep-20.md', import.meta.url);
+  test('parses the canonical octocat fixture into the expected tree', async () => {
+    const url = new URL('../../db/seeds/octocat.md', import.meta.url);
+    const { bookmarks, skipped } = parseCollection(await Bun.file(url).text());
+
+    expect(skipped).toBe(0);
+    expect(bookmarks.length).toBe(25);
+
+    const roots = new Set(bookmarks.map((bookmark) => bookmark.categoryPath[0]));
+    expect([...roots].toSorted()).toEqual([
+      'AI tools',
+      'Design',
+      'Dev tools',
+      'GitHub',
+      'Learning',
+    ]);
+
+    // H3 nesting lands as a two-segment chain.
+    const bun = bookmarks.find((bookmark) => bookmark.url === 'https://bun.sh');
+    expect(bun?.categoryPath).toEqual(['Dev tools', 'Runtimes & frameworks']);
+    const mdn = bookmarks.find((bookmark) => bookmark.url === 'https://developer.mozilla.org');
+    expect(mdn?.categoryPath).toEqual(['Learning', 'Reference']);
+    // A bullet directly under an H2 (after an H3 block) keeps the last heading
+    // context — the tree-native "last heading wins" rule.
+    const chatgpt = bookmarks.find((bookmark) => bookmark.url === 'https://chatgpt.com');
+    expect(chatgpt?.categoryPath).toEqual(['AI tools', 'Local & self-hosted']);
+
+    // Every fixture bookmark carries the file-global frontmatter tag set.
+    const allBookmarked = await Bun.file(url).text();
+    const declared = /tags: \[(.*)\]/.exec(allBookmarked)?.[1] ?? '';
+    const tagCount = declared.split(',').length;
+    expect(bookmarks.every((bookmark) => bookmark.tags.length === tagCount)).toBe(true);
+  });
+
+  test('ingests the octocat fixture into the seeded tree shape', async () => {
+    const url = new URL('../../db/seeds/octocat.md', import.meta.url);
     const { bookmarks } = parseCollection(await Bun.file(url).text());
-    expect(bookmarks.length).toBeGreaterThan(10);
-    expect(bookmarks.some((bookmark) => bookmark.url.includes('msminhas93/nviwatch'))).toBe(true);
-    expect(bookmarks.some((bookmark) => bookmark.priority === 3)).toBe(true);
+    const db = freshDb();
+
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution, { file: 'octocat.md' });
+
+    expect(report.added).toBe(25);
+    // 5 roots (GitHub, AI tools, Dev tools, Learning, Design) + 9 children
+    // (2 + 4 + 3) = 14 categories.
+    expect(report.categoriesCreated).toBe(14);
+
+    const tree = getCategoryTree(db);
+    expect(tree.map((node) => node.name).toSorted()).toEqual([
+      'AI tools',
+      'Design',
+      'Dev tools',
+      'GitHub',
+      'Learning',
+    ]);
+    const devTools = tree.find((node) => node.name === 'Dev tools');
+    expect(devTools?.children.map((node) => node.name)).toEqual([
+      'Runtimes & frameworks',
+      'UI components',
+      'Databases',
+      'Editors',
+    ]);
   });
 });

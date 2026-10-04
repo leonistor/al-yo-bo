@@ -18,6 +18,7 @@
     "@al-yo-bo/shared": "workspace:*"
   },
   "devDependencies": {
+    "@al-yo-bo/db": "workspace:*",
     "@al-yo-bo/importer": "workspace:*"
   }
 }

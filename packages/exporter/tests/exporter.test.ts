@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseCollection } from '@al-yo-bo/importer';
-import type { BookmarkTagView, ExportBookmarkRow } from '@al-yo-bo/shared';
+import {
+  listBookmarksForExport,
+  listCategoryPath,
+  openDatabase,
+  setupDatabase,
+} from '@al-yo-bo/db';
+import { ingestBookmarks, parseCollection, resolveVocabulary } from '@al-yo-bo/importer';
+import type { BookmarkTagView, CategoryNode, ExportBookmarkRow } from '@al-yo-bo/shared';
 
 import {
   EXPORT_CONTENT_TYPES,
@@ -16,28 +22,28 @@ function tag(name: string): BookmarkTagView {
   return { tagId: `tag-${name}`, name, source: 'import', confidence: null };
 }
 
-function simplifyRow(
-  entry: Pick<ExportBookmarkRow, 'url' | 'title' | 'description' | 'categoryName' | 'tags'>,
-): {
+function simplifyRow(entry: ExportBookmarkRow): {
   url: string;
   title: string | null;
   description: string | null;
-  category: string | null;
+  categoryPath: string[];
   tags: string[];
 } {
   return {
     url: entry.url,
     title: entry.title,
     description: entry.description,
-    category: entry.categoryName,
+    categoryPath: entry.categoryPath,
     tags: entry.tags.map((t) => t.name).toSorted(),
   };
 }
 
-function bookmark({ url, ...overrides }: Partial<ExportBookmarkRow> & { url: string }): ExportBookmarkRow {
+function bookmark({
+  url,
+  ...overrides
+}: Partial<ExportBookmarkRow> & { url: string }): ExportBookmarkRow {
   return {
     id: `id-${url}`,
-    datasetId: 'dataset',
     url,
     title: null,
     description: null,
@@ -51,8 +57,7 @@ function bookmark({ url, ...overrides }: Partial<ExportBookmarkRow> & { url: str
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
     tags: [],
-    categoryName: null,
-    sectionName: null,
+    categoryPath: [],
     ...overrides,
   };
 }
@@ -96,26 +101,24 @@ describe('toNetscapeHtml', () => {
     expect(html).toContain('TAGS="ab,cd,ef"');
   });
 
-  test('nests categories under sections and orders groups alphabetically', () => {
+  test('nests one folder level per categoryPath segment', () => {
     const html = toNetscapeHtml([
-      bookmark({
-        url: 'https://example.com/2',
-        title: 'two',
-        sectionName: 'Zeta',
-        categoryName: 'Home',
-        createdAt: 1_700_000_200_000,
-      }),
       bookmark({
         url: 'https://example.com/1',
         title: 'one',
-        sectionName: 'Alpha',
-        categoryName: 'Dev',
+        categoryPath: ['Alpha', 'Dev'],
         createdAt: 1_700_000_100_000,
+      }),
+      bookmark({
+        url: 'https://example.com/2',
+        title: 'two',
+        categoryPath: ['Zeta', 'Home'],
+        createdAt: 1_700_000_200_000,
       }),
       bookmark({
         url: 'https://example.com/3',
         title: 'three',
-        categoryName: 'Solo',
+        categoryPath: ['Solo'],
         createdAt: 1_700_000_300_000,
       }),
       bookmark({ url: 'https://example.com/4', title: 'four', createdAt: 1_700_000_400_000 }),
@@ -123,13 +126,26 @@ describe('toNetscapeHtml', () => {
 
     expect(html.indexOf('>Alpha</H3>')).toBeGreaterThan(-1);
     expect(html.indexOf('>Zeta</H3>')).toBeGreaterThan(html.indexOf('>Alpha</H3>'));
-    // Category folder inside its section folder; folder date = newest inside it.
+    // One nested <DL> per path segment: Alpha (depth 1, 4 spaces) → Dev
+    // (depth 2, 8 spaces) with the bookmark inside at 12 spaces.
     expect(html).toContain('    <DT><H3 ADD_DATE="1700000100">Alpha</H3>');
     expect(html).toContain('        <DT><H3 ADD_DATE="1700000100">Dev</H3>');
-    // Top-level category folder for a category with no section.
+    expect(html).toContain('            <DT><A HREF="https://example.com/1"');
+    // Top-level folder for a one-segment path; folder date = newest in subtree.
     expect(html).toContain('    <DT><H3 ADD_DATE="1700000300">Solo</H3>');
-    // Null-category row sits directly in the top-level DL, after the folders.
+    // Empty-path rows sit directly in the top-level DL, after the folders.
     expect(html.indexOf('four')).toBeGreaterThan(html.indexOf('Solo'));
+  });
+
+  test('reuses one folder chain for sibling paths sharing a prefix', () => {
+    const html = toNetscapeHtml([
+      bookmark({ url: 'https://example.com/1', title: 'one', categoryPath: ['a', 'x'] }),
+      bookmark({ url: 'https://example.com/2', title: 'two', categoryPath: ['a', 'y'] }),
+      bookmark({ url: 'https://example.com/3', title: 'three', categoryPath: ['a'] }),
+    ]);
+    expect(html.match(/<DT><H3/g)?.length).toBe(3);
+    expect(html.indexOf('>x</H3>')).toBeGreaterThan(-1);
+    expect(html.indexOf('>y</H3>')).toBeGreaterThan(html.indexOf('>x</H3>'));
   });
 
   test('emits a valid skeleton for empty input', () => {
@@ -155,8 +171,7 @@ describe('toCsv', () => {
         title: 'line1\nline2',
         description: 'say "hi", ok',
         tags: [tag('x,y'), tag('z')],
-        sectionName: 'Sec,tion',
-        categoryName: 'Cat',
+        categoryPath: ['Sec,tion', 'Cat'],
         createdAt: 1_700_000_000_000,
       }),
     ]);
@@ -169,18 +184,16 @@ describe('toCsv', () => {
     expect(csv).toContain('2023-11-14T22:13:20.000Z');
   });
 
-  test('renders every folder-path shape', () => {
+  test('joins the whole categoryPath with / and leaves uncategorized empty', () => {
     const csv = toCsv([
-      bookmark({ url: 'u1', sectionName: 'S', categoryName: 'C' }),
-      bookmark({ url: 'u2', categoryName: 'C' }),
-      bookmark({ url: 'u3', sectionName: 'S' }),
-      bookmark({ url: 'u4' }),
+      bookmark({ url: 'u1', categoryPath: ['S', 'C', 'Sub'] }),
+      bookmark({ url: 'u2', categoryPath: ['C'] }),
+      bookmark({ url: 'u3', categoryPath: [] }),
     ]);
     const lines = csv.split('\n');
-    expect(lines[1]?.startsWith('S/C,u1,')).toBe(true);
+    expect(lines[1]?.startsWith('S/C/Sub,u1,')).toBe(true);
     expect(lines[2]?.startsWith('C,u2,')).toBe(true);
-    expect(lines[3]?.startsWith('S,u3,')).toBe(true);
-    expect(lines[4]?.startsWith(',u4,')).toBe(true);
+    expect(lines[3]?.startsWith(',u3,')).toBe(true);
   });
 });
 
@@ -192,13 +205,37 @@ describe('toExportJson', () => {
         title: 'A',
         description: 'D',
         tags: [tag('t')],
-        categoryName: 'C',
-        sectionName: 'S',
+        categoryPath: ['S', 'C'],
         createdAt: 1_700_000_000_000,
         updatedAt: 1_700_000_005_000,
       }),
     ];
-    const meta = { filters: { status: 'active', dateFrom: 1 }, exportedAt: 1_800_000_000_000 };
+    const categories: CategoryNode[] = [
+      {
+        id: 'cat-s',
+        parentId: null,
+        sortOrder: 'a0',
+        name: 'S',
+        description: null,
+        createdAt: 1,
+        children: [
+          {
+            id: 'cat-c',
+            parentId: 'cat-s',
+            sortOrder: 'a0',
+            name: 'C',
+            description: null,
+            createdAt: 2,
+            children: [],
+          },
+        ],
+      },
+    ];
+    const meta = {
+      filters: { status: 'active', dateFrom: 1 },
+      exportedAt: 1_800_000_000_000,
+      categories,
+    };
 
     const json = toExportJson(rows, meta);
     const parsed = JSON.parse(json) as Record<string, unknown>;
@@ -208,13 +245,17 @@ describe('toExportJson', () => {
       'version',
       'exportedAt',
       'filters',
+      'categories',
       'bookmarks',
     ]);
     expect(parsed['format']).toBe('al-yo-bo/export');
-    expect(parsed['version']).toBe(1);
+    expect(parsed['version']).toBe(2);
     expect(parsed['exportedAt']).toBe(1_800_000_000_000);
     expect(parsed['filters']).toEqual({ status: 'active', dateFrom: 1 });
-    // Rows keep their domain-native epoch-ms timestamps.
+    // The category tree passes through verbatim (roots then children, by
+    // sortOrder — the caller's `getCategoryTree` contract).
+    expect(parsed['categories']).toEqual(categories);
+    // Rows keep their domain-native epoch-ms timestamps and categoryPath.
     expect(parsed['bookmarks']).toEqual(rows);
     expect(json).toContain('\n  "format"');
     expect(json).toContain('"createdAt": 1700000000000');
@@ -222,17 +263,16 @@ describe('toExportJson', () => {
 });
 
 describe('toMarkdownCollection', () => {
-  test('round-trips url/title/description/category/tags through parseCollection', () => {
+  test('round-trips url/title/description/categoryPath/tags through parseCollection', () => {
     const rows: ExportBookmarkRow[] = [
       bookmark({
         url: 'https://example.com/a',
         title: 'Alpha',
         description: 'Alpha',
         tags: [tag('alpha'), tag('beta')],
-        categoryName: 'Dev',
-        sectionName: 'Tech',
+        categoryPath: ['Tech', 'Dev'],
         createdAt: 1_700_000_100_000,
-        metadata: { import: { file: 'x.md', category: 'Dev', priority: 2 } },
+        metadata: { import: { file: 'x.md', categoryPath: ['Tech', 'Dev'], priority: 2 } },
       }),
       // A title containing `]` and a URL with a balanced `(...)` pair: bare
       // bullet URLs (never markdown link syntax) survive URL_RE +
@@ -242,8 +282,7 @@ describe('toMarkdownCollection', () => {
         title: 'Foo]Bar',
         description: 'Foo]Bar',
         tags: [tag('alpha'), tag('beta')],
-        categoryName: 'Dev',
-        sectionName: 'Tech',
+        categoryPath: ['Tech', 'Dev'],
         createdAt: 1_700_000_200_000,
       }),
       bookmark({
@@ -251,8 +290,7 @@ describe('toMarkdownCollection', () => {
         title: null,
         description: null,
         tags: [tag('alpha'), tag('beta')],
-        categoryName: 'Essentials',
-        sectionName: 'Tech',
+        categoryPath: ['Tech', 'Essentials'],
         createdAt: 1_700_000_300_000,
       }),
       bookmark({
@@ -260,8 +298,7 @@ describe('toMarkdownCollection', () => {
         title: 'Delta',
         description: 'Delta',
         tags: [tag('alpha'), tag('beta')],
-        categoryName: null,
-        sectionName: null,
+        categoryPath: [],
         createdAt: 1_700_000_400_000,
       }),
     ];
@@ -275,7 +312,7 @@ describe('toMarkdownCollection', () => {
         url: entry.url,
         title: entry.title,
         description: entry.description,
-        category: entry.category,
+        categoryPath: entry.categoryPath,
         tags: entry.tags.toSorted(),
       }))
       .toSorted((a, b) => a.url.localeCompare(b.url));
@@ -288,10 +325,60 @@ describe('toMarkdownCollection', () => {
     );
   });
 
+  test('emits an H2 per level-1 category and an H3 per child', () => {
+    const markdown = toMarkdownCollection([
+      bookmark({ url: 'https://example.com/root1', title: 'r1', categoryPath: ['Dev'] }),
+      bookmark({ url: 'https://example.com/child', title: 'c', categoryPath: ['Dev', 'Web'] }),
+      bookmark({ url: 'https://example.com/root2', title: 'r2', categoryPath: ['Books'] }),
+    ]);
+    const lines = markdown.split('\n');
+    expect(lines.filter((line) => line.startsWith('## '))).toEqual(['## Books', '## Dev']);
+    expect(lines.filter((line) => line.startsWith('### '))).toEqual(['### Web']);
+    // Sibling roots sort alphabetically; each root's rows stay under it.
+    expect(lines.indexOf('## Dev')).toBeGreaterThan(lines.indexOf('## Books'));
+    expect(lines.indexOf('### Web')).toBeGreaterThan(lines.indexOf('## Dev'));
+    const root1Line = lines.findIndex((line) => line.includes('https://example.com/root1'));
+    expect(root1Line).toBeGreaterThan(lines.indexOf('## Dev'));
+  });
+
+  test('joins path segments beyond depth 2 into the H3 name (parser is depth-2)', () => {
+    const markdown = toMarkdownCollection([
+      bookmark({
+        url: 'https://example.com/deep',
+        title: 'deep',
+        categoryPath: ['dev', 'web', '2024'],
+      }),
+    ]);
+    expect(markdown).toContain('## dev');
+    expect(markdown).toContain('### web/2024');
+    const parsed = parseCollection(markdown);
+    expect(parsed.bookmarks[0]?.categoryPath).toEqual(['dev', 'web/2024']);
+  });
+
+  test('emits uncategorized rows before any heading', () => {
+    const markdown = toMarkdownCollection([
+      bookmark({ url: 'https://example.com/loose', title: 'loose', categoryPath: [] }),
+      bookmark({ url: 'https://example.com/kept', title: 'kept', categoryPath: ['Dev'] }),
+    ]);
+    const parsed = parseCollection(markdown);
+    expect(parsed.bookmarks[0]?.categoryPath).toEqual([]);
+    expect(parsed.bookmarks[1]?.categoryPath).toEqual(['Dev']);
+  });
+
   test('frontmatter unions per-row tags (the parser tag set is file-global)', () => {
     const markdown = toMarkdownCollection([
-      bookmark({ url: 'https://example.com/a', title: 'A', tags: [tag('red')], categoryName: 'C' }),
-      bookmark({ url: 'https://example.com/b', title: 'B', tags: [tag('blue')], categoryName: 'C' }),
+      bookmark({
+        url: 'https://example.com/a',
+        title: 'A',
+        tags: [tag('red')],
+        categoryPath: ['C'],
+      }),
+      bookmark({
+        url: 'https://example.com/b',
+        title: 'B',
+        tags: [tag('blue')],
+        categoryPath: ['C'],
+      }),
     ]);
     expect(markdown).toContain('tags: [red, blue]');
     const parsed = parseCollection(markdown);
@@ -303,6 +390,76 @@ describe('toMarkdownCollection', () => {
   test('emits a minimal document for empty input', () => {
     expect(toMarkdownCollection([])).toBe('');
     expect(parseCollection('').bookmarks).toEqual([]);
+  });
+});
+
+function byUrl(a: { url: string }, b: { url: string }): number {
+  return a.url.localeCompare(b.url);
+}
+
+describe('db round-trip (octocat fixture)', () => {
+  test('markdown → parse → ingest → export markdown → re-parse yields the same tree', async () => {
+    const sourceUrl = new URL('../../db/seeds/octocat.md', import.meta.url);
+    const source = await Bun.file(sourceUrl).text();
+
+    const parsed = parseCollection(source);
+    expect(parsed.skipped).toBe(0);
+
+    const db = openDatabase(':memory:');
+    setupDatabase(db);
+    const resolution = resolveVocabulary(db, parsed.bookmarks);
+    const report = ingestBookmarks(db, parsed.bookmarks, resolution, { file: 'octocat.md' });
+    expect(report.added).toBe(25);
+
+    // Hydrate export rows the way core will: resolved ancestor-chain paths.
+    // Object.assign on freshly created hydration objects (the db returns new
+    // objects per call) — matches the no-map-spread convention used in db.
+    const rows = listBookmarksForExport(db).map((row) =>
+      Object.assign(row, {
+        categoryPath: row.categoryId
+          ? listCategoryPath(db, row.categoryId).map((category) => category.name)
+          : [],
+      }),
+    );
+    expect(rows.length).toBe(25);
+
+    const markdown = toMarkdownCollection(rows);
+    const reparsed = parseCollection(markdown);
+    expect(reparsed.skipped).toBe(0);
+
+    // The comparison oracle is the ingested db state (not the raw first parse):
+    // ingest normalizes URLs (e.g. bare hosts gain a trailing `/`), and the
+    // round-trip must reproduce exactly what was committed.
+    const original = rows
+      .map((row) => ({
+        url: row.url,
+        title: row.title,
+        description: row.description,
+        categoryPath: row.categoryPath,
+        priority: null as number | null,
+        tags: row.tags.map((t) => t.name).toSorted(),
+      }))
+      .toSorted(byUrl);
+    const roundTripped = reparsed.bookmarks
+      .map((entry) => ({
+        url: entry.url,
+        title: entry.title,
+        description: entry.description,
+        categoryPath: entry.categoryPath,
+        priority: entry.priority,
+        tags: entry.tags.toSorted(),
+      }))
+      .toSorted(byUrl);
+
+    expect(roundTripped).toEqual(original);
+
+    // Re-ingesting the exported file merges by URL — nothing new, nothing lost.
+    const secondResolution = resolveVocabulary(db, reparsed.bookmarks);
+    const second = ingestBookmarks(db, reparsed.bookmarks, secondResolution, {
+      file: 'octocat-roundtrip.md',
+    });
+    expect(second.added).toBe(0);
+    expect(second.updated).toBe(25);
   });
 });
 

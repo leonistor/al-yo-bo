@@ -19,12 +19,17 @@ const FRONTMATTER_LIST_ITEM_RE = /^\s*-\s/;
 const FRONTMATTER_TAGS_RE = /^tags\s*:\s*\[(.*)\]\s*$/;
 
 /**
- * Parses a markdown collection file (see ARCHITECTURE §7 Stage 1). The
- * `## Heading` (H2) is the section, `### Heading` (H3) is the category; when
- * only an H2 is present, the section name doubles as the catch-all category
- * (same shape as before). Heading context is collapsed into the single
- * `ImportedBookmark.category` field — the most specific name wins (H3 if
- * present, else H2). Fenced code blocks and frontmatter are handled as before.
+ * Parses a markdown collection file into tree-native bookmarks (ARCHITECTURE
+ * §7 mapping — the markdown format *is* the category tree):
+ *
+ * - `## Heading` (H2) is a level-1 category and resets the path.
+ * - `### Heading` (H3) is a child of the current level-1 category. A stray H3
+ *   with no preceding H2 promotes to level-1 (the tree has no orphan depth).
+ * - `ImportedBookmark.categoryPath` carries the ancestor chain root→node
+ *   (e.g. `["dev", "web", "2024"]`); bullets before any heading get `[]`
+ *   (uncategorized). Deeper headings (H1/H4+) are not part of the grammar and
+ *   are ignored, as are fenced code blocks (opaque) and frontmatter (tags
+ *   become file-global, positional union).
  */
 export function parseCollection(content: string): ParseResult {
   const bookmarks: ImportedBookmark[] = [];
@@ -34,7 +39,7 @@ export function parseCollection(content: string): ParseResult {
   const warnings: string[] = [];
   const lines = content.split(/\r?\n/);
   let skipped = 0;
-  let category: string | null = null;
+  let categoryPath: string[] = [];
   let inFence = false;
   let index = 0;
 
@@ -75,14 +80,15 @@ export function parseCollection(content: string): ParseResult {
 
     const h3 = H3_RE.exec(line);
     if (h3) {
-      category = h3[1]?.trim() ?? null;
+      const name = h3[1]?.trim() ?? '';
+      categoryPath = categoryPath.length > 0 ? [categoryPath[0]!, name] : [name];
       index += 1;
       continue;
     }
 
     const h2 = H2_RE.exec(line);
     if (h2) {
-      category = h2[1]?.trim() ?? null;
+      categoryPath = [h2[1]?.trim() ?? ''];
       index += 1;
       continue;
     }
@@ -116,11 +122,13 @@ export function parseCollection(content: string): ParseResult {
         continue;
       }
       seen.add(key);
+      // Snapshot the current path per bookmark: later headings must not
+      // retroactively re-parent earlier bullets.
       bookmarks.push({
         url,
         title: note || null,
         description: note || null,
-        category,
+        categoryPath: [...categoryPath],
         priority,
         tags: [...tags],
       });
@@ -214,9 +222,7 @@ function tryParseFrontmatter(lines: string[], startIndex: number): Frontmatter |
 
   return {
     tags,
-    warnings: [...unknownKeys].map(
-      (key) => `Unrecognized frontmatter key "${key}" was ignored.`,
-    ),
+    warnings: [...unknownKeys].map((key) => `Unrecognized frontmatter key "${key}" was ignored.`),
     endIndex,
   };
 }

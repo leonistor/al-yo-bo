@@ -4,7 +4,7 @@ import {
   assignTag,
   createCategory,
   createTag,
-  getCategoryByName,
+  getCategoryBySiblingName,
   upsertBookmarkByUrl,
 } from '@al-yo-bo/db';
 import type { ImportReport, ImportedBookmark } from '@al-yo-bo/shared';
@@ -15,38 +15,52 @@ export interface IngestOptions {
 }
 
 /**
- * Resolved vocabulary for a batch. Maps raw source names to entity ids; every
- * name in the batch is covered by a map entry unless it resolved to a
- * non-active tag (deprecated rows are never assigned — MODEL.md invariant),
- * in which case the name is reported in `skippedTags`.
+ * Canonical map key for a category path. `JSON.stringify` (not a join) so a
+ * category literally named `a/b` can never collide with the path
+ * `["a", "b"]` — sibling-unique names make the tree the identity, and the key
+ * must be injective over paths (MODEL.md principle 2).
+ */
+export function categoryPathKey(path: string[]): string {
+  return JSON.stringify(path);
+}
+
+/**
+ * Resolved vocabulary for a batch. Categories are keyed by ancestor path (a
+ * name alone is ambiguous in a tree); tags by global name. Every path/tag the
+ * batch references is covered unless it resolved to a non-active tag —
+ * deprecated rows are never re-activated nor assigned (MODEL.md principle 3).
  */
 export interface VocabularyResolution {
-  /** Name → category id (active rows only). */
+  /** `categoryPathKey(path)` → category id (the leaf of that path). */
   categoryIds: Map<string, string>;
-  /** Name → tag id (active rows only). */
+  /** Tag name → tag id (active rows only). */
   tagIds: Map<string, string>;
   /** Tag names left unmapped because their existing row was not active. */
   skippedTags: string[];
+  /** Categories actually inserted (not merged with an existing sibling). */
+  categoriesCreated: number;
 }
 
 /** `ImportReport` plus the soft warnings surfaced during ingest. */
 export interface IngestReport extends ImportReport {
-  /** Non-fatal issues to surface in the UI, mirroring `ExtractionResult.warnings`. */
+  /** Non-fatal issues to surface in the UI. */
   warnings?: string[];
 }
 
-function uniqueNames(
-  bookmarks: ImportedBookmark[],
-  pick: (bookmark: ImportedBookmark) => string | null,
-): string[] {
+function uniquePaths(bookmarks: ImportedBookmark[]): string[][] {
   const seen = new Set<string>();
+  const paths: string[][] = [];
   for (const bookmark of bookmarks) {
-    const name = pick(bookmark);
-    if (name) {
-      seen.add(name);
+    if (bookmark.categoryPath.length === 0) {
+      continue;
+    }
+    const key = categoryPathKey(bookmark.categoryPath);
+    if (!seen.has(key)) {
+      seen.add(key);
+      paths.push(bookmark.categoryPath);
     }
   }
-  return [...seen];
+  return paths;
 }
 
 function uniqueTagNames(bookmarks: ImportedBookmark[]): string[] {
@@ -60,33 +74,55 @@ function uniqueTagNames(bookmarks: ImportedBookmark[]): string[] {
 }
 
 /**
- * Resolves every raw name in the batch against the dataset's vocabulary and
- * auto-creates any missing category or tag as active (Phase 0 simplification:
- * no `proposed` lifecycle, no staging). Returns id maps the ingest step
- * consumes directly.
+ * Resolves every category path and tag name in the batch against the single
+ * workspace vocabulary, auto-creating anything missing (ARCHITECTURE §7
+ * "Vocabulary establishment": the importer is the only vocabulary creator and
+ * what it creates lands usable — categories as plain records, tags `active`).
+ *
+ * Path resolution walks `getCategoryBySiblingName` from the root, so
+ * `["dev", "web", "2024"]` matches the sibling-unique tree (web/2024 and
+ * books/2024 coexist) and shared prefixes across paths are resolved once.
+ * Runs in one immediate transaction so a failure part-way cannot commit a
+ * half-created vocabulary.
  */
 export function resolveVocabulary(
   db: Database,
-  datasetId: string,
   bookmarks: ImportedBookmark[],
 ): VocabularyResolution {
   const resolution: VocabularyResolution = {
     categoryIds: new Map(),
     tagIds: new Map(),
     skippedTags: [],
+    categoriesCreated: 0,
   };
 
-  // Resolution runs in its own immediate transaction so a failure part-way
-  // cannot commit a half-created vocabulary (categories without tags).
   const run = db.transaction(() => {
-    for (const name of uniqueNames(bookmarks, (b) => b.category)) {
-      const category =
-        getCategoryByName(db, datasetId, name) ?? createCategory(db, { datasetId, name });
-      resolution.categoryIds.set(name, category.id);
+    for (const path of uniquePaths(bookmarks)) {
+      let parentId: string | null = null;
+      const prefix: string[] = [];
+      for (const name of path) {
+        prefix.push(name);
+        const key = categoryPathKey(prefix);
+        let id = resolution.categoryIds.get(key);
+        if (id === undefined) {
+          const existing = getCategoryBySiblingName(db, parentId, name);
+          if (existing) {
+            id = existing.id;
+          } else {
+            // Auto-create as the last sibling (createCategory merges by
+            // sibling name; the pre-check distinguishes "created" from
+            // "merged" for the report count).
+            id = createCategory(db, { name, parentId }).id;
+            resolution.categoriesCreated += 1;
+          }
+          resolution.categoryIds.set(key, id);
+        }
+        parentId = id;
+      }
     }
 
     for (const name of uniqueTagNames(bookmarks)) {
-      const tag = createTag(db, { datasetId, name });
+      const tag = createTag(db, { name });
       // createTag reuses an existing row regardless of status; re-importing a
       // previously deprecated tag must not re-activate it or assign it
       // (MODEL.md invariant: only active tags may be assigned to bookmarks).
@@ -103,14 +139,16 @@ export function resolveVocabulary(
 }
 
 /**
- * Commits a batch of bookmarks using a pre-resolved vocabulary. Upserts
- * bookmarks by URL and attaches frontmatter tags. The bookmark's category is
- * the resolved `category` name from the source; sections are no longer
- * surfaced as a separate import field.
+ * Commits a batch of bookmarks using a pre-resolved vocabulary. Upserts by the
+ * globally unique URL (merge-by-URL, ARCHITECTURE §7 — re-importing the same
+ * file never duplicates rows) and attaches frontmatter tags with
+ * `source='import'` (user/import rows win over classifier re-runs). The
+ * bookmark's category is the leaf of its resolved `categoryPath`; provenance
+ * (`file`, `categoryPath`, `priority`) is preserved in `metadata.import` so
+ * the exporter can re-emit priority stars.
  */
 export function ingestBookmarks(
   db: Database,
-  datasetId: string,
   bookmarks: ImportedBookmark[],
   resolution: VocabularyResolution,
   options: IngestOptions = {},
@@ -119,7 +157,7 @@ export function ingestBookmarks(
     added: 0,
     updated: 0,
     skipped: options.skipped ?? 0,
-    categoriesCreated: 0,
+    categoriesCreated: resolution.categoriesCreated,
     tagsAssigned: 0,
     parsed: bookmarks.length,
     bookmarks,
@@ -128,20 +166,20 @@ export function ingestBookmarks(
 
   const insideTransaction = db.transaction(() => {
     for (const entry of bookmarks) {
-      const categoryId = entry.category
-        ? (resolution.categoryIds.get(entry.category) ?? null)
-        : null;
+      const categoryId =
+        entry.categoryPath.length === 0
+          ? null
+          : (resolution.categoryIds.get(categoryPathKey(entry.categoryPath)) ?? null);
 
       const metadata = {
         import: {
           file: options.file ?? null,
-          category: entry.category,
+          categoryPath: entry.categoryPath,
           priority: entry.priority,
         },
       };
 
       const { bookmark, created } = upsertBookmarkByUrl(db, {
-        datasetId,
         url: entry.url,
         title: entry.title,
         description: entry.description,

@@ -1,4 +1,4 @@
-import type { ExportBookmarkRow, ExportFormat } from '@al-yo-bo/shared';
+import type { CategoryNode, ExportBookmarkRow, ExportFormat } from '@al-yo-bo/shared';
 
 /** MIME type per export format; every produced file is UTF-8. */
 export const EXPORT_CONTENT_TYPES: Record<ExportFormat, string> = {
@@ -29,12 +29,16 @@ const INDENT = '    ';
 
 /**
  * Netscape Bookmark File Format export — the universal browser/manager
- * interchange format. Folder tree = Section ▸ Category (`<H3>` + nested
- * `<DL>`); timestamps are Unix seconds (< 2^32); `TAGS` is comma-joined (the
- * format has no comma escaping, so commas — and newlines/quotes — inside tag
- * names are stripped); the description lives in `<DD>`; `& < >` are escaped in
- * text and `"` additionally in attribute values. The domain model carries no
- * favicon data, so `ICON`/`ICON_URI` are omitted entirely.
+ * interchange format. The folder tree is the **category ancestor chain**, the
+ * one path grammar decided for every format (ARCHITECTURE §7): each
+ * `categoryPath` segment becomes one nested `<DT><H3>` + `<DL><p>` level and
+ * bookmarks are `<A>` leaves. Timestamps are Unix seconds (< 2^32); `TAGS` is
+ * comma-joined (the format has no comma escaping, so commas — and
+ * newlines/quotes — inside tag names are stripped); the description lives in
+ * `<DD>`; `& < >` are escaped in text and `"` additionally in attribute
+ * values. The domain model carries no favicon data, so `ICON`/`ICON_URI` are
+ * omitted entirely. Rows with an empty path sit directly in the top-level DL,
+ * after the folders.
  */
 export function toNetscapeHtml(bookmarks: ExportBookmarkRow[]): string {
   const lines: string[] = [
@@ -46,18 +50,11 @@ export function toNetscapeHtml(bookmarks: ExportBookmarkRow[]): string {
     '<DL><p>',
   ];
 
-  for (const section of groupRows(bookmarks)) {
-    // Rows with no section sit directly in the top-level DL, grouped by category.
-    if (section.name === null) {
-      appendHtmlCategories(lines, section.categories, INDENT);
-      continue;
+  appendHtmlFolders(lines, buildFolderTree(bookmarks), INDENT);
+  for (const row of bookmarks) {
+    if (row.categoryPath.length === 0) {
+      appendHtmlBookmark(lines, row, INDENT);
     }
-    lines.push(
-      `${INDENT}<DT><H3 ADD_DATE="${folderDate(section.rows)}">${escapeHtmlText(section.name)}</H3>`,
-    );
-    lines.push(`${INDENT}<DL><p>`);
-    appendHtmlCategories(lines, section.categories, INDENT + INDENT);
-    lines.push(`${INDENT}</DL><p>`);
   }
 
   lines.push('</DL><p>');
@@ -66,20 +63,22 @@ export function toNetscapeHtml(bookmarks: ExportBookmarkRow[]): string {
 
 /**
  * Full-fidelity JSON backup. Shape:
- * `{ format: 'al-yo-bo/export', version: 1, exportedAt: <epoch ms>, filters,
- *    bookmarks: ExportBookmarkRow[] }` — timestamps stay epoch ms (domain-native)
- * and every row carries resolved `categoryName`/`sectionName`.
+ * `{ format: 'al-yo-bo/export', version: 2, exportedAt: <epoch ms>, filters,
+ *    categories: CategoryNode[], bookmarks: ExportBookmarkRow[] }` —
+ * timestamps stay epoch ms (domain-native), every row carries its resolved
+ * `categoryPath` array, and `categories` is the tree as produced by
+ * `getCategoryTree` (roots then children, ordered by the fractional
+ * `sort_order` — the serializer passes it through verbatim; ordering is the
+ * caller's contract, so this file stays a pure serializer).
  */
-export function toExportJson(
-  bookmarks: ExportBookmarkRow[],
-  meta: { filters: Record<string, unknown>; exportedAt: number },
-): string {
+export function toExportJson(bookmarks: ExportBookmarkRow[], meta: ExportJsonMeta): string {
   return JSON.stringify(
     {
       format: 'al-yo-bo/export',
-      version: 1,
+      version: 2,
       exportedAt: meta.exportedAt,
       filters: meta.filters,
+      categories: meta.categories,
       bookmarks,
     },
     null,
@@ -87,13 +86,21 @@ export function toExportJson(
   );
 }
 
+/** Metadata for `toExportJson` beyond the bookmark rows themselves. */
+export interface ExportJsonMeta {
+  filters: Record<string, unknown>;
+  exportedAt: number;
+  /** The category tree (`getCategoryTree` output), emitted verbatim. */
+  categories: CategoryNode[];
+}
+
 /**
  * CSV with the Raindrop-compatible header `folder,url,title,note,tags,created`
- * (the best-known import target). `folder` is the `Section/Category` path
- * (either part may be absent); `note` is the description; `tags` is one
- * comma-joined field (commas in tag names are stripped — Raindrop splits on
- * commas, so they break consumers regardless); `created` is ISO 8601; fields
- * are quoted per RFC 4180.
+ * (the best-known import target). `folder` is the category path joined with
+ * `/` (empty when the bookmark is uncategorized); `note` is the description;
+ * `tags` is one comma-joined field (commas in tag names are stripped —
+ * Raindrop splits on commas, so they break consumers regardless); `created`
+ * is ISO 8601; fields are quoted per RFC 4180.
  */
 export function toCsv(bookmarks: ExportBookmarkRow[]): string {
   const lines = ['folder,url,title,note,tags,created'];
@@ -117,19 +124,20 @@ export function toCsv(bookmarks: ExportBookmarkRow[]): string {
 }
 
 /**
- * Markdown in this app's own collection format (mirror of
- * `packages/importer/parse.ts`), so an export re-imports losslessly:
- * `## Section` / `### Category` headings (the parser flattens the most
- * specific heading into its single `category` field), a leading YAML
- * frontmatter `tags: [...]` block, bullet links, and leading `*` priority
- * stars exactly as the parser reads them.
+ * Markdown in this app's own collection format — a tree-native mirror of
+ * `packages/importer/parse.ts` (H2 → level-1 category, H3 → child), so an
+ * export re-imports back into the same tree (ARCHITECTURE §7 round-trip).
+ * Emission order: uncategorized rows first (the parser keeps the last heading
+ * it saw and has no way to reset to "no category", so a bullet can only be
+ * uncategorized before the first heading), then paths sorted segment-wise
+ * with an H2 per level-1 change and an H3 per child. The parser's grammar is
+ * depth-2, so segments beyond the second join into the H3 name with `/` —
+ * deterministic, and the accepted fidelity limit of the markdown format.
  *
- * Fidelity notes, all forced by the parser:
+ * Further fidelity notes, all forced by the parser:
  * - The parser's tag set is file-global and only grows, so the frontmatter
  *   holds the union of every row's tags; rows with different tag sets are
  *   unioned rather than represented individually.
- * - The parser keeps the last heading it saw with no way to reset, so rows
- *   whose `categoryName` is null must be emitted before any heading.
  * - The bullet note becomes both `title` and `description` on re-import, and
  *   the parser strips trailing `-–—:;,` from it.
  */
@@ -141,102 +149,123 @@ export function toMarkdownCollection(bookmarks: ExportBookmarkRow[]): string {
     blocks.push(['---', `tags: [${tagNames.join(', ')}]`, '---'].join('\n'));
   }
 
-  // Null-category rows first: the parser keeps the last heading it saw, so a
-  // bullet can only carry a null category before any heading appears.
-  const rootRows = bookmarks.filter((row) => row.categoryName === null);
-  if (rootRows.length > 0) {
-    blocks.push(rootRows.map((row) => markdownBullet(row)).join('\n'));
+  const unpathed = bookmarks.filter((row) => row.categoryPath.length === 0);
+  if (unpathed.length > 0) {
+    blocks.push(unpathed.map((row) => markdownBullet(row)).join('\n'));
   }
 
-  const sections = groupRows(bookmarks.filter((row) => row.categoryName !== null));
-  for (const section of sections) {
-    if (section.name !== null) {
-      blocks.push(`## ${section.name}`);
+  const rowsByPath = new Map<string, ExportBookmarkRow[]>();
+  for (const row of bookmarks) {
+    if (row.categoryPath.length === 0) {
+      continue;
     }
-    for (const category of section.categories) {
-      if (category.name !== null) {
-        blocks.push(`### ${category.name}`);
-      }
-      blocks.push(category.rows.map((row) => markdownBullet(row)).join('\n'));
+    const key = JSON.stringify(row.categoryPath);
+    const bucket = rowsByPath.get(key);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      rowsByPath.set(key, [row]);
     }
+  }
+
+  const paths = [...rowsByPath.keys()]
+    .map((key) => JSON.parse(key) as string[])
+    .toSorted(comparePaths);
+  let currentRoot: string | null = null;
+  for (const path of paths) {
+    // `noUncheckedIndexedAccess`: a path in `rowsByPath` is never empty, but
+    // the type system sees `string | undefined` — normalize with `?? ''`.
+    const root = path[0] ?? '';
+    const childPath = path.slice(1);
+    if (root !== currentRoot) {
+      blocks.push(`## ${root}`);
+      currentRoot = root;
+    }
+    // The parser's grammar is depth-2; segments beyond the second join into
+    // the H3 name with '/' (see the fidelity notes above).
+    if (childPath.length > 0) {
+      blocks.push(`### ${childPath.join('/')}`);
+    }
+    const rows = rowsByPath.get(JSON.stringify(path)) ?? [];
+    blocks.push(rows.map((row) => markdownBullet(row)).join('\n'));
   }
 
   return blocks.join('\n\n');
 }
 
-interface CategoryGroup {
-  name: string | null;
+interface FolderNode {
+  name: string;
+  /** Child folders in emission order (paths are pre-sorted, so siblings stay sorted). */
+  children: FolderNode[];
   rows: ExportBookmarkRow[];
-}
-
-interface SectionGroup {
-  name: string | null;
-  rows: ExportBookmarkRow[];
-  categories: CategoryGroup[];
+  /** Newest `createdAt` anywhere in this folder's subtree (its `ADD_DATE`). */
+  newest: number;
 }
 
 /**
- * Orders rows by `sectionName` (nulls last, alphabetical) then `categoryName`
- * (nulls last, alphabetical), preserving input order within a group, and folds
- * them into a Section ▸ Category tree. The sort is stable, so the db's
- * `created_at DESC` order survives inside each group.
+ * Folds rows into a folder trie keyed by their category ancestor chain.
+ * Distinct paths are sorted segment-wise first and the skeleton is built in
+ * that order, so sibling folders emit sorted; rows are then appended in input
+ * order (the db's stable `created_at DESC` export order survives inside a
+ * folder).
  */
-function groupRows(rows: ExportBookmarkRow[]): SectionGroup[] {
-  const sorted = rows.toSorted(
-    (a, b) =>
-      compareNames(a.sectionName, b.sectionName) ||
-      compareNames(a.categoryName, b.categoryName),
-  );
-
-  const sections: SectionGroup[] = [];
-  for (const row of sorted) {
-    let section = sections.at(-1);
-    if (!section || section.name !== row.sectionName) {
-      section = { name: row.sectionName, rows: [], categories: [] };
-      sections.push(section);
-    }
-    section.rows.push(row);
-
-    let category = section.categories.at(-1);
-    if (!category || category.name !== row.categoryName) {
-      category = { name: row.categoryName, rows: [] };
-      section.categories.push(category);
-    }
-    category.rows.push(row);
-  }
-  return sections;
-}
-
-function compareNames(a: string | null, b: string | null): number {
-  if (a === b) {
-    return 0;
-  }
-  if (a === null) {
-    return 1;
-  }
-  if (b === null) {
-    return -1;
-  }
-  return a < b ? -1 : 1;
-}
-
-function appendHtmlCategories(
-  lines: string[],
-  categories: CategoryGroup[],
-  indent: string,
-): void {
-  for (const category of categories) {
-    if (category.name === null) {
-      for (const row of category.rows) {
-        appendHtmlBookmark(lines, row, indent);
+function buildFolderTree(rows: ExportBookmarkRow[]): FolderNode[] {
+  const nodes = new Map<string, FolderNode>();
+  const roots: FolderNode[] = [];
+  for (const path of distinctPaths(rows).toSorted(comparePaths)) {
+    const prefix: string[] = [];
+    let siblings = roots;
+    for (const name of path) {
+      prefix.push(name);
+      const key = JSON.stringify(prefix);
+      let node = nodes.get(key);
+      if (!node) {
+        node = { name, children: [], rows: [], newest: 0 };
+        nodes.set(key, node);
+        siblings.push(node);
       }
+      siblings = node.children;
+    }
+  }
+  for (const row of rows) {
+    if (row.categoryPath.length === 0) {
       continue;
     }
+    const node = nodes.get(JSON.stringify(row.categoryPath));
+    node?.rows.push(row);
+  }
+  for (const root of roots) {
+    computeSubtreeNewest(root);
+  }
+  return roots;
+}
+
+/** Bottom-up newest `createdAt` per folder subtree (used for `ADD_DATE`). */
+function computeSubtreeNewest(node: FolderNode): number {
+  let newest = 0;
+  for (const row of node.rows) {
+    if (row.createdAt > newest) {
+      newest = row.createdAt;
+    }
+  }
+  for (const child of node.children) {
+    const childNewest = computeSubtreeNewest(child);
+    if (childNewest > newest) {
+      newest = childNewest;
+    }
+  }
+  node.newest = newest;
+  return newest;
+}
+
+function appendHtmlFolders(lines: string[], folders: FolderNode[], indent: string): void {
+  for (const folder of folders) {
     lines.push(
-      `${indent}<DT><H3 ADD_DATE="${folderDate(category.rows)}">${escapeHtmlText(category.name)}</H3>`,
+      `${indent}<DT><H3 ADD_DATE="${toUnixSeconds(folder.newest)}">${escapeHtmlText(folder.name)}</H3>`,
     );
     lines.push(`${indent}<DL><p>`);
-    for (const row of category.rows) {
+    appendHtmlFolders(lines, folder.children, indent + INDENT);
+    for (const row of folder.rows) {
       appendHtmlBookmark(lines, row, indent + INDENT);
     }
     lines.push(`${indent}</DL><p>`);
@@ -245,9 +274,7 @@ function appendHtmlCategories(
 
 function appendHtmlBookmark(lines: string[], row: ExportBookmarkRow, indent: string): void {
   const seconds = toUnixSeconds(row.createdAt);
-  const tags = row.tags
-    .map((tag) => sanitizeTagName(tag.name))
-    .filter((name) => name.length > 0);
+  const tags = row.tags.map((tag) => sanitizeTagName(tag.name)).filter((name) => name.length > 0);
   const tagsAttribute = tags.length > 0 ? ` TAGS="${escapeHtmlAttribute(tags.join(','))}"` : '';
   lines.push(
     `${indent}<DT><A HREF="${escapeHtmlAttribute(row.url)}" ADD_DATE="${seconds}" LAST_MODIFIED="${seconds}"${tagsAttribute}>${escapeHtmlText(row.title ?? '')}</A>`,
@@ -257,15 +284,38 @@ function appendHtmlBookmark(lines: string[], row: ExportBookmarkRow, indent: str
   }
 }
 
-/** Newest `createdAt` inside a folder, as Unix seconds (browsers ignore it; kept deterministic). */
-function folderDate(rows: ExportBookmarkRow[]): number {
-  let newest = 0;
+/** Distinct category paths in first-seen order. */
+function distinctPaths(rows: ExportBookmarkRow[]): string[][] {
+  const seen = new Set<string>();
+  const paths: string[][] = [];
   for (const row of rows) {
-    if (row.createdAt > newest) {
-      newest = row.createdAt;
+    if (row.categoryPath.length === 0) {
+      continue;
+    }
+    const key = JSON.stringify(row.categoryPath);
+    if (!seen.has(key)) {
+      seen.add(key);
+      paths.push(row.categoryPath);
     }
   }
-  return toUnixSeconds(newest);
+  return paths;
+}
+
+/**
+ * Segment-wise lexicographic comparison (`JSON.stringify` keys are injective
+ * over paths, so keying by them never confuses a name containing `/` with a
+ * path separator — the same rule the importer uses).
+ */
+function comparePaths(a: string[], b: string[]): number {
+  const depth = Math.min(a.length, b.length);
+  for (let i = 0; i < depth; i += 1) {
+    const x = a[i] ?? '';
+    const y = b[i] ?? '';
+    if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return a.length - b.length;
 }
 
 /** Epoch ms → Unix seconds, clamped to `[0, 2^32 - 1]` for the Netscape attributes. */
@@ -290,11 +340,9 @@ function sanitizeTagName(name: string): string {
   return name.replace(/[,\r\n"']/g, '').trim();
 }
 
+/** The CSV `folder` column: the category path joined with `/`, empty when uncategorized. */
 function folderPath(row: ExportBookmarkRow): string {
-  if (row.sectionName !== null && row.categoryName !== null) {
-    return `${row.sectionName}/${row.categoryName}`;
-  }
-  return row.sectionName ?? row.categoryName ?? '';
+  return row.categoryPath.join('/');
 }
 
 function csvField(value: string): string {
