@@ -17,6 +17,9 @@
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.0"
+  },
   "dependencies": {
     "@al-yo-bo/ai": "workspace:*",
     "@al-yo-bo/core": "workspace:*",
@@ -25,6 +28,8 @@
     "@al-yo-bo/search": "workspace:*",
     "@al-yo-bo/shared": "workspace:*",
     "@al-yo-bo/vectordb": "workspace:*",
+    "@modelcontextprotocol/hono": "^2.0.2",
+    "@modelcontextprotocol/server": "^2.3.0",
     "ai": "^7.0.123",
     "fflate": "^0.8.3",
     "hono": "^4.9.0",

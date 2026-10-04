@@ -25,6 +25,7 @@ import type { ServerConfig } from './env.ts';
 import { toProblemDetails } from './errors.ts';
 import { sseEventsHandler, type EventHub } from './events.ts';
 import { lanInterfaces } from './lan.ts';
+import { createMcpRoutes, mcpHealth } from './mcp.ts';
 
 /**
  * Transport adapter (ARCHITECTURE §4): parse/validate the HTTP request, call one
@@ -276,7 +277,11 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
   });
 
   const app = new Hono()
-    .get('/api/health', async (c) => c.json(await core.health.health()))
+    // The mcp block (ARCHITECTURE §8) is additive at the edge — core's health
+    // report stays transport-neutral, the MCP mount is a server concern.
+    .get('/api/health', async (c) =>
+      c.json({ ...(await core.health.health()), mcp: mcpHealth(config) }),
+    )
 
     .get('/api/bookmarks', async (c) =>
       c.json(
@@ -568,7 +573,13 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
     // typed RPC surface above stays clean for apps/web.
     .post('/api/chat', (c) => chatHandler(c))
 
-    .post('/api/reindex', async (c) => c.json(await core.reindex()));
+    .post('/api/reindex', async (c) => c.json(await core.reindex()))
+
+    // Bookmarks MCP server (ARCHITECTURE §8): streamable HTTP at /mcp, guarded
+    // by the adapter's localhost Host/Origin middleware plus the optional
+    // MCP_TOKEN bearer check. Mounted last so the typed RPC surface above
+    // stays clean for apps/web, like /api/chat.
+    .route('/mcp', createMcpRoutes(core, config));
 
   app.onError((err, c) => {
     const problem = toProblemDetails(err);

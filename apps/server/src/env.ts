@@ -23,6 +23,11 @@ export interface ServerConfig extends CoreConfig {
   screenshotsDir: string;
   /** Parsed AI config — the pass-through that feeds `buildAiLayer` and chat. */
   ai: AiConfig;
+  /**
+   * Bookmarks MCP server (ARCHITECTURE §8). The token comes from `MCP_TOKEN`
+   * (already parsed once by `packages/ai`); unset → loopback-only, no token.
+   */
+  mcp: { token?: string };
   /** Vector-serving sidecar (ARCHITECTURE §6); disabled when `url` is undefined. */
   qdrant: {
     url?: string;
@@ -57,6 +62,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const dataDir = resolveDataDir(env.DATA_DIR);
   return {
     ai,
+    // MCP bearer token (§8): same parse point as the rest of the AI env.
+    mcp: { token: ai.mcpToken },
     port: numberFromEnv(env.PORT, 3000),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
