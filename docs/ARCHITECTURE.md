@@ -642,8 +642,8 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
 2. the **Ollaya sidecar** (`bun run ollaya:install` once — the official installer pinned into the
    gitignored `.tools/ollaya/`, binary at `bin/ollaya` with its runner libs in `lib/ollaya/` — then
    pull the decision model once: `OLLAYA_MODELS=<DATA_DIR>/ollaya/models .tools/ollaya/bin/ollaya
-   pull laya`). In development, `bun run dev` starts it via `scripts/ollaya/start.sh`
-   (`.tools/ollaya/bin/ollaya serve`): loopback only, `OLLAYA_HOST`, and state anchored to the app
+   pull laya`). Standalone, `bun run ollaya:start` runs `scripts/ollaya/start.sh`; in development,
+   `bun run dev` starts it the same way: loopback only, `OLLAYA_HOST`, and state anchored to the app
    data root (`OLLAYA_MODELS` and `OLLAYA_LOG_DIR` under `<DATA_DIR>/ollaya/`) so nothing lands in
    `$HOME`. When the binary is absent, `dev` skips it — classification degrades to manual tagging
    (§1.5).
@@ -656,7 +656,10 @@ with a scripted archive copy to ship a new build. Three processes must be runnin
 Chat additionally needs the local **Ollama daemon** (§2 chat) with the `OLLAMA_CHAT_MODEL` pulled
 (e.g. `ollama pull llama3.2`). `scripts/dev.sh` sources the repo-root `.env` so the server process —
 which boots with the package dir as cwd, where Bun only auto-loads `apps/server/.env` — sees it;
-without the model set, chat degrades to a 503 and health reports it unavailable (§1.5).
+without the model set, chat degrades to a 503 and health reports it unavailable (§1.5). The
+production entry `bun run start` is the inverse: it runs from the repo root, so Bun auto-loads the
+root `.env` only — `apps/server/.env` is not read there. Keep shared configuration and secrets in
+the root `.env` (documented by `.env.example`).
 
 The SQLite file and its WAL sidecars are the only state that **must** be backed up. Qdrant holds
 only the rebuildable serving copy (§6); optionally snapshot it with its snapshot API

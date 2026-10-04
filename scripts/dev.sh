@@ -129,4 +129,5 @@ if [ "$annotate" -eq 1 ]; then
   agents="$agents dev:agentation"
 fi
 
+# shellcheck disable=SC2086
 exec bun run --parallel $agents

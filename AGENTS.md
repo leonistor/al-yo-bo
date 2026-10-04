@@ -62,6 +62,7 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Install Qdrant binary    | `bun run qdrant:install` |
 | Start Qdrant sidecar     | `bun run qdrant:start` |
 | Install Ollaya sidecar   | `bun run ollaya:install` |
+| Start Ollaya sidecar     | `bun run ollaya:start` |
 | Lint                     | `bun run lint` (also in `apps/*`) |
 | Format                   | `bun run format`       |
 | Typecheck (all)          | `bun run typecheck`    |

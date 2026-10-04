@@ -21,10 +21,11 @@
     "qdrant:install": "bash scripts/qdrant/install.sh",
     "qdrant:start": "bash scripts/qdrant/start.sh",
     "ollaya:install": "bash scripts/ollaya/install.sh",
+    "ollaya:start": "bash scripts/ollaya/start.sh",
     "chrome:install": "bash scripts/chrome/install.sh",
-    "browser:install": "bunx playwriter@latest browser install",
-    "browser:start": "bunx playwriter@latest browser start --user-data-dir ./.playwriter-profile --headed",
-    "browser:start:clean": "bunx playwriter@latest browser start --user-data-dir \"$(mktemp -d)/profile\" --headed"
+    "browser:install": "playwriter browser install",
+    "browser:start": "playwriter browser start --user-data-dir ./.playwriter-profile --headed",
+    "browser:start:clean": "playwriter browser start --user-data-dir \"$(mktemp -d)/profile\" --headed"
   },
   "devDependencies": {
     "@types/bun": "latest",
