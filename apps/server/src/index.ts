@@ -159,6 +159,27 @@ export type { AppType } from './app.ts';
 
 export default { port: config.port, hostname: config.host, fetch: app.fetch };
 
+/**
+ * Screenshots are always stored as `<uuid>.jpg` (core's filename is fixed),
+ * but og:image fallback bytes can be PNG/WEBP — sniff the magic bytes so the
+ * served content-type matches the payload (browsers sniff anyway; cosmetic).
+ */
+async function sniffImageType(file: Bun.BunFile): Promise<string> {
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) {
+    return 'image/png';
+  }
+  if (
+    head[0] === 0x52 && // R
+    head[1] === 0x49 && // I
+    head[8] === 0x57 && // W
+    head[9] === 0x45 // E
+  ) {
+    return 'image/webp';
+  }
+  return 'image/jpeg';
+}
+
 async function serveScreenshot(c: Context, dir: string): Promise<Response> {
   const filename = c.req.param('filename') ?? '';
   if (!/^[0-9a-f-]{36}\.jpg$/i.test(filename)) {
@@ -171,7 +192,7 @@ async function serveScreenshot(c: Context, dir: string): Promise<Response> {
   }
   return new Response(file, {
     headers: {
-      'content-type': 'image/jpeg',
+      'content-type': await sniffImageType(file),
       'cache-control': 'public, max-age=31536000, immutable',
     },
   });
