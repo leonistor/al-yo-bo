@@ -151,6 +151,22 @@ describe('SSE events API', () => {
     await waitFor(() => hub.subscriberCount === 0, 'unsubscribed after disconnect');
   });
 
+  test('an event emitted while the stream connects is still delivered', async () => {
+    const response = await fetch(`${baseUrl}/api/events`);
+    const reader = response.body!.getReader();
+    // No subscriberCount wait on purpose: the handler subscribes BEFORE the
+    // opening write, so an emit racing the connect must not fall into the gap.
+    core.bookmarks.create({ url: 'https://sse.test/race', title: 'Race' });
+
+    const opening = await readEvent(reader, 'invalidate-all');
+    expect(opening).toContain('event: invalidate-all');
+    const event = await readEvent(reader, 'bookmarks.changed');
+    expect(event).toContain('"topic":"bookmarks.changed"');
+
+    reader.cancel();
+    await waitFor(() => hub.subscriberCount === 0, 'unsubscribed after disconnect');
+  });
+
   test('emitting after a disconnect is a silent no-op (events are hints, §1.6)', async () => {
     const response = await fetch(`${baseUrl}/api/events`);
     const reader = response.body!.getReader();

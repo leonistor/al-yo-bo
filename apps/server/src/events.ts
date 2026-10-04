@@ -130,13 +130,10 @@ export class EventHub implements EventsSink {
 export function sseEventsHandler(hub: EventHub): (c: Context) => Response {
   return (c) =>
     streamSSE(c, async (sse: SSEStreamingApi) => {
-      // Reconnect semantics (§9): a fresh stream opens with a full-invalidation
-      // hint, so whatever happened while the client was away gets refetched.
-      await sse.writeSSE({
-        event: 'invalidate-all',
-        data: JSON.stringify({ topic: 'invalidate-all' } satisfies DomainEvent),
-      });
-
+      // Subscribe BEFORE the opening write: events emitted between the two
+      // would otherwise fall into a gap where the client has neither the
+      // invalidate-all nor the live event. With this order, anything emitted
+      // while the stream was being established arrives as a live event.
       const unsubscribe = hub.subscribe(
         async (event) => {
           if (sse.aborted || sse.closed) {
@@ -153,6 +150,13 @@ export function sseEventsHandler(hub: EventHub): (c: Context) => Response {
         },
       );
       sse.onAbort(unsubscribe);
+
+      // Reconnect semantics (§9): a fresh stream opens with a full-invalidation
+      // hint, so whatever happened while the client was away gets refetched.
+      await sse.writeSSE({
+        event: 'invalidate-all',
+        data: JSON.stringify({ topic: 'invalidate-all' } satisfies DomainEvent),
+      });
 
       // Keep-alive comments (": ping") — invisible to EventSource listeners.
       // Hono swallows write errors after a disconnect; the loop exits on the
