@@ -2,18 +2,24 @@ import type { Database, SQLQueryBindings } from 'bun:sqlite';
 
 import { bytesToUuid, uuidToBytes, type Tag } from '@al-yo-bo/shared';
 
-import { mapTag, type TagRow } from '../row-mapping.ts';
 import { newIdBytes } from '../uuid.ts';
 import { prepared } from './statements.ts';
+import { listActiveTags } from './tags.ts';
 
-const TAG_COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';
+/**
+ * Classification evidence (MODEL.md principles 4-5): runs, results, and
+ * unknown labels are insert-only and immutable without exception — no code
+ * path in this package UPDATEs their content. The single exception the model
+ * allows is the policy-derived `selected` bit, reconciled by
+ * `reconcileClassifierAssignments` (effective state, not evidence content).
+ */
 
 export interface ClassificationRunInput {
   bookmarkId: string;
   /** Which classifier produced the run, e.g. 'ollaya'. */
   classifier: string;
   classifierVersion?: string | null;
-  /** Model/checkpoint that answered, persisted for traceability (MODEL.md). */
+  /** Resolved checkpoint that answered, persisted for traceability (MODEL.md). */
   model?: string | null;
   confidence?: number | null;
 }
@@ -30,27 +36,15 @@ export interface ClassificationResultInput {
 }
 
 /**
- * Candidate set for classification (ARCHITECTURE §7 stage 0): active tags in the
- * bookmark's dataset. When the bookmark has a category, candidates are further
- * narrowed to that category's scope plus unscoped tags — still within the
- * dataset. Cross-dataset vocabulary is never a candidate.
+ * Candidate set for a classification pass (ARCHITECTURE §7 stage 0): ALL
+ * active tags — tags have no category and there is no scoping axis (MODEL.md
+ * principles 1-2). Kept bookmark-keyed because the classifier loop calls it
+ * per bookmark; the parameter no longer narrows anything. The per-call cap
+ * (batched `noul` questions) is the caller's concern, so this returns the
+ * full set and core batches it.
  */
-export function listActiveTagsForScope(
-  db: Database,
-  datasetId: string,
-  categoryId: string | null,
-): Tag[] {
-  const datasetBytes = uuidToBytes(datasetId);
-  const categoryBytes = categoryId ? uuidToBytes(categoryId) : null;
-  return prepared<TagRow, [Uint8Array, Uint8Array | null, Uint8Array | null]>(
-    db,
-    `SELECT ${TAG_COLUMNS} FROM tags
-        WHERE dataset_id = ? AND status = 'active'
-          AND (? IS NULL OR category_id = ? OR category_id IS NULL)
-        ORDER BY name`,
-  )
-    .all(datasetBytes, categoryBytes, categoryBytes)
-    .map(mapTag);
+export function candidatesForBookmark(db: Database, _bookmarkId: string): Tag[] {
+  return listActiveTags(db);
 }
 
 /** Tag ids explicitly assigned by the user — classifier runs never touch these. */
@@ -61,25 +55,6 @@ export function listUserTagIds(db: Database, bookmarkId: string): string[] {
   )
     .all(uuidToBytes(bookmarkId))
     .map((row) => bytesToUuid(row.tag_id));
-}
-
-/** Bookmarks in a tag's scope; an unscoped tag's scope is its whole dataset. */
-export function listBookmarkIdsForCategoryScope(
-  db: Database,
-  datasetId: string,
-  categoryId: string | null,
-): string[] {
-  return (
-    categoryId
-      ? prepared<{ id: Uint8Array }, [Uint8Array, Uint8Array]>(
-          db,
-          'SELECT id FROM bookmarks WHERE dataset_id = ? AND category_id = ?',
-        ).all(uuidToBytes(datasetId), uuidToBytes(categoryId))
-      : prepared<{ id: Uint8Array }, [Uint8Array]>(
-          db,
-          'SELECT id FROM bookmarks WHERE dataset_id = ?',
-        ).all(uuidToBytes(datasetId))
-  ).map((row) => bytesToUuid(row.id));
 }
 
 /** Inserts one classification run and returns its id (evidence is immutable). */
@@ -150,8 +125,6 @@ export function createUnknownClassificationLabel(
 
 export interface ReconcileClassifierAssignmentsInput {
   bookmarkId: string;
-  /** Dataset whose vocabulary bounds the classifier's candidate scope. */
-  datasetId: string;
   /** Tag ids the current pass qualified under the active policy. */
   qualifiedTagIds: string[];
   /** Run ids created by the current pass — the latest evidence for each tag. */
@@ -164,45 +137,41 @@ export interface ReconcileClassifierAssignmentsResult {
 }
 
 /**
- * Recomputes effective classifier state after a re-run (ARCHITECTURE §7 stage 4/6).
+ * Recomputes effective classifier state after a re-run (ARCHITECTURE §7 stage
+ * 4 "Retraction").
  *
- * Classifier-sourced `bookmark_tags` rows the current pass did not re-qualify are
- * removed, so tags assigned under an older policy/threshold do not stick forever.
- * `user`/`import` rows are never classifier-sourced, so they survive by
- * construction. The current pass's `classification_results.selected` flags become
- * authoritative: any older selected flag for this bookmark is unset. Result rows
- * themselves stay immutable — only the policy-derived `selected` bit is reconciled
- * (MODEL.md principle 4).
+ * Classifier-sourced `bookmark_tags` rows the current pass did not re-qualify
+ * are removed, so tags assigned under an older policy/threshold do not stick
+ * forever. `user`/`import` rows win (MODEL.md / ARCHITECTURE §7): they are
+ * never classifier-sourced, so they survive by construction. The current
+ * pass's `classification_results.selected` flags become authoritative: any
+ * older selected flag for this bookmark is unset. Result rows themselves stay
+ * immutable — only the policy-derived `selected` bit is reconciled (MODEL.md
+ * principle 4).
  */
 export function reconcileClassifierAssignments(
   db: Database,
   input: ReconcileClassifierAssignmentsInput,
 ): ReconcileClassifierAssignmentsResult {
   const bookmarkBytes = uuidToBytes(input.bookmarkId);
-  const datasetBytes = uuidToBytes(input.datasetId);
   const qualifiedBytes = input.qualifiedTagIds.map(uuidToBytes);
   const runBytes = input.runIds.map(uuidToBytes);
 
   const qualifiedList = qualifiedBytes.map(() => '?').join(', ');
   const runList = runBytes.map(() => '?').join(', ');
 
-  // Retract: bounded to the bookmark's dataset so out-of-scope vocabulary is
-  // never touched; `source = 'classifier'` keeps user/import rows intact.
+  // Retract: `source = 'classifier'` keeps user/import rows intact.
   const deleteSql = qualifiedBytes.length
     ? `DELETE FROM bookmark_tags
         WHERE bookmark_id = ?
           AND source = 'classifier'
-          AND tag_id IN (SELECT id FROM tags WHERE dataset_id = ?)
           AND tag_id NOT IN (${qualifiedList})`
     : `DELETE FROM bookmark_tags
         WHERE bookmark_id = ?
-          AND source = 'classifier'
-          AND tag_id IN (SELECT id FROM tags WHERE dataset_id = ?)`;
-  const deleteParams: SQLQueryBindings[] = [bookmarkBytes, datasetBytes, ...qualifiedBytes];
+          AND source = 'classifier'`;
+  const deleteParams: SQLQueryBindings[] = [bookmarkBytes, ...qualifiedBytes];
 
-  const retracted = db
-    .query<never, SQLQueryBindings[]>(deleteSql)
-    .run(...deleteParams).changes;
+  const retracted = db.query<never, SQLQueryBindings[]>(deleteSql).run(...deleteParams).changes;
 
   // Reconcile `selected`: only a result from this pass whose tag qualified stays
   // selected; every older selected flag for the bookmark is cleared.

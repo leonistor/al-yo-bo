@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { bytesToUuid, uuidToBytes, type ReviewCandidate } from '@al-yo-bo/shared';
+import { bytesToUuid, type ReviewCandidate } from '@al-yo-bo/shared';
 
 import { prepared } from './statements.ts';
 
@@ -16,7 +16,8 @@ interface CandidateRow {
 
 /**
  * Classifier suggestions below the auto-assign threshold: retained as evidence
- * and surfaced for the user to accept (which writes a user-sourced assignment).
+ * and surfaced for the user to accept (which writes a user-sourced assignment,
+ * ARCHITECTURE §7 stage 5).
  *
  * Two hygiene rules keep the queue from growing stale:
  * - a (bookmark, tag) pair that already has a `bookmark_tags` row is excluded —
@@ -27,11 +28,10 @@ interface CandidateRow {
  */
 export function listBelowThresholdCandidates(
   db: Database,
-  datasetId: string,
   threshold: number,
   limit = 50,
 ): ReviewCandidate[] {
-  return prepared<CandidateRow, [Uint8Array, number, number]>(
+  return prepared<CandidateRow, [number, number]>(
     db,
     `WITH latest AS (
        SELECT r.bookmark_id AS bookmark_id, b.url AS url, b.title AS title,
@@ -45,7 +45,7 @@ export function listBelowThresholdCandidates(
          JOIN classification_runs r ON r.id = cr.run_id
          JOIN bookmarks b ON b.id = r.bookmark_id
          JOIN tags t ON t.id = cr.tag_id
-        WHERE t.status = 'active' AND b.dataset_id = ?
+        WHERE t.status = 'active'
      )
      SELECT bookmark_id, url, title, tag_id, name, probability, run_id
        FROM latest
@@ -57,7 +57,7 @@ export function listBelowThresholdCandidates(
       ORDER BY probability DESC
       LIMIT ?`,
   )
-    .all(uuidToBytes(datasetId), threshold, limit)
+    .all(threshold, limit)
     .map((row) => ({
       bookmarkId: bytesToUuid(row.bookmark_id),
       bookmarkUrl: row.url,

@@ -17,13 +17,20 @@ import {
 import { mapBookmark, parseBookmarkImage, type BookmarkRow } from '../row-mapping.ts';
 import { newIdBytes } from '../uuid.ts';
 import { getTagsForBookmarks } from './bookmark-tags.ts';
+import { CATEGORY_SUBTREE_IN } from './categories.ts';
 import { prepared } from './statements.ts';
 
+/**
+ * Bookmark CRUD and the list/search filter machinery. One workspace: there is
+ * no dataset axis anywhere, and the URL is the global upsert key (MODEL.md
+ * principles 1 and the `bookmarks_url_unique` index). The category filter
+ * matches the whole category subtree via `CATEGORY_SUBTREE_IN`.
+ */
+
 const COLUMNS =
-  'id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
+  'id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts, created_at, updated_at';
 
 export interface BookmarkInput {
-  datasetId: string;
   url: string;
   title?: string | null;
   description?: string | null;
@@ -37,9 +44,9 @@ export interface BookmarkInput {
 }
 
 export interface ListBookmarksFilters {
-  datasetId?: string;
   /** Full-text query (FTS5 over url/title/description/content); empty ⇒ no text constraint. */
   q?: string;
+  /** Matches the category and its whole subtree (see `CATEGORY_SUBTREE_IN`). */
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -53,7 +60,6 @@ export interface ListBookmarksFilters {
 
 export interface KeywordSearchParams {
   q: string;
-  datasetId?: string;
   categoryId?: string;
   tagId?: string;
   dateFrom?: number;
@@ -113,10 +119,6 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
   const where: string[] = [];
   const params: SQLQueryBindings[] = [];
 
-  if (filters.datasetId) {
-    where.push('dataset_id = ?');
-    params.push(uuidToBytes(filters.datasetId));
-  }
   if (filters.q) {
     const match = toFtsMatch(filters.q);
     // A whitespace-only query tokenizes to nothing; dropping the clause matches
@@ -127,7 +129,10 @@ function buildFilterClauses(filters: ListBookmarksFilters): {
     }
   }
   if (filters.categoryId) {
-    where.push('category_id = ?');
+    // Subtree expansion (MODEL.md principle 2): a bookmark in a child category
+    // matches a parent-category filter — the recursive CTE resolves the
+    // descendant set inside SQLite with one bound parameter.
+    where.push(`category_id ${CATEGORY_SUBTREE_IN}`);
     params.push(uuidToBytes(filters.categoryId));
   }
   if (filters.tagId) {
@@ -158,15 +163,12 @@ export function getBookmarkById(db: Database, id: string): Bookmark | null {
   return row ? mapBookmark(row) : null;
 }
 
-/**
- * URL lookup scoped to one dataset (the unique index is `(dataset_id, url)`
- * since migration 0008 — the same URL may exist in different datasets).
- */
-export function getBookmarkByUrl(db: Database, datasetId: string, url: string): Bookmark | null {
-  const row = prepared<BookmarkRow, [Uint8Array, string]>(
+/** Global URL lookup — the unique index is `bookmarks_url_unique` (one workspace). */
+export function getBookmarkByUrl(db: Database, url: string): Bookmark | null {
+  const row = prepared<BookmarkRow, [string]>(
     db,
-    `SELECT ${COLUMNS} FROM bookmarks WHERE dataset_id = ? AND url = ?`,
-  ).get(uuidToBytes(datasetId), normalizeUrl(url));
+    `SELECT ${COLUMNS} FROM bookmarks WHERE url = ?`,
+  ).get(normalizeUrl(url));
   return row ? mapBookmark(row) : null;
 }
 
@@ -179,11 +181,10 @@ export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
     const id = newIdBytes();
     prepared(
       db,
-      `INSERT INTO bookmarks (id, dataset_id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO bookmarks (id, url, title, description, content, metadata, category_id, content_hash, scraped_at, status, scrape_attempts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
-      uuidToBytes(input.datasetId),
       normalizeUrl(input.url),
       input.title ?? null,
       input.description ?? null,
@@ -207,7 +208,7 @@ export function createBookmark(db: Database, input: BookmarkInput): Bookmark {
 export function updateBookmark(
   db: Database,
   id: string,
-  patch: Partial<Omit<BookmarkInput, 'datasetId'>>,
+  patch: Partial<BookmarkInput>,
 ): Bookmark | null {
   const current = getBookmarkById(db, id);
   if (!current) {
@@ -256,21 +257,21 @@ export function updateBookmark(
 }
 
 /**
- * Idempotent upsert keyed on the normalized URL **within the input's dataset**
- * — imports into dataset A never touch a bookmark with the same URL in
- * dataset B.
+ * Idempotent upsert keyed on the normalized URL — globally unique, so an
+ * import merges with the one row that URL can have (ARCHITECTURE §7
+ * merge-by-URL).
  *
  * On update, `metadata` is shallow-merged over the existing row rather than
  * replaced: re-importing a collection refreshes the importer's `import` block
- * while preserving provenance the importer does not own (`scrape`, `image`),
- * per ARCHITECTURE §7 merge-by-URL. `updateBookmark` stays a replace-setter so
- * internal writers can intentionally clear a subtree.
+ * while preserving provenance the importer does not own (`scrape`, `image`).
+ * `updateBookmark` stays a replace-setter so internal writers can
+ * intentionally clear a field.
  */
 export function upsertBookmarkByUrl(
   db: Database,
   input: BookmarkInput,
 ): { bookmark: Bookmark; created: boolean } {
-  const existing = getBookmarkByUrl(db, input.datasetId, input.url);
+  const existing = getBookmarkByUrl(db, input.url);
   if (!existing) {
     return { bookmark: createBookmark(db, input), created: true };
   }
@@ -287,18 +288,9 @@ export function deleteBookmark(db: Database, id: string): boolean {
   return result.changes > 0;
 }
 
-export function countBookmarks(db: Database, datasetId?: string): number {
-  if (!datasetId) {
-    return (
-      prepared<{ count: number }, []>(db, 'SELECT COUNT(*) AS count FROM bookmarks').get()?.count ??
-      0
-    );
-  }
+export function countBookmarks(db: Database): number {
   return (
-    prepared<{ count: number }, [Uint8Array]>(
-      db,
-      'SELECT COUNT(*) AS count FROM bookmarks WHERE dataset_id = ?',
-    ).get(uuidToBytes(datasetId))?.count ?? 0
+    prepared<{ count: number }, []>(db, 'SELECT COUNT(*) AS count FROM bookmarks').get()?.count ?? 0
   );
 }
 
@@ -325,7 +317,7 @@ export function getBookmarkStatuses(db: Database, ids: string[]): Map<string, Bo
 }
 
 /**
- * Startup-reconciliation input (ARCHITECTURE §8): bookmarks that have never been
+ * Startup-reconciliation input (ARCHITECTURE §10): bookmarks that have never been
  * successfully scraped. A failed scrape leaves `scraped_at` NULL, so it is
  * retried on the next server start.
  */
@@ -339,10 +331,10 @@ export function listBookmarkIdsMissingContent(db: Database): string[] {
 }
 
 /**
- * Bookmarks that still need a screenshot (ARCHITECTURE §8, post-simplification):
- * they have neither a local `metadata.image.screenshotPath` nor a remote
- * `metadata.image.ogImageUrl` — the placeholder fallback in the UI is the last
- * resort, so reconciliation retries the capture on the next start.
+ * Bookmarks that still need a screenshot (ARCHITECTURE §10): they have neither
+ * a local `metadata.image.screenshotPath` nor a remote `metadata.image.ogImageUrl`
+ * — the placeholder fallback in the UI is the last resort, so reconciliation
+ * retries the capture on the next start.
  */
 export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
   return prepared<{ id: Uint8Array }, []>(
@@ -363,7 +355,7 @@ export function listBookmarkIdsMissingScreenshot(db: Database): string[] {
 }
 
 /**
- * Rebuilds the FTS5 index from the bookmarks table (the `reindex` job, §8). The
+ * Rebuilds the FTS5 index from the bookmarks table (the `reindex` job, §10). The
  * trigger-sync normally keeps it current; this repairs drift or corruption.
  * Returns the number of indexed rows.
  */
@@ -409,12 +401,12 @@ export function listBookmarks(
  * Full, uncapped read for exports. Deliberately skips `listBookmarks`'
  * pagination window so an export reflects the entire filtered set; the
  * 100-row `clampPagination` cap is a presentation concern enforced above this
- * layer, never here. `created_at DESC, id` is a total order (ids are unique),
- * so repeated exports are byte-stable.
+ * layer, never here (ARCHITECTURE §7 export). `created_at DESC, id` is a total
+ * order (ids are unique), so repeated exports are byte-stable.
  */
 export function listBookmarksForExport(
   db: Database,
-  filters: ListBookmarksFilters,
+  filters: ListBookmarksFilters = {},
 ): BookmarkWithTags[] {
   const { whereSql, params } = buildFilterClauses(filters);
   const rows = prepared<BookmarkRow, SQLQueryBindings[]>(
@@ -456,12 +448,9 @@ function buildFtsWhere(
   const where = ['bookmark_fts MATCH ?'];
   const bind: SQLQueryBindings[] = [match];
 
-  if (params.datasetId) {
-    where.push('b.dataset_id = ?');
-    bind.push(uuidToBytes(params.datasetId));
-  }
   if (params.categoryId) {
-    where.push('b.category_id = ?');
+    // Same subtree semantics as listBookmarks (see buildFilterClauses).
+    where.push(`b.category_id ${CATEGORY_SUBTREE_IN}`);
     bind.push(uuidToBytes(params.categoryId));
   }
   if (params.tagId) {

@@ -6,24 +6,37 @@ import { mapTag, type TagRow } from '../row-mapping.ts';
 import { newIdBytes } from '../uuid.ts';
 import { prepared } from './statements.ts';
 
-const COLUMNS = 'id, dataset_id, category_id, name, description, status, created_at';
+/**
+ * Controlled vocabulary — one flat, global namespace (MODEL.md principle 2:
+ * tags have no category; the classifier candidate set is all `active` tags).
+ * Names are globally unique via `tags_name_unique`; lifecycle is the two-state
+ * `active ⇄ deprecated`, where only `active` tags are auto-assignable.
+ */
 
-export function listTags(db: Database, datasetId: string): Tag[] {
-  return prepared<TagRow, [Uint8Array]>(
+const COLUMNS = 'id, name, description, status, created_at';
+
+export function listTags(db: Database): Tag[] {
+  return prepared<TagRow, []>(db, `SELECT ${COLUMNS} FROM tags ORDER BY name`).all().map(mapTag);
+}
+
+export function countTags(db: Database): number {
+  return (
+    prepared<{ count: number }, []>(db, 'SELECT COUNT(*) AS count FROM tags').get()?.count ?? 0
+  );
+}
+
+export function listTagsByStatus(db: Database, status: TagStatus): Tag[] {
+  return prepared<TagRow, [string]>(
     db,
-    `SELECT ${COLUMNS} FROM tags WHERE dataset_id = ? ORDER BY name`,
+    `SELECT ${COLUMNS} FROM tags WHERE status = ? ORDER BY name`,
   )
-    .all(uuidToBytes(datasetId))
+    .all(status)
     .map(mapTag);
 }
 
-export function listTagsByStatus(db: Database, datasetId: string, status: TagStatus): Tag[] {
-  return prepared<TagRow, [Uint8Array, string]>(
-    db,
-    `SELECT ${COLUMNS} FROM tags WHERE dataset_id = ? AND status = ? ORDER BY name`,
-  )
-    .all(uuidToBytes(datasetId), status)
-    .map(mapTag);
+/** The classifier candidate set: ALL active tags (ARCHITECTURE §7 stage 0). */
+export function listActiveTags(db: Database): Tag[] {
+  return listTagsByStatus(db, 'active');
 }
 
 export function getTagById(db: Database, id: string): Tag | null {
@@ -33,48 +46,32 @@ export function getTagById(db: Database, id: string): Tag | null {
   return row ? mapTag(row) : null;
 }
 
-/** Name is unique within a scope: per (dataset, category) when scoped, per dataset when unscoped. */
-export function getTagByName(
-  db: Database,
-  datasetId: string,
-  name: string,
-  categoryId: string | null,
-): Tag | null {
-  const row = categoryId
-    ? prepared<TagRow, [Uint8Array, string, Uint8Array]>(
-        db,
-        `SELECT ${COLUMNS} FROM tags WHERE dataset_id = ? AND name = ? AND category_id = ?`,
-      ).get(uuidToBytes(datasetId), name, uuidToBytes(categoryId))
-    : prepared<TagRow, [Uint8Array, string]>(
-        db,
-        `SELECT ${COLUMNS} FROM tags WHERE dataset_id = ? AND name = ? AND category_id IS NULL`,
-      ).get(uuidToBytes(datasetId), name);
+export function getTagByName(db: Database, name: string): Tag | null {
+  const row = prepared<TagRow, [string]>(db, `SELECT ${COLUMNS} FROM tags WHERE name = ?`).get(
+    name,
+  );
   return row ? mapTag(row) : null;
 }
 
 export interface TagInput {
-  datasetId: string;
   name: string;
-  categoryId?: string | null;
   description?: string | null;
 }
 
+/**
+ * Creates a tag `active` (vocabulary is created in its usable state, MODEL.md
+ * principle 3). Returns the existing tag when the name is taken — the
+ * merge-by-name behavior the importer relies on.
+ */
 export function createTag(db: Database, input: TagInput): Tag {
-  const categoryId = input.categoryId ?? null;
   const run = db.transaction(() => {
-    const existing = getTagByName(db, input.datasetId, input.name, categoryId);
+    const existing = getTagByName(db, input.name);
     if (existing) {
       return existing;
     }
     const id = newIdBytes();
-    prepared(
-      db,
-      `INSERT INTO tags (id, dataset_id, category_id, name, description, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(
+    prepared(db, 'INSERT INTO tags (id, name, description, status) VALUES (?, ?, ?, ?)').run(
       id,
-      uuidToBytes(input.datasetId),
-      categoryId ? uuidToBytes(categoryId) : null,
       input.name,
       input.description ?? null,
       'active',
@@ -88,6 +85,7 @@ export function createTag(db: Database, input: TagInput): Tag {
   return run.immediate();
 }
 
+/** `active ⇄ deprecated`: deprecating retires a tag from classification without deleting history. */
 export function setTagStatus(db: Database, id: string, status: TagStatus): Tag | null {
   const result = prepared(db, 'UPDATE tags SET status = ? WHERE id = ?').run(
     status,
@@ -105,18 +103,15 @@ export function updateTag(
   patch: {
     name?: string;
     description?: string | null;
-    categoryId?: string | null;
   },
 ): Tag | null {
   const current = getTagById(db, id);
   if (!current) {
     return null;
   }
-  const categoryId = patch.categoryId === undefined ? current.categoryId : patch.categoryId;
-  prepared(db, 'UPDATE tags SET name = ?, description = ?, category_id = ? WHERE id = ?').run(
+  prepared(db, 'UPDATE tags SET name = ?, description = ? WHERE id = ?').run(
     patch.name ?? current.name,
     patch.description === undefined ? current.description : patch.description,
-    categoryId ? uuidToBytes(categoryId) : null,
     uuidToBytes(id),
   );
   return getTagById(db, id);

@@ -20,8 +20,10 @@ export interface AssignTagInput {
 }
 
 /**
- * Upserts an effective assignment. User-sourced rows are never overwritten by a
- * classifier or import run (MODEL.md: "User rows win").
+ * Upserts an effective assignment. User and import rows win (ARCHITECTURE §7
+ * "User rows win"): classifier-sourced assignments never overwrite them, and
+ * classifier re-runs never retract them (reconcileClassifierAssignments only
+ * deletes `source = 'classifier'` rows).
  */
 export function assignTag(db: Database, input: AssignTagInput): void {
   const existing = prepared<{ source: string }, [Uint8Array, Uint8Array]>(
@@ -29,6 +31,13 @@ export function assignTag(db: Database, input: AssignTagInput): void {
     'SELECT source FROM bookmark_tags WHERE bookmark_id = ? AND tag_id = ?',
   ).get(uuidToBytes(input.bookmarkId), uuidToBytes(input.tagId));
 
+  if (
+    existing &&
+    input.source === 'classifier' &&
+    (existing.source === 'user' || existing.source === 'import')
+  ) {
+    return;
+  }
   if (existing && existing.source === 'user' && input.source !== 'user') {
     return;
   }

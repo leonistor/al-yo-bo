@@ -1,74 +1,130 @@
-import { Database } from 'bun:sqlite';
+import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { bytesToUuid, uuidToBytes } from '@al-yo-bo/shared';
 
 import {
   assignTag,
-  createDataset,
+  countBookmarks,
   createBookmark,
   createCategory,
   createClassificationResult,
   createClassificationRun,
-  createSection,
   createTag,
   createUnknownClassificationLabel,
   deleteBookmark,
   deleteCategory,
+  candidatesForBookmark,
+  CategoryCycleError,
   getAggregates,
   getBookmarkById,
-  getBookmarksWithTagsByIds,
   getBookmarkStatuses,
+  getBookmarksWithTagsByIds,
   getBookmarkTags,
   getCategoryById,
-  getDatasetByName,
+  getCategorySubtreeInfo,
+  getCategoryTree,
   getProfile,
   getTagByName,
   keywordSearch,
+  listActiveTags,
+  listBelowThresholdCandidates,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
-  listBelowThresholdCandidates,
   listBookmarks,
   listBookmarksForExport,
-  listSections,
-  listUnknownClassificationLabels,
-  DEFAULT_SEED_PATH,
+  listCategoryPath,
   listEmbeddingModelMismatches,
-  migrate,
+  listTags,
+  listUnknownClassificationLabels,
+  loadSeedFixture,
+  moveCategory,
   newIdBytes,
+  OCTOCAT_SEED_PATH,
   openDatabase,
-  resetSeedData,
-  resolveSeedDataset,
-  seedDataset,
-  seedFromFile,
+  reconcileClassifierAssignments,
+  seedDatabase,
+  setTagStatus,
   setupDatabase,
-  UnknownSeedDatasetError,
   updateBookmark,
   upsertBookmarkByUrl,
   upsertEmbedding,
+  wipeContent,
 } from '../src/index.ts';
 
-function freshDb(): Database & { datasetId: string } {
-  const db = openDatabase(':memory:') as Database & { datasetId: string };
+function freshDb(): Database {
+  const db = openDatabase(':memory:');
   setupDatabase(db);
-  db.datasetId = createDataset(db, 'test').id;
   return db;
 }
 
 describe('schema & triggers', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
+  test('migration 0001 creates the v2 tables and indexes on a fresh database', () => {
+    const applied = db
+      .query<{ version: string }, []>('SELECT version FROM schema_migrations')
+      .all()
+      .map((row) => row.version);
+    expect(applied).toEqual(['0001_init.sql']);
+
+    const tables = db
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+      )
+      .all()
+      .map((row) => row.name);
+    for (const name of [
+      'profile',
+      'categories',
+      'bookmarks',
+      'tags',
+      'classification_runs',
+      'classification_results',
+      'unknown_classification_labels',
+      'bookmark_tags',
+      'bookmark_embeddings',
+      'bookmark_fts',
+    ]) {
+      expect(tables).toContain(name);
+    }
+    // The v2 no-scoping indexes exist; no dataset/section artifacts remain.
+    const indexes = db
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name",
+      )
+      .all()
+      .map((row) => row.name);
+    for (const name of [
+      'bookmarks_url_unique',
+      'categories_root_name_unique',
+      'categories_child_name_unique',
+      'categories_parent_order',
+      'tags_name_unique',
+    ]) {
+      expect(indexes).toContain(name);
+    }
+    expect(tables).not.toContain('datasets');
+    expect(tables).not.toContain('sections');
+  });
+
+  test('the profile singleton exists with the sentinel id and null identity', () => {
+    const profile = getProfile(db)!;
+    expect(profile.id).toBe('00000000-0000-0000-0000-000000000000');
+    expect(profile.name).toBeNull();
+    expect(profile.githubUsername).toBeNull();
+    expect(profile.avatarPath).toBeNull();
+    expect(profile.createdAt).toBeGreaterThan(1_000_000_000_000);
+  });
+
   test('forces server timestamps on insert, overriding client values', () => {
     const id = newIdBytes();
-    db.query('INSERT INTO categories (id, dataset_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+    db.query('INSERT INTO categories (id, sort_order, name, created_at) VALUES (?, ?, ?, ?)').run(
       id,
-      uuidToBytes(db.datasetId),
+      'U',
       'x',
       1,
     );
@@ -79,7 +135,6 @@ describe('schema & triggers', () => {
 
   test('bumps bookmark_embeddings.updated_at on re-upsert', () => {
     const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/embed-fresh',
       content: 'body',
     });
@@ -112,7 +167,6 @@ describe('schema & triggers', () => {
 
   test('keeps the FTS index in sync across insert, update and delete', () => {
     const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/a',
       title: 'Hello world',
     });
@@ -126,43 +180,141 @@ describe('schema & triggers', () => {
     expect(keywordSearch(db, { q: 'moon' }).length).toBe(0);
   });
 
-  test('deleting a category nulls the bookmark reference instead of cascading', () => {
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Alpha' });
-    const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/b',
-      categoryId: category.id,
-    });
-    deleteCategory(db, category.id);
-    expect(getBookmarkById(db, bookmark.id)?.categoryId).toBeNull();
+  test('enforces global URL uniqueness', () => {
+    createBookmark(db, { url: 'https://dup.test/page' });
+    expect(() => createBookmark(db, { url: 'https://dup.test/page' })).toThrow();
+    // The upsert key is the same global URL: a second upsert merges in place.
+    const merged = upsertBookmarkByUrl(db, { url: 'https://dup.test/page', title: 'merged' });
+    expect(merged.created).toBe(false);
+    expect(countBookmarks(db)).toBe(1);
+    expect(merged.bookmark.title).toBe('merged');
   });
 
-  test('applies the bookmark status migration with defaults', () => {
-    const versions = db
-      .query<{ version: string }, []>('SELECT version FROM schema_migrations')
-      .all()
-      .map((row) => row.version);
-    expect(versions).toContain('0002_bookmark_status.sql');
+  test('enforces global tag-name uniqueness', () => {
+    const tag = createTag(db, { name: 'web' });
+    const again = createTag(db, { name: 'web' });
+    expect(again.id).toBe(tag.id);
+    expect(listTags(db)).toHaveLength(1);
+    // A raw duplicate insert violates tags_name_unique.
+    expect(() =>
+      db
+        .query('INSERT INTO tags (id, name, status) VALUES (?, ?, ?)')
+        .run(newIdBytes(), 'web', 'active'),
+    ).toThrow();
+  });
 
-    const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/status-defaults',
-    });
-    expect(bookmark.status).toBe('active');
-    expect(bookmark.scrapeAttempts).toBe(0);
+  test('sibling names are unique per parent, but reusable across parents and at the root', () => {
+    const web = createCategory(db, { name: 'web' });
+    const books = createCategory(db, { name: 'books' });
+    createCategory(db, { name: '2024', parentId: web.id });
+    // Same name under a different parent is allowed (two partial indexes).
+    createCategory(db, { name: '2024', parentId: books.id });
+    // Same name as a root while children hold it is allowed too.
+    createCategory(db, { name: '2024' });
+    expect(getCategoryById(db, books.id)).not.toBeNull();
+
+    // Same name under the SAME parent: the helper merges (returns the
+    // existing sibling — importer semantics), and a raw insert that bypasses
+    // the merge hits the partial unique index.
+    const merged = createCategory(db, { name: '2024', parentId: web.id, sortOrder: 'zz' });
+    expect(merged.sortOrder).not.toBe('zz');
+    expect(() =>
+      db
+        .query('INSERT INTO categories (id, parent_id, sort_order, name) VALUES (?, ?, ?, ?)')
+        .run(newIdBytes(), uuidToBytes(books.id), 'm', '2024'),
+    ).toThrow();
+  });
+});
+
+describe('category tree', () => {
+  let db: Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('createCategory appends fractional sort keys per sibling list', () => {
+    const root = createCategory(db, { name: 'root' });
+    const a = createCategory(db, { name: 'a', parentId: root.id });
+    const b = createCategory(db, { name: 'b', parentId: root.id });
+    const c = createCategory(db, { name: 'c', parentId: root.id });
+    expect(a.sortOrder < b.sortOrder && b.sortOrder < c.sortOrder).toBe(true);
+    // Roots get their own independent key sequence.
+    const other = createCategory(db, { name: 'other-root' });
+    expect(other.sortOrder >= root.sortOrder).toBe(true);
+  });
+
+  test('getCategoryTree nests children under roots in sort order', () => {
+    const dev = createCategory(db, { name: 'dev' });
+    createCategory(db, { name: 'editors', parentId: dev.id });
+    createCategory(db, { name: 'web', parentId: dev.id });
+    const design = createCategory(db, { name: 'design' });
+    expect(design.parentId).toBeNull();
+
+    const tree = getCategoryTree(db);
+    expect(tree.map((node) => node.name)).toEqual(['dev', 'design']);
+    expect(tree[0]!.children.map((node) => node.name)).toEqual(['editors', 'web']);
+    expect(tree[0]!.children[0]!.children).toEqual([]);
+    expect(tree[1]!.name).toBe('design');
+  });
+
+  test('listCategoryPath returns the ancestor chain root → node', () => {
+    const root = createCategory(db, { name: 'dev' });
+    const mid = createCategory(db, { name: 'web', parentId: root.id });
+    const leaf = createCategory(db, { name: '2024', parentId: mid.id });
+    expect(listCategoryPath(db, leaf.id).map((c) => c.name)).toEqual(['dev', 'web', '2024']);
+    expect(listCategoryPath(db, root.id).map((c) => c.name)).toEqual(['dev']);
+  });
+
+  test('moveCategory re-parents with a fresh sibling key', () => {
+    const parentA = createCategory(db, { name: 'a' });
+    const parentB = createCategory(db, { name: 'b' });
+    const child = createCategory(db, { name: 'child', parentId: parentA.id });
+
+    const moved = moveCategory(db, child.id, parentB.id);
+    expect(moved?.parentId).toBe(parentB.id);
+    expect(getCategoryTree(db).find((n) => n.id === parentB.id)?.children[0]?.id).toBe(child.id);
+  });
+
+  test('moveCategory refuses self-parenting and descendant targets', () => {
+    const root = createCategory(db, { name: 'root' });
+    const child = createCategory(db, { name: 'child', parentId: root.id });
+    const grandchild = createCategory(db, { name: 'grandchild', parentId: child.id });
+
+    expect(() => moveCategory(db, root.id, root.id)).toThrow(CategoryCycleError);
+    // Moving root under its own grandchild would close a cycle.
+    expect(() => moveCategory(db, root.id, grandchild.id)).toThrow(CategoryCycleError);
+    expect(() => moveCategory(db, child.id, child.id)).toThrow(CategoryCycleError);
+    // Legitimate move still works after the refusals.
+    expect(moveCategory(db, grandchild.id, null)?.parentId).toBeNull();
+  });
+
+  test('deleteCategory cascades the subtree and nulls bookmark references', () => {
+    const root = createCategory(db, { name: 'root' });
+    const child = createCategory(db, { name: 'child', parentId: root.id });
+    const inChild = createBookmark(db, { url: 'https://tree.test/child', categoryId: child.id });
+    const elsewhere = createBookmark(db, { url: 'https://tree.test/elsewhere' });
+
+    expect(getCategorySubtreeInfo(db, root.id)).toEqual({ categories: 2, bookmarks: 1 });
+    const info = deleteCategory(db, root.id);
+    expect(info).toEqual({ categories: 2, bookmarks: 1 });
+
+    expect(getCategoryById(db, root.id)).toBeNull();
+    expect(getCategoryById(db, child.id)).toBeNull();
+    // Bookmarks are content, not structure: they survive with a NULL category.
+    expect(getBookmarkById(db, inChild.id)?.categoryId).toBeNull();
+    expect(getBookmarkById(db, elsewhere.id)).not.toBeNull();
   });
 });
 
 describe('bookmark status', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   function createStatusFixtures(): void {
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://s-active.test', title: 'keep me' });
+    createBookmark(db, { url: 'https://s-active.test', title: 'keep me' });
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://s-invalid.test',
       title: 'keep me too',
       status: 'invalid',
@@ -188,13 +340,8 @@ describe('bookmark status', () => {
   });
 
   test('reconciliation queries exclude invalid bookmarks', () => {
-    const active = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://r-active.test',
-      content: 'body',
-    });
+    const active = createBookmark(db, { url: 'https://r-active.test', content: 'body' });
     const invalid = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://r-invalid.test',
       content: 'body',
       status: 'invalid',
@@ -222,15 +369,14 @@ describe('bookmark status', () => {
   test('aggregates report the invalid bookmark count', () => {
     createStatusFixtures();
 
-    const aggregates = getAggregates(db, db.datasetId);
+    const aggregates = getAggregates(db);
     expect(aggregates.total).toBe(2);
     expect(aggregates.invalidCount).toBe(1);
   });
 
   test('getBookmarkStatuses batches id → status lookups', () => {
-    const active = createBookmark(db, { datasetId: db.datasetId, url: 'https://bs-active.test' });
+    const active = createBookmark(db, { url: 'https://bs-active.test' });
     const invalid = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://bs-invalid.test',
       status: 'invalid',
       scrapeAttempts: 3,
@@ -249,18 +395,10 @@ describe('bookmark status', () => {
     // unchunked IN (...) would throw "too many SQL variables".
     const ids: string[] = [];
     db.transaction(() => {
-      const insert = db.query(
-        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
-      );
+      const insert = db.query('INSERT INTO bookmarks (id, url, title, status) VALUES (?, ?, ?, ?)');
       for (let i = 0; i < 1200; i++) {
         const id = newIdBytes();
-        insert.run(
-          id,
-          uuidToBytes(db.datasetId),
-          `https://chunk.test/${i}`,
-          `Chunk ${i}`,
-          'active',
-        );
+        insert.run(id, `https://chunk.test/${i}`, `Chunk ${i}`, 'active');
         ids.push(bytesToUuid(id));
       }
     }).immediate();
@@ -279,14 +417,14 @@ describe('bookmark status', () => {
 });
 
 describe('tag assignments', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   test('classifier assignments never overwrite user assignments', () => {
-    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/c' });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'frontend' });
+    const bookmark = createBookmark(db, { url: 'https://example.com/c' });
+    const tag = createTag(db, { name: 'frontend' });
 
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
     assignTag(db, {
@@ -301,8 +439,8 @@ describe('tag assignments', () => {
   });
 
   test('classifier assignments do update classifier-sourced rows', () => {
-    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://example.com/d' });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'backend' });
+    const bookmark = createBookmark(db, { url: 'https://example.com/d' });
+    const tag = createTag(db, { name: 'backend' });
 
     assignTag(db, {
       bookmarkId: bookmark.id,
@@ -322,18 +460,45 @@ describe('tag assignments', () => {
   });
 });
 
+describe('classification candidate set', () => {
+  let db: Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('candidates are ALL active tags regardless of category (MODEL.md principle 2)', () => {
+    const category = createCategory(db, { name: 'scoped' });
+    const bookmark = createBookmark(db, { url: 'https://cand.test', categoryId: category.id });
+    createTag(db, { name: 'active-one' });
+    createTag(db, { name: 'active-two' });
+    const retired = createTag(db, { name: 'retired' });
+
+    // The bookmark's category must not narrow the set: tags have no category.
+    expect(candidatesForBookmark(db, bookmark.id).map((tag) => tag.name)).toEqual([
+      'active-one',
+      'active-two',
+      'retired',
+    ]);
+
+    // Deprecating removes a tag from the candidate set; the row stays for history.
+    setTagStatus(db, retired.id, 'deprecated');
+    expect(candidatesForBookmark(db, bookmark.id).map((tag) => tag.name)).toEqual([
+      'active-one',
+      'active-two',
+    ]);
+    expect(listActiveTags(db)).toHaveLength(2);
+  });
+});
+
 describe('review queue', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   test('excludes already-assigned pairs and keeps only the latest run per pair', () => {
-    const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://review.test/page',
-    });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'reviewable' });
+    const bookmark = createBookmark(db, { url: 'https://review.test/page' });
+    const tag = createTag(db, { name: 'reviewable' });
 
     const olderRun = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'test' });
     createClassificationResult(db, { runId: olderRun, tagId: tag.id, probability: 0.5 });
@@ -350,31 +515,108 @@ describe('review queue', () => {
       uuidToBytes(newerRun),
     );
 
-    const candidates = listBelowThresholdCandidates(db, db.datasetId, 0.7);
+    const candidates = listBelowThresholdCandidates(db, 0.7);
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.probability).toBe(0.2);
     expect(candidates[0]?.runId).toBe(newerRun);
 
     // Accepting writes the assignment; the pair must leave the queue.
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
-    expect(listBelowThresholdCandidates(db, db.datasetId, 0.7)).toEqual([]);
+    expect(listBelowThresholdCandidates(db, 0.7)).toEqual([]);
+  });
+});
+
+describe('classification evidence immutability', () => {
+  let db: Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  test('re-running classification appends evidence; prior rows keep their content', () => {
+    const bookmark = createBookmark(db, { url: 'https://immutable.test' });
+    const tag = createTag(db, { name: 'evidenced' });
+
+    const run1 = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    createClassificationResult(db, {
+      runId: run1,
+      tagId: tag.id,
+      probability: 0.55,
+      selected: true,
+      rawLabel: 'evidenced',
+    });
+    assignTag(db, {
+      bookmarkId: bookmark.id,
+      tagId: tag.id,
+      source: 'classifier',
+      runId: run1,
+      confidence: 0.55,
+    });
+    const rowsBefore = db
+      .query<{ probability: number; selected: number; raw_label: string | null }, []>(
+        'SELECT probability, selected, raw_label FROM classification_results',
+      )
+      .all();
+
+    // A second pass with nothing qualifying retracts the effective assignment
+    // but appends a new run — evidence is never rewritten or deleted.
+    const run2 = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    createClassificationResult(db, { runId: run2, tagId: tag.id, probability: 0.6 });
+    const { retracted } = reconcileClassifierAssignments(db, {
+      bookmarkId: bookmark.id,
+      qualifiedTagIds: [],
+      runIds: [run2],
+    });
+    expect(retracted).toBe(1);
+    expect(getBookmarkTags(db, bookmark.id)).toEqual([]);
+
+    const rowsAfter = db
+      .query<{ probability: number; selected: number; raw_label: string | null }, []>(
+        // No created_at on this table; UUIDv7 ids are time-ordered.
+        'SELECT probability, selected, raw_label FROM classification_results ORDER BY id',
+      )
+      .all();
+    expect(rowsAfter).toHaveLength(2);
+    // Probability and raw label are untouched; only the policy-derived
+    // `selected` bit of the stale row was reconciled (MODEL.md principle 4).
+    expect(rowsAfter[0]).toEqual({ ...rowsBefore[0]!, selected: 0 });
+    expect(rowsAfter[1]).toEqual({ probability: 0.6, selected: 0, raw_label: null });
+  });
+
+  test('retraction leaves user/import rows untouched and reconciles selected only', () => {
+    const bookmark = createBookmark(db, { url: 'https://retract.test' });
+    const tag = createTag(db, { name: 'keep-me' });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'import' });
+
+    const run = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    createClassificationResult(db, { runId: run, tagId: tag.id, probability: 0.9, selected: true });
+    assignTag(db, {
+      bookmarkId: bookmark.id,
+      tagId: tag.id,
+      source: 'classifier',
+      runId: run,
+      confidence: 0.9,
+    });
+
+    reconcileClassifierAssignments(db, {
+      bookmarkId: bookmark.id,
+      qualifiedTagIds: [],
+      runIds: [],
+    });
+
+    // The import row wins; only the classifier-sourced row was retracted.
+    const [assignment] = getBookmarkTags(db, bookmark.id);
+    expect(assignment?.source).toBe('import');
   });
 });
 
 describe('unknown classification labels', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   test('persists immutable evidence rows with server timestamps', () => {
-    const versions = db
-      .query<{ version: string }, []>('SELECT version FROM schema_migrations')
-      .all()
-      .map((row) => row.version);
-    expect(versions).toContain('0006_unknown_classification_labels.sql');
-
-    const bookmark = createBookmark(db, { datasetId: db.datasetId, url: 'https://ucl.test' });
+    const bookmark = createBookmark(db, { url: 'https://ucl.test' });
     const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
 
     createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.99 });
@@ -388,10 +630,7 @@ describe('unknown classification labels', () => {
   });
 
   test('cascades away with the classification run', () => {
-    const bookmark = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://ucl-cascade.test',
-    });
+    const bookmark = createBookmark(db, { url: 'https://ucl-cascade.test' });
     const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
     createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.9 });
 
@@ -401,79 +640,97 @@ describe('unknown classification labels', () => {
 });
 
 describe('listing & aggregates', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
-  test('filters by category and paginates', () => {
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Tools' });
-    createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://a.test',
-      title: 'A',
-      categoryId: category.id,
-    });
-    createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://b.test',
-      title: 'B',
-      categoryId: category.id,
-    });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://c.test', title: 'C' });
+  test('a category filter matches the whole subtree, paginates, and aggregates per category', () => {
+    const parent = createCategory(db, { name: 'Tools' });
+    const child = createCategory(db, { name: 'Hammer', parentId: parent.id });
+    createBookmark(db, { url: 'https://a.test', title: 'A', categoryId: parent.id });
+    createBookmark(db, { url: 'https://b.test', title: 'B', categoryId: child.id });
+    createBookmark(db, { url: 'https://c.test', title: 'C' });
 
-    const page = listBookmarks(db, { categoryId: category.id, limit: 1, offset: 0 });
+    // MODEL.md principle 2: a bookmark in a child category matches a
+    // parent-category filter — the filter expands to the subtree.
+    expect(listBookmarks(db, { categoryId: parent.id }).total).toBe(2);
+    expect(listBookmarks(db, { categoryId: child.id }).total).toBe(1);
+    expect(listBookmarks(db).total).toBe(3);
+
+    const page = listBookmarks(db, { categoryId: parent.id, limit: 1, offset: 0 });
     expect(page.total).toBe(2);
     expect(page.items.length).toBe(1);
 
-    const aggregates = getAggregates(db, db.datasetId);
+    const aggregates = getAggregates(db);
     expect(aggregates.total).toBe(3);
-    expect(aggregates.categories.find((c) => c.id === category.id)?.count).toBe(2);
+    const byId = new Map(aggregates.categories.map((c) => [c.id, c]));
+    expect(byId.get(parent.id)?.count).toBe(1);
+    expect(byId.get(child.id)?.count).toBe(1);
+    expect(byId.get(parent.id)?.parentId).toBeNull();
+    expect(byId.get(child.id)?.parentId).toBe(parent.id);
+  });
+
+  test('keyword search honors the subtree filter too', () => {
+    const parent = createCategory(db, { name: 'Lang' });
+    const child = createCategory(db, { name: 'Rust', parentId: parent.id });
+    createBookmark(db, {
+      url: 'https://rust.test',
+      title: 'Rust async guide',
+      categoryId: child.id,
+    });
+    createBookmark(db, { url: 'https://go.test', title: 'Go async guide' });
+
+    expect(keywordSearch(db, { q: 'async', categoryId: parent.id })).toHaveLength(1);
+    expect(keywordSearch(db, { q: 'async' })).toHaveLength(2);
+  });
+
+  test('deleting a bookmark removes its tags and FTS rows with it', () => {
+    const bookmark = createBookmark(db, { url: 'https://del.test', title: 'Doomed' });
+    const tag = createTag(db, { name: 'doomed-tag' });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
+    expect(keywordSearch(db, { q: 'doomed' })).toHaveLength(1);
+
+    deleteBookmark(db, bookmark.id);
+    expect(keywordSearch(db, { q: 'doomed' })).toHaveLength(0);
+    expect(getBookmarkTags(db, bookmark.id)).toEqual([]);
+    // The tag itself is vocabulary — it survives the bookmark.
+    expect(getTagByName(db, 'doomed-tag')).not.toBeNull();
   });
 });
 
 describe('export listing', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   test('filters by an inclusive created_at range', () => {
-    const older = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-old.test' });
-    const middle = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-mid.test' });
-    const newer = createBookmark(db, { datasetId: db.datasetId, url: 'https://exp-new.test' });
+    const older = createBookmark(db, { url: 'https://exp-old.test' });
+    const middle = createBookmark(db, { url: 'https://exp-mid.test' });
+    const newer = createBookmark(db, { url: 'https://exp-new.test' });
     for (const [bookmark, at] of [
       [older, 1000],
       [middle, 2000],
       [newer, 3000],
     ] as const) {
-      db.query('UPDATE bookmarks SET created_at = ? WHERE id = ?').run(at, uuidToBytes(bookmark.id));
+      db.query('UPDATE bookmarks SET created_at = ? WHERE id = ?').run(
+        at,
+        uuidToBytes(bookmark.id),
+      );
     }
 
-    const rows = listBookmarksForExport(db, {
-      datasetId: db.datasetId,
-      dateFrom: 1000,
-      dateTo: 2000,
-    });
+    const rows = listBookmarksForExport(db, { dateFrom: 1000, dateTo: 2000 });
     expect(rows.map((bookmark) => bookmark.id)).toEqual([middle.id, older.id]);
   });
 
   test('combines category, tag, and status filters', () => {
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Exportable' });
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'export-tag' });
-    const match = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://exp-match.test',
-      categoryId: category.id,
-    });
+    const category = createCategory(db, { name: 'Exportable' });
+    const tag = createTag(db, { name: 'export-tag' });
+    const match = createBookmark(db, { url: 'https://exp-match.test', categoryId: category.id });
     assignTag(db, { bookmarkId: match.id, tagId: tag.id, source: 'user' });
+    createBookmark(db, { url: 'https://exp-other.test', categoryId: category.id });
     createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://exp-other.test',
-      categoryId: category.id,
-    });
-    createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://exp-invalid.test',
       categoryId: category.id,
       status: 'invalid',
@@ -481,7 +738,6 @@ describe('export listing', () => {
     });
 
     const rows = listBookmarksForExport(db, {
-      datasetId: db.datasetId,
       categoryId: category.id,
       tagId: tag.id,
       status: 'active',
@@ -491,69 +747,46 @@ describe('export listing', () => {
 
   test('filters by a full-text query through the FTS index', () => {
     const hit = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://exp-fts.test',
       title: 'Kubernetes networking guide',
     });
-    createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://exp-fts-other.test',
-      title: 'Gardening tips',
-    });
+    createBookmark(db, { url: 'https://exp-fts-other.test', title: 'Gardening tips' });
 
-    const rows = listBookmarksForExport(db, { datasetId: db.datasetId, q: 'kubernetes' });
+    const rows = listBookmarksForExport(db, { q: 'kubernetes' });
     expect(rows.map((bookmark) => bookmark.id)).toEqual([hit.id]);
   });
 
   test('returns the whole filtered set, bypassing the list page cap', () => {
     db.transaction(() => {
-      const insert = db.query(
-        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
-      );
+      const insert = db.query('INSERT INTO bookmarks (id, url, title, status) VALUES (?, ?, ?, ?)');
       for (let i = 0; i < 105; i++) {
-        insert.run(
-          newIdBytes(),
-          uuidToBytes(db.datasetId),
-          `https://exp-bulk.test/${i}`,
-          `Bulk ${i}`,
-          'active',
-        );
+        insert.run(newIdBytes(), `https://exp-bulk.test/${i}`, `Bulk ${i}`, 'active');
       }
     }).immediate();
 
-    expect(listBookmarks(db, { datasetId: db.datasetId, limit: 100 }).items).toHaveLength(100);
-    expect(listBookmarksForExport(db, { datasetId: db.datasetId })).toHaveLength(105);
+    expect(listBookmarks(db, { limit: 100 }).items).toHaveLength(100);
+    expect(listBookmarksForExport(db)).toHaveLength(105);
   });
 
   test('orders by created_at desc with id as a stable tie-break', () => {
     const ids: string[] = [];
     db.transaction(() => {
-      const insert = db.query(
-        'INSERT INTO bookmarks (id, dataset_id, url, title, status) VALUES (?, ?, ?, ?, ?)',
-      );
+      const insert = db.query('INSERT INTO bookmarks (id, url, title, status) VALUES (?, ?, ?, ?)');
       for (let i = 0; i < 10; i++) {
         const id = newIdBytes();
-        insert.run(
-          id,
-          uuidToBytes(db.datasetId),
-          `https://exp-order.test/${i}`,
-          `Order ${i}`,
-          'active',
-        );
+        insert.run(id, `https://exp-order.test/${i}`, `Order ${i}`, 'active');
         ids.push(bytesToUuid(id));
       }
     }).immediate();
-    db.query('UPDATE bookmarks SET created_at = 5000 WHERE dataset_id = ?').run(
-      uuidToBytes(db.datasetId),
-    );
+    db.query('UPDATE bookmarks SET created_at = 5000').run();
 
-    const rows = listBookmarksForExport(db, { datasetId: db.datasetId });
+    const rows = listBookmarksForExport(db);
     expect(rows.map((bookmark) => bookmark.id)).toEqual(ids.toSorted());
   });
 });
 
 describe('bookmark image projection', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
@@ -566,7 +799,6 @@ describe('bookmark image projection', () => {
       screenshotPath: 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa.jpg',
     };
     const created = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://img.test',
       title: 'With image',
       metadata: { image },
@@ -577,169 +809,19 @@ describe('bookmark image projection', () => {
   });
 
   test('falls back to a both-null image when metadata has none', () => {
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://plain.test' });
+    createBookmark(db, { url: 'https://plain.test' });
     expect(listBookmarks(db).items[0]?.image).toEqual({ ogImageUrl: null, screenshotPath: null });
   });
 });
 
-describe('seed fixture', () => {
-  test('loads the synthetic demo dataset and is idempotent', () => {
-    const db = freshDb();
-    const grimoire = resolveSeedDataset('grimoire');
-
-    const first = seedFromFile(db, grimoire);
-    expect(first.bookmarksAdded).toBe(23);
-    expect(first.categoriesCreated).toBe(8);
-    expect(first.tagsCreated).toBe(51);
-    expect(first.assignments).toBeGreaterThan(0);
-
-    const second = seedFromFile(db, grimoire);
-    expect(second.bookmarksAdded).toBe(0);
-    expect(second.bookmarksUpdated).toBe(23);
-    expect(second.categoriesCreated).toBe(0);
-    expect(second.tagsCreated).toBe(0);
-
-    const grimoireId = getDatasetByName(db, 'grimoire')!.id;
-    const aggregates = getAggregates(db, grimoireId);
-    expect(aggregates.total).toBe(23);
-    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
-  });
-
-  test('loads the octocat dev fixture from the default path', () => {
-    const db = freshDb();
-
-    const report = seedFromFile(db);
-    expect(report.bookmarksAdded).toBe(25);
-    expect(report.categoriesCreated).toBe(5);
-    expect(report.assignments).toBeGreaterThan(0);
-    expect(getAggregates(db, getDatasetByName(db, 'octocat')!.id).total).toBe(25);
-    // The dev fixture owns the profile identity: name + GitHub username.
-    const profile = getProfile(db);
-    expect(profile?.name).toBe('octocat');
-    expect(profile?.githubUsername).toBe('octocat');
-  });
-
-  test('loads the leo dataset from its fixture by explicit path', () => {
-    const db = freshDb();
-
-    const report = seedFromFile(db, resolveSeedDataset('leo'));
-    expect(report.bookmarksAdded).toBe(217);
-    expect(report.categoriesCreated).toBe(40);
-    expect(report.tagsCreated).toBe(1);
-    expect(report.assignments).toBe(118);
-    expect(getAggregates(db, getDatasetByName(db, 'leo')!.id).total).toBe(217);
-    // The fixture names the user; seeding must set the profile identity too.
-    expect(getProfile(db)?.name).toBe('leo');
-  });
-
-  test('resolves the octocat dataset by default and the others by name', () => {
-    expect(DEFAULT_SEED_PATH).toContain('seeds/datasets/octocat.seed.json');
-    expect(resolveSeedDataset('octocat')).toBe(DEFAULT_SEED_PATH);
-    expect(resolveSeedDataset('leo')).toContain('seeds/datasets/leo.seed.json');
-    expect(resolveSeedDataset('grimoire')).toContain('seeds/datasets/grimoire.seed.json');
-  });
-
-  test('seedDataset activates the target dataset by default', () => {
-    const db = freshDb();
-
-    const run = seedDataset(db, 'grimoire');
-    expect(run.activated).toBe(true);
-    expect(run.report.datasetId).toBe(getDatasetByName(db, 'grimoire')!.id);
-    expect(getProfile(db)!.activeDatasetId).toBe(run.report.datasetId);
-
-    // Opt-out leaves the pointer untouched while still loading the fixture.
-    const explicit = seedDataset(db, 'leo', { activate: false });
-    expect(explicit.activated).toBe(false);
-    expect(explicit.report.bookmarksAdded).toBeGreaterThan(0);
-    expect(getProfile(db)!.activeDatasetId).toBe(run.report.datasetId);
-  });
-
-  test('rejects unknown dataset names with the available list', () => {
-    expect(() => resolveSeedDataset('nope')).toThrow(UnknownSeedDatasetError);
-    expect(() => resolveSeedDataset('nope')).toThrow(/Available datasets: octocat, leo, grimoire/);
-  });
-
-  test('reset wipes only the target dataset so a re-seed starts clean', () => {
-    const db = freshDb();
-    const grimoire = resolveSeedDataset('grimoire');
-
-    seedFromFile(db, grimoire);
-    const grimoireId = getDatasetByName(db, 'grimoire')!.id;
-    expect(getAggregates(db, grimoireId).total).toBe(23);
-
-    // Regression: `resetSeedData` once deleted bookmarks/tags/categories
-    // globally. Content in other datasets must survive a dataset-scoped reset.
-    const stray = createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://stray.example/only',
-      title: 'Stray',
-    });
-    createTag(db, { datasetId: db.datasetId, name: 'stray-tag' });
-    createSection(db, { datasetId: grimoireId, name: 'Legacy section' });
-
-    const counts = resetSeedData(db, 'grimoire');
-    expect(counts).toEqual({ bookmarks: 23, tags: 51, categories: 8, sections: 1 });
-    expect(getAggregates(db, grimoireId).total).toBe(0);
-    expect(listSections(db, grimoireId)).toEqual([]);
-    // The FTS delete trigger fired for the wiped rows, and only for those.
-    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId })).toHaveLength(0);
-    expect(keywordSearch(db, { q: 'Stray', datasetId: db.datasetId })).toHaveLength(1);
-    expect(getBookmarkById(db, stray.id)).not.toBeNull();
-    expect(getTagByName(db, db.datasetId, 'stray-tag', null)).not.toBeNull();
-
-    const report = seedFromFile(db, grimoire);
-    expect(report.bookmarksAdded).toBe(23);
-    expect(report.bookmarksUpdated).toBe(0);
-    expect(getAggregates(db, grimoireId).total).toBe(23);
-    expect(keywordSearch(db, { q: 'sqlite', datasetId: grimoireId }).length).toBeGreaterThan(0);
-  });
-});
-
-describe('per-dataset URL uniqueness', () => {
-  let db: Database & { datasetId: string };
-  beforeEach(() => {
-    db = freshDb();
-  });
-
-  // Regression: the pre-0008 global UNIQUE(url) made "the same page in two
-  // workspaces" structurally impossible and let an upsert in one dataset
-  // update a bookmark in another.
-  test('the same URL can exist in two datasets and upserts stay scoped', () => {
-    const other = createDataset(db, 'other');
-    const first = upsertBookmarkByUrl(db, {
-      datasetId: db.datasetId,
-      url: 'https://shared.test/page',
-    });
-    const second = upsertBookmarkByUrl(db, {
-      datasetId: other.id,
-      url: 'https://shared.test/page',
-    });
-    expect(first.created).toBe(true);
-    expect(second.created).toBe(true); // threw under the old global index
-    expect(first.bookmark.id).not.toBe(second.bookmark.id);
-
-    // Re-upsert updates in place within its dataset, leaving the other alone.
-    const again = upsertBookmarkByUrl(db, {
-      datasetId: db.datasetId,
-      url: 'https://shared.test/page',
-      title: 'Updated',
-    });
-    expect(again.created).toBe(false);
-    expect(again.bookmark.id).toBe(first.bookmark.id);
-    expect(again.bookmark.title).toBe('Updated');
-    expect(getBookmarkById(db, second.bookmark.id)?.title).toBeNull();
-  });
-});
-
 describe('keyword search snippets', () => {
-  let db: Database & { datasetId: string };
+  let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
   test('a content-only match returns a snippet drawn from content', () => {
     createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://example.com/content-snippet',
       title: 'Totally Unrelated Title',
       content: 'The quick brown fox jumps over the lazy dog and drinks from the river bank',
@@ -751,73 +833,113 @@ describe('keyword search snippets', () => {
   });
 
   test('a title-only match falls back to the title', () => {
-    createBookmark(db, {
-      datasetId: db.datasetId,
-      url: 'https://example.com/title-fallback',
-      title: 'Rust async guide',
-    });
+    createBookmark(db, { url: 'https://example.com/title-fallback', title: 'Rust async guide' });
 
     const [hit] = keywordSearch(db, { q: 'async' });
     expect(hit?.snippet).toBe('Rust async guide');
   });
 });
 
-describe('orphan evidence cleanup migration', () => {
-  test('0005 deletes bookmark_tags and classification_results rows pointing at dropped tags', () => {
-    // Apply only the migrations that precede 0005, then plant orphan evidence
-    // rows the way 0004 left them (FKs disabled while it dropped rejected tags).
-    const migrationsDir = join(import.meta.dir, '../migrations');
-    const preDir = mkdtempSync(join(tmpdir(), 'al-yo-bo-migrations-'));
-    for (const file of readdirSync(migrationsDir).filter(
-      (f) => f.endsWith('.sql') && f < '0005_',
-    )) {
-      writeFileSync(join(preDir, file), readFileSync(join(migrationsDir, file)));
-    }
+describe('seed fixture', () => {
+  test('loads the octocat fixture: 25 bookmarks, the tree, and the profile identity', () => {
+    const db = freshDb();
+    const report = seedDatabase(db, loadSeedFixture(OCTOCAT_SEED_PATH));
 
-    const db = openDatabase(':memory:');
-    migrate(db, preDir);
+    expect(report.wipe).toEqual({ bookmarks: 0, tags: 0, categories: 0 });
+    expect(report.bookmarksAdded).toBe(25);
+    expect(report.categoriesCreated).toBe(14); // 5 roots + 9 children
+    expect(report.tagsCreated).toBe(67);
+    expect(report.assignments).toBe(111);
 
-    const datasetId = createDataset(db, 'orphans').id;
-    const bookmark = createBookmark(db, { datasetId, url: 'https://example.com/orphan' });
-    const tag = createTag(db, { datasetId, name: 'survivor' });
-    const runId = newIdBytes();
-    db.query('INSERT INTO classification_runs (id, bookmark_id, classifier) VALUES (?, ?, ?)').run(
-      runId,
-      uuidToBytes(bookmark.id),
-      'test',
-    );
+    const aggregates = getAggregates(db);
+    expect(aggregates.total).toBe(25);
+    expect(aggregates.categories).toHaveLength(14);
 
-    const orphanTagId = newIdBytes();
-    // PRAGMA foreign_keys is a no-op inside a transaction (see src/migrations.ts),
-    // so the orphan fixtures are planted with bare statements, not wrapped.
-    db.exec('PRAGMA foreign_keys = OFF');
-    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)').run(
-      newIdBytes(),
-      uuidToBytes(bookmark.id),
-      orphanTagId,
-      'user',
-    );
-    db.query(
-      'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
-    ).run(newIdBytes(), runId, orphanTagId, 0.9);
-    // Valid rows sharing the same tables must survive the cleanup.
-    db.query('INSERT INTO bookmark_tags (id, bookmark_id, tag_id, source) VALUES (?, ?, ?, ?)').run(
-      newIdBytes(),
-      uuidToBytes(bookmark.id),
-      uuidToBytes(tag.id),
-      'user',
-    );
-    db.query(
-      'INSERT INTO classification_results (id, run_id, tag_id, probability) VALUES (?, ?, ?, ?)',
-    ).run(newIdBytes(), runId, uuidToBytes(tag.id), 0.5);
-    db.exec('PRAGMA foreign_keys = ON');
+    // Tree shape: the roots land in fixture order with their children nested.
+    const tree = getCategoryTree(db);
+    expect(tree.map((node) => node.name)).toEqual([
+      'GitHub',
+      'AI tools',
+      'Dev tools',
+      'Learning',
+      'Design',
+    ]);
+    const aiTools = tree[1]!;
+    expect(aiTools.children.map((node) => node.name)).toEqual([
+      'Models & hubs',
+      'Local & self-hosted',
+    ]);
+    // A bookmark in an H3 child resolves through the whole path.
+    const qdrant = listBookmarks(db, { q: 'qdrant' }).items[0]!;
+    expect(listCategoryPath(db, qdrant.categoryId!).map((c) => c.name)).toEqual([
+      'AI tools',
+      'Local & self-hosted',
+    ]);
 
-    const applied = setupDatabase(db);
-    expect(applied).toContain('0005_orphan_evidence_cleanup.sql');
+    // The fixture owns the profile identity.
+    const profile = getProfile(db);
+    expect(profile?.name).toBe('octocat');
+    expect(profile?.githubUsername).toBe('octocat');
+  });
 
-    expect(db.query('SELECT COUNT(*) AS count FROM bookmark_tags').get()).toEqual({ count: 1 });
-    expect(db.query('SELECT COUNT(*) AS count FROM classification_results').get()).toEqual({
-      count: 1,
+  test('re-seeding wipes the workspace first (ported clear semantics, FTS included)', () => {
+    const db = freshDb();
+    const fixture = loadSeedFixture(OCTOCAT_SEED_PATH);
+    seedDatabase(db, fixture);
+    expect(getAggregates(db).total).toBe(25);
+
+    // Content seeded again starts from a clean slate: wipe counts are the
+    // previous load, nothing accumulates, and the FTS index has no ghosts.
+    const report = seedDatabase(db, fixture);
+    expect(report.wipe).toEqual({ bookmarks: 25, tags: 67, categories: 14 });
+    expect(report.bookmarksAdded).toBe(25);
+    expect(report.bookmarksUpdated).toBe(0);
+    expect(getAggregates(db).total).toBe(25);
+    expect(keywordSearch(db, { q: 'qdrant' })).toHaveLength(1);
+    expect(keywordSearch(db, { q: 'octocat' })).toHaveLength(0);
+  });
+
+  test('wipeContent removes every content row but keeps the profile and evidence integrity', () => {
+    const db = freshDb();
+    seedDatabase(db, loadSeedFixture(OCTOCAT_SEED_PATH));
+    const bookmark = listBookmarks(db).items[0]!;
+    const tag = createTag(db, { name: 'wipe-tag' });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
+    const run = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    createClassificationResult(db, { runId: run, tagId: tag.id, probability: 0.9 });
+    upsertEmbedding(db, {
+      bookmarkId: bookmark.id,
+      model: 'test-model',
+      dims: 1,
+      embedding: new Uint8Array([0, 0, 0, 0]),
     });
+
+    const counts = wipeContent(db);
+    expect(counts).toEqual({ bookmarks: 25, tags: 68, categories: 14 });
+
+    // Everything content-scoped is gone, including cascaded evidence.
+    expect(getAggregates(db)).toEqual({ total: 0, invalidCount: 0, categories: [], tags: [] });
+    expect(keywordSearch(db, { q: 'github' })).toHaveLength(0);
+    expect(db.query('SELECT COUNT(*) AS n FROM classification_runs').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM classification_results').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM bookmark_embeddings').get()).toEqual({ n: 0 });
+    expect(db.query('SELECT COUNT(*) AS n FROM bookmark_tags').get()).toEqual({ n: 0 });
+
+    // The profile is the person — never wiped (MODEL.md principle 8).
+    expect(getProfile(db)?.name).toBe('octocat');
+  });
+
+  test('reset: false merges by URL instead of wiping', () => {
+    const db = freshDb();
+    const fixture = loadSeedFixture(OCTOCAT_SEED_PATH);
+    seedDatabase(db, fixture);
+
+    const report = seedDatabase(db, fixture, { reset: false });
+    expect(report.wipe).toBeUndefined();
+    expect(report.bookmarksAdded).toBe(0);
+    expect(report.bookmarksUpdated).toBe(25);
+    expect(report.categoriesCreated).toBe(0);
+    expect(report.tagsCreated).toBe(0);
+    expect(getAggregates(db).total).toBe(25);
   });
 });

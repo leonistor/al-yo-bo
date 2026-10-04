@@ -7,13 +7,13 @@ import { mapProfile, type ProfileRow } from '../row-mapping.ts';
 import { prepared } from './statements.ts';
 
 /**
- * Fixed sentinel id of the singleton profile row (all-zero BLOB). Migration
- * 0007 inserts it; the app reads the profile by id, never by name.
+ * Fixed sentinel id of the singleton profile row (all-zero BLOB, inserted by
+ * migration 0001). The app reads the profile by id, never by name, and there
+ * is no delete path (MODEL.md principle 8).
  */
 export const PROFILE_ID = '00000000-0000-0000-0000-000000000000';
 
-const COLUMNS =
-  'id, name, github_username, avatar_path, active_dataset_id, created_at, updated_at';
+const COLUMNS = 'id, name, github_username, avatar_path, created_at, updated_at';
 
 export function getProfile(db: Database): Profile | null {
   const row = prepared<ProfileRow, [Uint8Array]>(
@@ -27,14 +27,13 @@ export interface ProfilePatch {
   name?: string | null;
   githubUsername?: string | null;
   avatarPath?: string | null;
-  activeDatasetId?: string | null;
 }
 
 /**
  * Partial update of the singleton profile row: only keys present in the patch
  * are touched (`undefined` keeps the stored value, `null` clears it). The
- * `profile_touch_updated_at` trigger refreshes `updated_at`. Returns null
- * only when the sentinel row is missing (tampered schema).
+ * `profile_bump_updated` trigger refreshes `updated_at`. Returns null only
+ * when the sentinel row is missing (tampered schema).
  */
 export function updateProfile(db: Database, patch: ProfilePatch): Profile | null {
   const sets: string[] = [];
@@ -53,10 +52,6 @@ export function updateProfile(db: Database, patch: ProfilePatch): Profile | null
   }
   if ('avatarPath' in patch) {
     column('avatar_path', patch.avatarPath ?? null);
-  }
-  if ('activeDatasetId' in patch) {
-    sets.push('active_dataset_id = ?');
-    bind.push(patch.activeDatasetId ? uuidToBytes(patch.activeDatasetId) : null);
   }
 
   if (sets.length > 0) {

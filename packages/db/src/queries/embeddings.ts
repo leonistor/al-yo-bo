@@ -92,10 +92,10 @@ export function upsertEmbedding(db: Database, input: EmbeddingInput): void {
        model = excluded.model,
        dims = excluded.dims,
        embedding = excluded.embedding,
-       -- Re-embeds are real updates: bump freshness so consumers can tell the
-       -- canonical SQLite copy apart from a stale one. The insert path is
-       -- covered by the bookmark_embeddings_force_created trigger (0001); the
-       -- conflict path is an UPDATE, which no trigger covers.
+        -- Re-embeds are real updates: bump freshness so consumers can tell the
+        -- canonical SQLite copy apart from a stale one. The insert path is
+        -- covered by the bookmark_embeddings_force_created trigger (0001);
+        -- the conflict path is an UPDATE, which no trigger covers.
        updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER)`,
   ).run(uuidToBytes(input.bookmarkId), input.model, input.dims, input.embedding);
 }

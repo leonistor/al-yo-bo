@@ -6,41 +6,31 @@ import {
   type BookmarkStatus,
   type BookmarkTagView,
   type Category,
-  type Dataset,
   type Profile,
-  type Section,
   type Tag,
   type TagStatus,
 } from '@al-yo-bo/shared';
 
-export interface DatasetRow {
-  id: Uint8Array;
-  name: string;
-  created_at: number;
-}
+/**
+ * Raw row shapes as bun:sqlite returns them (BLOB columns arrive as
+ * `Uint8Array`) plus the mapper functions to the v2 shared types. Rows are
+ * flat — `CategoryRow.parentId`/`sortOrder` carry the whole tree, and
+ * `getCategoryTree` assembles `CategoryNode`s from the flat list.
+ */
 
 export interface ProfileRow {
   id: Uint8Array;
   name: string | null;
   github_username: string | null;
   avatar_path: string | null;
-  active_dataset_id: Uint8Array | null;
   created_at: number;
   updated_at: number;
 }
 
-export interface SectionRow {
-  id: Uint8Array;
-  dataset_id: Uint8Array;
-  name: string;
-  description: string | null;
-  created_at: number;
-}
-
 export interface CategoryRow {
   id: Uint8Array;
-  dataset_id: Uint8Array;
-  section_id: Uint8Array | null;
+  parent_id: Uint8Array | null;
+  sort_order: string;
   name: string;
   description: string | null;
   created_at: number;
@@ -48,8 +38,6 @@ export interface CategoryRow {
 
 export interface TagRow {
   id: Uint8Array;
-  dataset_id: Uint8Array;
-  category_id: Uint8Array | null;
   name: string;
   description: string | null;
   status: string;
@@ -58,7 +46,6 @@ export interface TagRow {
 
 export interface BookmarkRow {
   id: Uint8Array;
-  dataset_id: Uint8Array;
   url: string;
   title: string | null;
   description: string | null;
@@ -80,41 +67,22 @@ export interface BookmarkTagRow {
   confidence: number | null;
 }
 
-export function mapDataset(row: DatasetRow): Dataset {
-  return {
-    id: bytesToUuid(row.id),
-    name: row.name,
-    createdAt: row.created_at,
-  };
-}
-
 export function mapProfile(row: ProfileRow): Profile {
   return {
     id: bytesToUuid(row.id),
     name: row.name,
     githubUsername: row.github_username,
     avatarPath: row.avatar_path,
-    activeDatasetId: row.active_dataset_id ? bytesToUuid(row.active_dataset_id) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-export function mapSection(row: SectionRow): Section {
-  return {
-    id: bytesToUuid(row.id),
-    datasetId: bytesToUuid(row.dataset_id),
-    name: row.name,
-    description: row.description,
-    createdAt: row.created_at,
   };
 }
 
 export function mapCategory(row: CategoryRow): Category {
   return {
     id: bytesToUuid(row.id),
-    datasetId: bytesToUuid(row.dataset_id),
-    sectionId: row.section_id ? bytesToUuid(row.section_id) : null,
+    parentId: row.parent_id ? bytesToUuid(row.parent_id) : null,
+    sortOrder: row.sort_order,
     name: row.name,
     description: row.description,
     createdAt: row.created_at,
@@ -124,8 +92,6 @@ export function mapCategory(row: CategoryRow): Category {
 export function mapTag(row: TagRow): Tag {
   return {
     id: bytesToUuid(row.id),
-    datasetId: bytesToUuid(row.dataset_id),
-    categoryId: row.category_id ? bytesToUuid(row.category_id) : null,
     name: row.name,
     description: row.description,
     status: row.status as TagStatus,
@@ -147,7 +113,7 @@ export function parseMetadata(raw: string | null): Record<string, unknown> | nul
 
 /**
  * Pulls the bookmark image references out of `metadata.image` (set by import
- * and the screenshot job — see ARCHITECTURE §8). Missing or malformed entries
+ * and the screenshot job — see ARCHITECTURE §7). Missing or malformed entries
  * fall back to a both-null record so consumers never branch on presence.
  */
 export function parseBookmarkImage(metadata: Record<string, unknown> | null): BookmarkImage {
@@ -169,7 +135,6 @@ export function parseBookmarkImage(metadata: Record<string, unknown> | null): Bo
 export function mapBookmark(row: BookmarkRow): Bookmark {
   return {
     id: bytesToUuid(row.id),
-    datasetId: bytesToUuid(row.dataset_id),
     url: row.url,
     title: row.title,
     description: row.description,
