@@ -45,9 +45,10 @@ export interface ChatHandlerOptions extends ChatToolContext {
  */
 export function createChatHandler(options: ChatHandlerOptions) {
   const { config, search, maxSteps = 6 } = options;
+  const chatModel = config.ai.ollama.chatModel;
 
   return async (c: Context): Promise<Response> => {
-    if (!config.chat.model) {
+    if (!chatModel) {
       // Domain error, mapped to 503 problem+json by app.onError (errors.ts) —
       // same shape the old hand-rolled body produced, without bypassing the
       // central mapping.
@@ -73,11 +74,11 @@ export function createChatHandler(options: ChatHandlerOptions) {
     }
 
     const ollama = createOllama({
-      baseURL: `${config.chat.ollamaUrl.replace(/\/$/, '')}/api`,
+      baseURL: `${config.ai.ollama.url.replace(/\/$/, '')}/api`,
     });
 
     const result = streamText({
-      model: ollama(config.chat.model),
+      model: ollama(chatModel),
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(messages),
       stopWhen: isStepCount(maxSteps),

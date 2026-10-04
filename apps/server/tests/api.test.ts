@@ -1,42 +1,40 @@
 import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { ClassifierClient } from '@al-yo-bo/classifier';
+import type { AiHealthReport, ClassifierClient, EmbeddingClient } from '@al-yo-bo/ai';
 import {
   ScrapeError,
   createCore,
   createVectorProvider,
   type AvatarStore,
+  type CoreAi,
   type ScrapeFn,
 } from '@al-yo-bo/core';
 import {
   assignTag,
   createBookmark,
   createCategory,
-  createDataset,
   createTag,
   getBookmarkById,
-  getDatasetByName,
+  loadSeedFixture,
   openDatabase,
-  resolveSeedDataset,
-  seedFromFile,
+  seedDatabase,
   setupDatabase,
 } from '@al-yo-bo/db';
-import type { EmbeddingClient } from '@al-yo-bo/embeddings';
 import { unzipSync } from 'fflate';
+import { hc } from 'hono/client';
 import type {
   ImportedBookmark,
   Profile,
   RankedCandidate,
-  VectorFilter,
   VectorIndex,
   VectorPayloadPatch,
   VectorUpsert,
 } from '@al-yo-bo/shared';
-import { hc } from 'hono/client';
 
 import { createApp, type AppType } from '../src/app.ts';
 import { loadConfig, type ServerConfig } from '../src/env.ts';
+import { EventHub } from '../src/events.ts';
 
 /** Deterministic VectorIndex stub: candidates come back in insertion order. */
 class StubVectorIndex implements VectorIndex {
@@ -55,7 +53,7 @@ class StubVectorIndex implements VectorIndex {
   async search(
     _query: Float32Array,
     topK: number,
-    _filter?: VectorFilter,
+    _filter?: undefined,
   ): Promise<RankedCandidate[]> {
     return this.ids.slice(0, Math.max(0, topK)).map((bookmarkId, index) => ({
       bookmarkId,
@@ -76,6 +74,36 @@ const stubEmbeddings: EmbeddingClient = {
   },
 };
 
+/** Static AiHealth fake — no sidecar is probed in tests. */
+const stubHealth = {
+  async report(): Promise<AiHealthReport> {
+    return {
+      ollayaReachable: false,
+      ollamaReachable: false,
+      chatAvailable: false,
+      chatModel: null,
+      embeddingsConfigured: false,
+      embeddingModel: 'stub-model',
+      classifierModel: 'laya',
+      extractConfigured: false,
+      extractModel: null,
+    };
+  },
+};
+
+/** CoreAi fake assembled from the optional capabilities a test attaches. */
+function stubAiLayer(options: {
+  embeddings?: EmbeddingClient | null;
+  classifier?: ClassifierClient | null;
+}): CoreAi {
+  return {
+    embeddings: options.embeddings ?? null,
+    classifier: options.classifier ?? null,
+    extract: null,
+    health: stubHealth,
+  };
+}
+
 /** Optional capabilities a transport test can attach to a real core instance. */
 interface AppOptions {
   vector?: VectorIndex;
@@ -87,36 +115,26 @@ interface AppOptions {
 }
 
 /** Builds a core (with the stub subsystems) over an already-seeded db, then the app. */
-function buildApp(db: Database & { datasetId: string }, options: AppOptions = {}) {
-  const vector = options.vector ?? new StubVectorIndex([]);
-  const env = options.embeddings ? { EMBEDDING_MODEL: 'stub-model' } : {};
-  const config: ServerConfig = {
-    ...loadConfig(env),
-    // The test seeds the grimoire dataset; core scopes everything to it.
-    defaultDataset: 'grimoire',
-  };
+function buildApp(db: Database, options: AppOptions = {}, hub = new EventHub()) {
+  const config: ServerConfig = loadConfig({ DATA_DIR: '/tmp/al-yo-bo-api-test' });
   const core = createCore({
     db,
     config,
-    vector: createVectorProvider(vector, 'memory'),
-    embeddings: options.embeddings,
-    classifier: options.classifier,
+    ai: stubAiLayer({ embeddings: options.embeddings ?? null, classifier: options.classifier ?? null }),
+    vector: createVectorProvider(options.vector ?? new StubVectorIndex([]), 'memory'),
     scrape: options.scrape,
     avatarStore: options.avatarStore,
+    events: hub,
     reindex: options.reindex,
   });
-  return { db, core, config, app: createApp(core, config) };
+  return { db, core, config, hub, app: createApp(core, config, hub) };
 }
 
+/** Seeds the canonical octocat fixture (ARCHITECTURE §5) into an in-memory db. */
 function makeApp(options: AppOptions = {}) {
-  const db = openDatabase(':memory:') as Database & { datasetId: string };
+  const db = openDatabase(':memory:');
   setupDatabase(db);
-  seedFromFile(db, resolveSeedDataset('grimoire'));
-  const dataset = getDatasetByName(db, 'grimoire');
-  if (!dataset) {
-    throw new Error('grimoire dataset missing after seed');
-  }
-  db.datasetId = dataset.id;
+  seedDatabase(db, loadSeedFixture());
   return buildApp(db, options);
 }
 
@@ -137,12 +155,13 @@ function jsonRequest(body: unknown, method = 'POST'): RequestInit {
 }
 
 /** Minimal ClassifierClient stub over the seeded vocabulary. */
-function stubClassifier(probabilities: Record<string, number>) {
+function stubClassifier(probabilities: Record<string, number>): ClassifierClient {
   return {
-    async decide(request: { questions: Record<string, unknown> }) {
+    async decide(request) {
       const asked = Object.keys(request.questions);
       return {
         probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])),
+        model: 'laya:en',
       };
     },
   };
@@ -169,7 +188,7 @@ describe('bookmark API', () => {
     const response = await app.request('/api/bookmarks');
     expect(response.status).toBe(200);
     const body = (await response.json()) as { total: number; items: unknown[] };
-    expect(body.total).toBe(23);
+    expect(body.total).toBe(25);
     expect(body.items.length).toBe(20);
   });
 
@@ -185,7 +204,6 @@ describe('bookmark API', () => {
     // paired with the db it mutates, not the fresh beforeEach one.
     const { db, app: testApp } = makeApp();
     const invalid = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://api-invalid.test',
       title: 'Broken',
       status: 'invalid',
@@ -196,7 +214,7 @@ describe('bookmark API', () => {
       total: number;
       items: { id: string }[];
     };
-    expect(def.total).toBe(23);
+    expect(def.total).toBe(25);
     expect(def.items.some((bookmark) => bookmark.id === invalid.id)).toBe(false);
 
     const onlyInvalid = (await (
@@ -209,7 +227,7 @@ describe('bookmark API', () => {
       total: number;
       items: { id: string }[];
     };
-    expect(all.total).toBe(24);
+    expect(all.total).toBe(26);
     expect(all.items.some((bookmark) => bookmark.id === invalid.id)).toBe(true);
   });
 
@@ -217,7 +235,6 @@ describe('bookmark API', () => {
     // `testApp` (not the describe-level `app`): paired with the db this test mutates.
     const { db, app: testApp } = makeApp();
     const invalid = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://api-reset-old.test',
       status: 'invalid',
       scrapeAttempts: 3,
@@ -240,7 +257,7 @@ describe('bookmark API', () => {
       items: unknown[];
       pagination: { hasMore: boolean };
     };
-    expect(page1.total).toBe(23);
+    expect(page1.total).toBe(25);
     expect(page1.items.length).toBe(10);
     expect(page1.pagination.hasMore).toBe(true);
 
@@ -248,20 +265,26 @@ describe('bookmark API', () => {
       items: unknown[];
       pagination: { hasMore: boolean };
     };
-    expect(page3.items.length).toBe(3);
+    expect(page3.items.length).toBe(5);
     expect(page3.pagination.hasMore).toBe(false);
   });
 
-  test('health reports vector and embeddings status', async () => {
+  test('health reports vector, ai probes and enrichment capabilities', async () => {
     const body = (await (await app.request('/api/health')).json()) as {
       status: string;
       vector: { backend: string; indexed: number };
-      embeddings: { enabled: boolean };
+      ai: { chatAvailable: boolean; embeddingModel: string };
+      enrichment: { scrapeAvailable: boolean };
+      screenshot: { available: boolean };
     };
     expect(body.status).toBe('ok');
     expect(body.vector.backend).toBe('memory');
     expect(body.vector.indexed).toBe(0);
-    expect(body.embeddings.enabled).toBe(false);
+    // Chat flags live in the ai block now — no per-call chat config anymore.
+    expect(body.ai.chatAvailable).toBe(false);
+    expect(body.ai.embeddingModel).toBe('stub-model');
+    expect(body.enrichment.scrapeAvailable).toBe(false);
+    expect(body.screenshot.available).toBe(false);
   });
 
   test('creates, updates and deletes a bookmark', async () => {
@@ -326,9 +349,9 @@ describe('bookmark API', () => {
       categories: unknown[];
       tags: unknown[];
     };
-    expect(body.total).toBe(23);
-    expect(body.categories.length).toBe(8);
-    expect(body.tags.length).toBe(51);
+    expect(body.total).toBe(25);
+    expect(body.categories.length).toBe(14);
+    expect(body.tags.length).toBe(67);
   });
 });
 
@@ -381,7 +404,6 @@ describe('fused search pagination', () => {
     const { db, app } = makeApp();
     const ids = await firstSeededIds(app, 3);
     const invalid = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://semantic-invalid.test',
       title: 'Hidden',
       status: 'invalid',
@@ -455,7 +477,7 @@ describe('scrape API', () => {
     expect(((await response.json()) as { type: string }).type).toContain('scrape-failed');
   });
 
-  test('reports 503 when scraping is unavailable and 404 for unknown ids', async () => {
+  test('reports 404 for unknown ids', async () => {
     const { app } = makeApp({ vector: new StubVectorIndex([]) });
     const unavailable = await app.request('/api/bookmarks/nope/scrape', { method: 'POST' });
     expect(unavailable.status).toBe(404);
@@ -464,16 +486,17 @@ describe('scrape API', () => {
 
 describe('classify API', () => {
   test('classifies inline and returns the updated bookmark with new tags', async () => {
-    const { app } = makeApp({
+    const { db, app } = makeApp({
       vector: new StubVectorIndex([]),
-      classifier: stubClassifier({ animation: 0.9 }),
+      // A fresh, untagged bookmark keeps the assertion deterministic: exactly
+      // one tag clears the 0.7 threshold and lands as `source='classifier'`.
+      classifier: stubClassifier({ docs: 0.9 }),
     });
-    const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
-      items: { id: string }[];
-    };
-    const id = bookmarks.items[0]!.id;
+    const bookmark = createBookmark(db, { url: 'https://classify.test', title: 'Classify me' });
 
-    const response = await app.request(`/api/bookmarks/${id}/classify`, { method: 'POST' });
+    const response = await app.request(`/api/bookmarks/${bookmark.id}/classify`, {
+      method: 'POST',
+    });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       status: string;
@@ -483,11 +506,11 @@ describe('classify API', () => {
     expect(body.status).toBe('classified');
     expect(body.assigned).toBe(1);
     expect(
-      body.bookmark.tags.some((tag) => tag.name === 'animation' && tag.source === 'classifier'),
+      body.bookmark.tags.some((tag) => tag.name === 'docs' && tag.source === 'classifier'),
     ).toBe(true);
   });
 
-  test('reports 503 without a classifier and 404 for unknown ids', async () => {
+  test('reports 404 for unknown ids', async () => {
     const { app } = makeApp({ vector: new StubVectorIndex([]) });
     const unavailable = await app.request('/api/bookmarks/nope/classify', { method: 'POST' });
     expect(unavailable.status).toBe(404);
@@ -500,7 +523,7 @@ describe('reindex API', () => {
     const response = await app.request('/api/reindex', { method: 'POST' });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { ftsRows: number; vectorBackend: string };
-    expect(body.ftsRows).toBe(23);
+    expect(body.ftsRows).toBe(25);
     expect(body.vectorBackend).toBe('memory');
 
     // Keyword search still works over the rebuilt index.
@@ -539,6 +562,7 @@ describe('chat API', () => {
 describe('import API', () => {
   test('previews, then commits the reviewed list with auto-created vocabulary', async () => {
     const { app } = makeApp();
+    // Tree-native format: H2 is a level-1 category, `**` is priority — not a tag.
     const markdown = '## dev\n\n- ** Tool: https://example.com/tool\n';
 
     const preview = await app.request('/api/import/preview', {
@@ -549,9 +573,12 @@ describe('import API', () => {
     expect(preview.status).toBe(200);
     const previewBody = (await preview.json()) as {
       parsed: number;
+      provider: string;
       bookmarks: ImportedBookmark[];
     };
     expect(previewBody.parsed).toBe(1);
+    expect(previewBody.provider).toBe('fallback');
+    expect(previewBody.bookmarks[0]!.categoryPath).toEqual(['dev']);
 
     // Commit the (possibly edited) preview list — no markdown, no re-extraction.
     const imported = await app.request(
@@ -563,10 +590,12 @@ describe('import API', () => {
       bookmarks: unknown[];
       parsed: number;
       added: number;
+      categoriesCreated: number;
     };
     expect(body.bookmarks).toHaveLength(1);
     expect(body.parsed).toBe(1);
     expect(body.added).toBe(1);
+    expect(body.categoriesCreated).toBe(1);
   });
 
   test('rejects a commit body without a valid bookmark array', async () => {
@@ -584,26 +613,6 @@ describe('import API', () => {
     );
     expect(badEntry.status).toBe(400);
   });
-
-  test('rejects a non-UUID datasetId query param with a 400', async () => {
-    const { app } = makeApp();
-    const response = await app.request(
-      '/api/import?datasetId=not-a-uuid',
-      jsonRequest({
-        bookmarks: [
-          {
-            url: 'https://example.com/x',
-            title: null,
-            description: null,
-            category: null,
-            priority: null,
-            tags: [],
-          },
-        ],
-      }),
-    );
-    expect(response.status).toBe(400);
-  });
 });
 
 describe('review API', () => {
@@ -611,6 +620,20 @@ describe('review API', () => {
     const { app } = makeApp();
     const candidates = await app.request('/api/review/candidates');
     expect(((await candidates.json()) as unknown[]).length).toBe(0);
+  });
+
+  test('accepting a candidate writes a user-sourced assignment', async () => {
+    const { db, app } = makeApp();
+    const bookmark = createBookmark(db, { url: 'https://review.test', title: 'Review me' });
+    const tag = createTag(db, { name: 'review-tag' });
+
+    const response = await app.request(
+      '/api/review/candidates/accept',
+      jsonRequest({ bookmarkId: bookmark.id, tagId: tag.id }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { tags: { tagId: string; source: string }[] };
+    expect(body.tags.some((t) => t.tagId === tag.id && t.source === 'user')).toBe(true);
   });
 });
 
@@ -621,8 +644,9 @@ describe('profile API', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as Profile;
     expect(body.id).toBe('00000000-0000-0000-0000-000000000000');
-    expect(body.name).toBeNull();
-    expect(body.activeDatasetId).toBeNull();
+    // The octocat fixture identities the profile (MODEL.md principle 8).
+    expect(body.name).toBe('octocat');
+    expect(body.githubUsername).toBe('octocat');
   });
 
   test('patches identity fields and normalizes the GitHub username', async () => {
@@ -636,15 +660,6 @@ describe('profile API', () => {
     expect(body.name).toBe('Leo');
     // People type "@user"; the API contract promises the bare username.
     expect(body.githubUsername).toBe('leonistor');
-  });
-
-  test('rejects an activeDatasetId that does not reference a dataset', async () => {
-    const { app } = makeApp();
-    const response = await app.request(
-      '/api/profile',
-      jsonRequest({ activeDatasetId: '00000000-0000-7000-8000-000000000000' }, 'PATCH'),
-    );
-    expect(response.status).toBe(400);
   });
 
   test('accepts an avatar upload through the injected store', async () => {
@@ -731,28 +746,6 @@ describe('profile API', () => {
     const response = await app.request('/api/profile/avatar', { method: 'DELETE' });
     expect(response.status).toBe(404);
   });
-
-  test('returns null when no dataset is active', async () => {
-    const { app } = makeApp();
-    const response = await app.request('/api/profile/dataset');
-    expect(response.status).toBe(200);
-    expect(await response.json()).toBeNull();
-  });
-
-  test('returns the dataset the active-dataset pointer names', async () => {
-    const { app, db } = makeApp();
-    const dataset = createDataset(db, 'Work');
-
-    const patched = await app.request(
-      '/api/profile',
-      jsonRequest({ activeDatasetId: dataset.id }, 'PATCH'),
-    );
-    expect(patched.status).toBe(200);
-
-    const response = await app.request('/api/profile/dataset');
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(dataset);
-  });
 });
 
 describe('lan API', () => {
@@ -774,6 +767,185 @@ describe('lan API', () => {
       expect(address).not.toStartWith('127.');
       expect(address).not.toBe('0.0.0.0');
     }
+  });
+});
+
+describe('category tree API', () => {
+  test('returns the nested tree with seeded roots and children', async () => {
+    const { app } = makeApp();
+    const response = await app.request('/api/categories');
+    expect(response.status).toBe(200);
+    const tree = (await response.json()) as { id: string; name: string; children: unknown[] }[];
+    expect(tree.map((node) => node.name).toSorted()).toEqual([
+      'AI tools',
+      'Design',
+      'Dev tools',
+      'GitHub',
+      'Learning',
+    ]);
+    const devTools = tree.find((node) => node.name === 'Dev tools')!;
+    expect(devTools.children.length).toBe(4);
+  });
+
+  test('creates roots and children, refusing sibling-name duplicates', async () => {
+    const { app } = makeApp();
+
+    const root = await app.request('/api/categories', jsonRequest({ name: 'Travel' }));
+    expect(root.status).toBe(201);
+    const rootBody = (await root.json()) as { id: string; parentId: string | null };
+    expect(rootBody.parentId).toBeNull();
+
+    const child = await app.request(
+      '/api/categories',
+      jsonRequest({ name: 'Japan', parentId: rootBody.id }),
+    );
+    expect(child.status).toBe(201);
+    expect(((await child.json()) as { parentId: string }).parentId).toBe(rootBody.id);
+
+    const duplicateRoot = await app.request('/api/categories', jsonRequest({ name: 'Travel' }));
+    expect(duplicateRoot.status).toBe(409);
+
+    // Same name under a DIFFERENT parent is fine (sibling-unique, MODEL.md §2).
+    const other = await app.request('/api/categories', jsonRequest({ name: 'Work' }));
+    const otherBody = (await other.json()) as { id: string };
+    const namesake = await app.request(
+      '/api/categories',
+      jsonRequest({ name: 'Japan', parentId: otherBody.id }),
+    );
+    expect(namesake.status).toBe(201);
+
+    // An unknown parent id is a 404, not a raw SQLite error.
+    const unknownParent = await app.request(
+      '/api/categories',
+      jsonRequest({ name: 'Orphan', parentId: '00000000-0000-7000-8000-000000000000' }),
+    );
+    expect(unknownParent.status).toBe(404);
+  });
+
+  test('moves a category and refuses cycles', async () => {
+    const { db, app } = makeApp();
+    const parent = createCategory(db, { name: 'Move Source' });
+    const target = createCategory(db, { name: 'Move Target' });
+    const child = createCategory(db, { name: 'Move Child', parentId: parent.id });
+
+    const moved = await app.request(
+      `/api/categories/${child.id}`,
+      jsonRequest({ parentId: target.id }, 'PATCH'),
+    );
+    expect(moved.status).toBe(200);
+    expect(((await moved.json()) as { parentId: string }).parentId).toBe(target.id);
+
+    // Moving `target` under its own new child `child` would close a cycle.
+    const cycle = await app.request(
+      `/api/categories/${target.id}`,
+      jsonRequest({ parentId: child.id }, 'PATCH'),
+    );
+    expect(cycle.status).toBe(400);
+    expect(((await cycle.json()) as { title: string }).title).toContain('subtree');
+  });
+
+  test('reorder persists the requested sibling order with ascending keys', async () => {
+    const { db, app } = makeApp();
+    const a = createCategory(db, { name: 'Reorder A' });
+    const b = createCategory(db, { name: 'Reorder B' });
+    const c = createCategory(db, { name: 'Reorder C' });
+
+    const response = await app.request(
+      '/api/categories/reorder',
+      jsonRequest({ parentId: null, orderedIds: [c.id, a.id, b.id] }),
+    );
+    expect(response.status).toBe(200);
+    const reordered = (await response.json()) as { id: string; sortOrder: string }[];
+    expect(reordered.map((category) => category.id)).toEqual([c.id, a.id, b.id]);
+    // Fractional keys come back evenly spaced and ascending in the new order.
+    expect(reordered[0]!.sortOrder < reordered[1]!.sortOrder).toBe(true);
+    expect(reordered[1]!.sortOrder < reordered[2]!.sortOrder).toBe(true);
+  });
+
+  test('reorder validation: duplicates, mixed parents and unknown ids are 400/404', async () => {
+    const { db, app } = makeApp();
+    const a = createCategory(db, { name: 'VA' });
+    const child = createCategory(db, { name: 'VA child', parentId: a.id });
+
+    const duplicate = await app.request(
+      '/api/categories/reorder',
+      jsonRequest({ parentId: null, orderedIds: [a.id, a.id] }),
+    );
+    expect(duplicate.status).toBe(400);
+
+    const mixed = await app.request(
+      '/api/categories/reorder',
+      jsonRequest({ parentId: null, orderedIds: [a.id, child.id] }),
+    );
+    expect(mixed.status).toBe(400);
+
+    const unknown = await app.request(
+      '/api/categories/reorder',
+      jsonRequest({ parentId: null, orderedIds: ['00000000-0000-7000-8000-000000000000'] }),
+    );
+    expect(unknown.status).toBe(404);
+  });
+
+  test('delete returns the subtree counts and orphans the bookmarks', async () => {
+    const { db, app } = makeApp();
+    const parent = createCategory(db, { name: 'Delete Parent' });
+    const child = createCategory(db, { name: 'Delete Child', parentId: parent.id });
+    const shelved = createBookmark(db, {
+      url: 'https://delete-subtree.test',
+      title: 'Shelved',
+      categoryId: child.id,
+    });
+
+    const response = await app.request(`/api/categories/${parent.id}`, { method: 'DELETE' });
+    expect(response.status).toBe(200);
+    // The confirmation UI's numbers: 2 categories (parent + child), 1 bookmark.
+    expect(await response.json()).toEqual({ categories: 2, bookmarks: 1 });
+
+    // The bookmark survives with its category pointer cleared.
+    const row = getBookmarkById(db, shelved.id)!;
+    expect(row.categoryId).toBeNull();
+  });
+
+  test('bookmark category assignment rejects unknown categories with a 404', async () => {
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/bookmarks',
+      jsonRequest({
+        url: 'https://example.com/orphan',
+        categoryId: '00000000-0000-7000-8000-000000000000',
+      }),
+    );
+    expect(response.status).toBe(404);
+  });
+});
+
+describe('tag status API', () => {
+  test('deprecating and reactivating a tag flips its lifecycle', async () => {
+    const { db, app } = makeApp();
+    const tag = createTag(db, { name: 'lifecycle-tag' });
+
+    const deprecated = await app.request(
+      `/api/tags/${tag.id}/status`,
+      jsonRequest({ status: 'deprecated' }),
+    );
+    expect(deprecated.status).toBe(200);
+    expect(((await deprecated.json()) as { status: string }).status).toBe('deprecated');
+
+    const reactivated = await app.request(
+      `/api/tags/${tag.id}/status`,
+      jsonRequest({ status: 'active' }),
+    );
+    expect(((await reactivated.json()) as { status: string }).status).toBe('active');
+  });
+
+  test('rejects a status outside the lifecycle', async () => {
+    const { db, app } = makeApp();
+    const tag = createTag(db, { name: 'bad-status-tag' });
+    const response = await app.request(
+      `/api/tags/${tag.id}/status`,
+      jsonRequest({ status: 'pending' }),
+    );
+    expect(response.status).toBe(400);
   });
 });
 
@@ -819,15 +991,14 @@ describe('export API', () => {
 
   test('forwards tag, status, text and date filters to the uncapped query', async () => {
     const { db, app } = makeApp();
-    const tag = createTag(db, { datasetId: db.datasetId, name: 'export-tag' });
-    const category = createCategory(db, { datasetId: db.datasetId, name: 'Export Category' });
+    const tag = createTag(db, { name: 'export-tag' });
+    const category = createCategory(db, { name: 'Export Category' });
     const matching = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://export-match.test',
       title: 'Match sqlite',
       categoryId: category.id,
     });
-    createBookmark(db, { datasetId: db.datasetId, url: 'https://export-other.test', title: 'Other' });
+    createBookmark(db, { url: 'https://export-other.test', title: 'Other' });
     assignTag(db, { bookmarkId: matching.id, tagId: tag.id, source: 'user' });
 
     const response = await app.request(
@@ -875,12 +1046,10 @@ describe('export API', () => {
   test('dateFrom/dateTo expand date-only params to UTC day bounds', async () => {
     const { db, app } = makeApp();
     const inRange = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://range-in.test',
       title: 'In range',
     });
     const outOfRange = createBookmark(db, {
-      datasetId: db.datasetId,
       url: 'https://range-out.test',
       title: 'Out of range',
     });

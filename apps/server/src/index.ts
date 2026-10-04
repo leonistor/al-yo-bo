@@ -1,7 +1,7 @@
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { OllayaClassifierClient, OpenRouterEmbeddings } from '@al-yo-bo/ai';
+import { buildAiLayer } from '@al-yo-bo/ai';
 import { createCore, createVectorProvider, makeScraper, type AvatarStore } from '@al-yo-bo/core';
 import { checkpoint, openDatabase, setupDatabase } from '@al-yo-bo/db';
 import { Hono, type Context } from 'hono';
@@ -9,7 +9,7 @@ import { serveStatic } from 'hono/bun';
 
 import { createApp } from './app.ts';
 import { loadConfig } from './env.ts';
-import { buildExtractionClient } from './extract.ts';
+import { EventHub } from './events.ts';
 import {
   bunWebViewScreenshotClient,
   compositeScreenshotClient,
@@ -22,28 +22,21 @@ const db = openDatabase(config.dbPath);
 
 setupDatabase(db);
 
+// One AI layer (ARCHITECTURE §8): the env is parsed once by `packages/ai` and
+// the layer is built here, at the edge — core only sees the interfaces (§4).
+// Every member degrades independently (§1.5).
+const ai = buildAiLayer(config.ai);
+
 // The serving stack is booted at the edge (Qdrant/vectordb never leaks into
 // core); the provider lets core services observe a hot-swapped index.
 const vector = await initVectorIndex(db, config);
 const provider = createVectorProvider(vector.index, vector.backend);
 
-const embeddings =
-  config.embeddings.apiKey && config.embeddings.model
-    ? new OpenRouterEmbeddings({
-        apiKey: config.embeddings.apiKey,
-        model: config.embeddings.model,
-        baseUrl: config.embeddings.baseUrl,
-      })
-    : undefined;
-const scrape = makeScraper(config.scrape);
-// The classifier client is cheap to construct and always available; decide()
-// calls fail gracefully when the daemon is down (jobs retry, §1.5).
-const classifier = new OllayaClassifierClient({
-  baseUrl: config.ollaya.baseUrl,
-  apiKey: config.ollaya.apiKey,
-});
+// Real-time layer (ARCHITECTURE §9): core is the only emitter, this hub fans
+// the coarse domain events out to SSE clients via GET /api/events.
+const hub = new EventHub();
 
-const extractClient = buildExtractionClient(config);
+const scrape = makeScraper(config.scrape);
 
 const screenshotClient = compositeScreenshotClient({
   primary: bunWebViewScreenshotClient({
@@ -77,18 +70,17 @@ const avatarStore: AvatarStore = {
 const core = createCore({
   db,
   config,
+  ai,
   vector: provider,
-  embeddings,
-  classifier,
   scrape,
-  extract: extractClient,
   screenshot: screenshotClient,
   screenshotsDir: config.screenshotsDir,
   avatarStore,
+  events: hub,
   // Same cap as dead-link invalidation: a job gives up on the same attempt that
   // marks the bookmark invalid.
   maxAttempts: config.scrape.maxAttempts,
-  // The `reindex` job (§8): rebuild FTS + vector serving stack from SQLite and
+  // The `reindex` job (§10): rebuild FTS + vector serving stack from SQLite and
   // hot-swap it into the provider every service reads.
   reindex: async () => {
     const next = await initVectorIndex(db, config);
@@ -111,7 +103,7 @@ app.get('/data/profile/avatar', async (c) =>
   serveProfileAvatar(c, config.dataDir, core.profile.get()?.avatarPath ?? null),
 );
 
-app.route('/', createApp(core, config));
+app.route('/', createApp(core, config, hub));
 
 // In production the single Bun process also serves the built web app.
 if (process.env.NODE_ENV === 'production') {
@@ -129,15 +121,17 @@ function shutdown(): void {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// Startup reconciliation (ARCHITECTURE §8): recover enrichment a restart dropped.
+// Startup reconciliation (ARCHITECTURE §10): recover enrichment a restart dropped.
 // Embedding reconciliation only runs when the embedding client is configured.
 const reconciliation = core.enrichment.reconcile();
 
 console.log(`al-yo-bo server listening on http://${config.host}:${config.port}`);
 console.log(
-  `[vector] backend: ${vector.backend}${embeddings ? `, query embeddings: ${config.embeddings.model}` : ', query embeddings: off'}`,
+  `[vector] backend: ${vector.backend}${ai.embeddings ? `, query embeddings: ${config.ai.openrouter.embeddingModel}` : ', query embeddings: off'}`,
 );
-console.log(`[extract] provider: ${extractClient ? 'llm' : 'fallback (deterministic parser)'}`);
+console.log(
+  `[ai] classifier: ollaya/${config.ai.ollaya.model} — extract: ${ai.extract ? 'llm' : 'fallback (deterministic parser)'} — chat: ${config.ai.ollama.chatModel ?? 'off (set OLLAMA_CHAT_MODEL)'}`,
+);
 // compositeScreenshotClient always returns a client (primary + fallback), so
 // there is no "disabled" state to report — log the actual composition.
 console.log('[screenshot] capture: Bun.WebView primary, og:image fallback');

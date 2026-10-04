@@ -17,7 +17,6 @@
     "typecheck": "bun run --parallel --filter '*' typecheck",
     "test": "bun test",
     "db:seed": "bun run packages/db/src/seed.ts",
-    "db:clear": "bun run packages/db/src/clear-dataset.ts",
     "qdrant:install": "bash scripts/qdrant/install.sh",
     "qdrant:start": "bash scripts/qdrant/start.sh",
     "ollaya:install": "bash scripts/ollaya/install.sh",

@@ -57,12 +57,10 @@ export interface VectorSearch {
 
 /** One bookmark's filterable state, read from SQLite (canonical payload source). */
 function payloadOfBookmark(bookmark: {
-  datasetId: string;
   categoryId: string | null;
   tags: Array<{ tagId: string }>;
 }): SyncPayload & FallbackPayload {
   return {
-    datasetId: bookmark.datasetId,
     categoryId: bookmark.categoryId,
     tagIds: bookmark.tags.map((tag) => tag.tagId),
   };
@@ -72,10 +70,10 @@ function resolvePayload(db: Database): (bookmarkId: string) => SyncPayload {
   return (bookmarkId) => {
     const [bookmark] = getBookmarksWithTagsByIds(db, [bookmarkId]);
     // A missing bookmark row cannot happen while its embedding row exists (FK
-    // cascade); the empty-dataset fallback simply matches no filter.
+    // cascade); the null-category fallback simply matches no filter.
     return bookmark
       ? payloadOfBookmark(bookmark)
-      : { datasetId: '', categoryId: null, tagIds: [] };
+      : { categoryId: null, tagIds: [] };
   };
 }
 
@@ -96,9 +94,9 @@ function resolvePayloads(db: Database): (bookmarkIds: string[]) => Map<string, F
  * Wraps the in-memory KNN in the filter-applying decorator whenever it serves
  * as the primary (no Qdrant URL, or Qdrant unavailable at boot). `KnnIndex`
  * ignores `search` filters, so without this wrapper degraded semantic search
- * would return bookmarks from other datasets and ignore category/tag scoping —
- * the filter semantics must be identical on every backend path (ARCHITECTURE
- * §6). The reported `backend` stays `'memory'`.
+ * would ignore category/tag filters — the filter semantics must be identical
+ * on every backend path (ARCHITECTURE §6). The reported `backend` stays
+ * `'memory'`.
  */
 function memoryIndex(knn: KnnIndex, db: Database): VectorIndex {
   return new FilteringVectorIndex(knn, { resolvePayloads: resolvePayloads(db) });

@@ -1,14 +1,17 @@
 import { join } from 'node:path';
 
-import { resolveDataDir } from '@al-yo-bo/db';
+import { parseAiConfig, type AiConfig } from '@al-yo-bo/ai';
 import type { CoreConfig } from '@al-yo-bo/core';
+import { resolveDataDir } from '@al-yo-bo/db';
 
 /**
  * Server-only configuration layered on top of the core config the service layer
- * consumes. `autoAssignThreshold`, `ollaya`, and `scrape` are inherited from
- * `CoreConfig`; `embeddings` widens the core shape with the adapter credentials
- * (OpenRouter), and `qdrant`/`chat`/`extract`/`screenshot`/the data-root paths
- * are transport/serving concerns that never reach core.
+ * consumes. The AI env (OLLAYA_*, OLLAMA_*, OPENROUTER_*, EXTRACT_MODEL,
+ * threshold) is parsed ONCE by `packages/ai` (ARCHITECTURE §8) and threaded
+ * through as `ai` — `buildAiLayer` consumes it and the CoreConfig view below is
+ * derived from it, so there is a single source of truth per knob. The remaining
+ * keys (port/host, data-root paths, Qdrant serving, screenshot knobs) are
+ * transport concerns that never reach core.
  */
 export interface ServerConfig extends CoreConfig {
   port: number;
@@ -18,6 +21,8 @@ export interface ServerConfig extends CoreConfig {
   dbPath: string;
   /** Screenshot artifact directory, served under `/data/screenshots/`. */
   screenshotsDir: string;
+  /** Parsed AI config — the pass-through that feeds `buildAiLayer` and chat. */
+  ai: AiConfig;
   /** Vector-serving sidecar (ARCHITECTURE §6); disabled when `url` is undefined. */
   qdrant: {
     url?: string;
@@ -25,26 +30,7 @@ export interface ServerConfig extends CoreConfig {
     apiKey?: string;
     timeoutMs: number;
   };
-  /** Query-embedding provider; semantic search is off without a key and model. */
-  embeddings: {
-    apiKey?: string;
-    model?: string;
-    baseUrl?: string;
-  };
-  /** Chat (AI SDK + local Ollama); off without a model. */
-  chat: {
-    ollamaUrl: string;
-    model?: string;
-  };
-  /**
-   * Import extraction (ARCHITECTURE §7). A `/`-containing `model` selects the
-   * OpenRouter path; any other id selects the local Ollama path. Unset falls
-   * back to the OpenRouter default (key present) or the chat model.
-   */
-  extract: {
-    model?: string;
-  };
-  /** Screenshot enrichment (ARCHITECTURE §8). */
+  /** Screenshot enrichment (ARCHITECTURE §10). */
   screenshot: {
     width: number;
     height: number;
@@ -59,6 +45,10 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): ServerConfig {
+  // Single parse point for the AI env (§8): absent optionals degrade, invalid
+  // values fail fast. `parseAiConfig` reads the OLLAYA_*/OLLAMA_*/OPENROUTER_*
+  // pass-through, AUTO_ASSIGN_THRESHOLD, EXTRACT_MODEL and MCP_TOKEN.
+  const ai = parseAiConfig(env);
   // Single data root (ARCHITECTURE §5): every file artifact — SQLite,
   // screenshots, avatars, Qdrant storage — lives under one directory, so one
   // env knob relocates the whole tree. resolveDataDir (packages/db) anchors
@@ -66,17 +56,25 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // agree regardless of cwd.
   const dataDir = resolveDataDir(env.DATA_DIR);
   return {
+    ai,
     port: numberFromEnv(env.PORT, 3000),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
     dbPath: env.DB_PATH ?? join(dataDir, 'bookmarks.db'),
     screenshotsDir: env.SCREENSHOTS_DIR ?? join(dataDir, 'screenshots'),
-    autoAssignThreshold: numberFromEnv(env.AUTO_ASSIGN_THRESHOLD, 0.7),
-    defaultDataset: env.DEFAULT_DATASET ?? 'default',
-    ollaya: {
-      baseUrl: env.OLLAYA_URL ?? 'http://127.0.0.1:11435',
-      apiKey: env.OLLAYA_API_KEY,
-      model: env.OLLAYA_MODEL ?? 'laya',
+    // CoreConfig views derived from the AI config — same values, narrower type.
+    autoAssignThreshold: ai.autoAssignThreshold,
+    embeddings: {
+      // Pinned default (docs/ARCHITECTURE §6): 1536 dims, cheap, matches the
+      // benchmarked fallback matrix. Changing the model triggers a re-embed pass.
+      model: ai.openrouter.embeddingModel,
+    },
+    ollaya: { model: ai.ollaya.model },
+    scrape: {
+      timeoutMs: numberFromEnv(env.SCRAPE_TIMEOUT_MS, 15_000),
+      maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
+      binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
+      maxAttempts: numberFromEnv(env.SCRAPE_MAX_ATTEMPTS, 3),
     },
     qdrant: {
       // On by default (matching the sidecar deployment); `QDRANT_URL=""` turns it off.
@@ -84,27 +82,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       collection: env.QDRANT_COLLECTION ?? 'bookmarks',
       apiKey: env.QDRANT_API_KEY,
       timeoutMs: numberFromEnv(env.QDRANT_TIMEOUT_MS, 5_000),
-    },
-    embeddings: {
-      apiKey: env.OPENROUTER_API_KEY,
-      // Pinned default (docs/ARCHITECTURE §6/§7): 1536 dims, cheap, matches the
-      // benchmarked fallback matrix. Changing the model triggers a re-embed pass.
-      model: env.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small',
-      baseUrl: env.OPENROUTER_BASE_URL,
-    },
-    scrape: {
-      timeoutMs: numberFromEnv(env.SCRAPE_TIMEOUT_MS, 15_000),
-      maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
-      binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
-      maxAttempts: numberFromEnv(env.SCRAPE_MAX_ATTEMPTS, 3),
-    },
-    chat: {
-      ollamaUrl: env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
-      // Chat is off until a model is chosen (degrades to a 503, never an error).
-      model: env.OLLAMA_CHAT_MODEL || undefined,
-    },
-    extract: {
-      model: env.EXTRACT_MODEL || undefined,
     },
     screenshot: {
       width: numberFromEnv(env.SCREENSHOT_WIDTH, 1280),

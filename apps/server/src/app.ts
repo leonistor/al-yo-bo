@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { createChatHandler } from './chat.ts';
 import type { ServerConfig } from './env.ts';
 import { toProblemDetails } from './errors.ts';
+import { sseEventsHandler, type EventHub } from './events.ts';
 import { lanInterfaces } from './lan.ts';
 
 /**
@@ -30,6 +31,7 @@ import { lanInterfaces } from './lan.ts';
  * core service method, serialize the result. No route touches the database, the
  * vector index, or enrichment side effects — those live in `@al-yo-bo/core`, and
  * domain failures arrive here as `DomainError` for `toProblemDetails` to map.
+ * One workspace (MODEL.md principle 1): no dataset/section axis anywhere.
  */
 
 const jsonBody = validator('json', (value, c) => {
@@ -51,13 +53,45 @@ const importedBookmarkSchema = z.object({
   url: z.string().min(1),
   title: z.string().nullable(),
   description: z.string().nullable(),
-  category: z.string().nullable(),
+  /** Ancestor chain from the root, e.g. `["dev", "web", "2024"]` (v2 path grammar). */
+  categoryPath: z.array(z.string()),
   priority: z.number().nullable(),
   tags: z.array(z.string()),
 });
 
 const importCommitSchema = z.object({
   bookmarks: z.array(importedBookmarkSchema).min(1),
+});
+
+/** Drag-reorder of one sibling list (MODEL.md principle 2). */
+const categoryReorderSchema = z.object({
+  parentId: z.uuid().nullable(),
+  orderedIds: z.array(z.uuid()).min(1),
+});
+
+/**
+ * Commit-body validator. Returning the parsed object (rather than a bare
+ * `Record<string, unknown>`) keeps the Hono RPC input type precise so
+ * `apps/web` can call `api.api.import.$post({ json: { bookmarks } })`.
+ */
+const importCommit = validator('json', (value) => {
+  const parsed = importCommitSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(
+      '"bookmarks" must be a non-empty array of bookmark objects each with a "url"',
+    );
+  }
+  return parsed.data;
+});
+
+const categoryReorder = validator('json', (value) => {
+  const parsed = categoryReorderSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError(
+      '"parentId" (UUID or null) and a non-empty "orderedIds" array of UUIDs are required',
+    );
+  }
+  return parsed.data;
 });
 
 /** Upload size cap for the avatar (local single-user tool; images are small). */
@@ -83,21 +117,6 @@ function avatarExt(bytes: Uint8Array): 'jpg' | 'png' | null {
   }
   return null;
 }
-
-/**
- * Commit-body validator. Returning the parsed object (rather than a bare
- * `Record<string, unknown>`) keeps the Hono RPC input type precise so
- * `apps/web` can call `api.api.import.$post({ json: { bookmarks } })`.
- */
-const importCommit = validator('json', (value) => {
-  const parsed = importCommitSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new ValidationError(
-      '"bookmarks" must be a non-empty array of bookmark objects each with a "url"',
-    );
-  }
-  return parsed.data;
-});
 
 function parseMode(value: string | undefined): SearchMode {
   return value === 'semantic' || value === 'hybrid' ? value : 'keyword';
@@ -177,6 +196,11 @@ function queryUuid(value: string | undefined, field: string): string | undefined
   return value;
 }
 
+/**
+ * An optional id-valued body field for references that are checked for
+ * existence in core (`categoryId` on bookmarks/tags): absent or `null` → null,
+ * otherwise a trimmed string (a malformed UUID surfaces as core's 404/400).
+ */
 function optionalId(body: Record<string, unknown>, field: string): string | null {
   const value = body[field];
   if (value === null || value === undefined) {
@@ -186,6 +210,34 @@ function optionalId(body: Record<string, unknown>, field: string): string | null
     throw new ValidationError(`"${field}" must be a string`);
   }
   return value;
+}
+
+/**
+ * The `parentId` of a category move: `null` moves to root, a UUID re-parents.
+ * Distinct from `optionalId` because a malformed parent id must be a 400 —
+ * the tree integrity checks in core assume well-formed ids.
+ */
+function moveParentId(body: Record<string, unknown>): string | null {
+  const value = body['parentId'];
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'string' || !isUuid(value)) {
+    throw new ValidationError('"parentId" must be a valid UUID or null');
+  }
+  return value;
+}
+
+/** Optional fractional key for a move; absent lets the key append after siblings. */
+function optionalSortOrder(body: Record<string, unknown>): string | undefined {
+  const value = body['sortOrder'];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError('"sortOrder" must be a non-empty string');
+  }
+  return value.trim();
 }
 
 /**
@@ -217,25 +269,14 @@ async function readImportText(c: Context): Promise<string> {
 
 // All API routes are chained on one Hono instance so `ReturnType<typeof createApp>`
 // produces usable Hono RPC types for apps/web.
-export function createApp(core: Core, config: ServerConfig) {
+export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
   const chatHandler = createChatHandler({
     config,
     search: (query, limit) => core.search.chatHits(query, limit),
   });
 
   const app = new Hono()
-    .get(
-      '/api/health',
-      async (c) =>
-        c.json(
-          await core.health.health({
-            // Chat config lives at the app edge (core has none), so health
-            // takes it per call — mirrors the `health(chat?)` contract.
-            available: Boolean(config.chat.model),
-            model: config.chat.model ?? null,
-          }),
-        ),
-    )
+    .get('/api/health', async (c) => c.json(await core.health.health()))
 
     .get('/api/bookmarks', async (c) =>
       c.json(
@@ -320,7 +361,8 @@ export function createApp(core: Core, config: ServerConfig) {
       return c.body(null, 204);
     })
 
-    .get('/api/categories', (c) => c.json(core.vocabulary.listCategories()))
+    // The nested tree the sidebar consumes (roots, then children in sort_order).
+    .get('/api/categories', (c) => c.json(core.vocabulary.getCategoryTree()))
 
     .post('/api/categories', jsonBody, (c) => {
       const body = c.req.valid('json');
@@ -328,55 +370,39 @@ export function createApp(core: Core, config: ServerConfig) {
         core.vocabulary.createCategory({
           name: requiredString(body, 'name'),
           description: optionalString(body, 'description'),
-          sectionId: optionalId(body, 'sectionId'),
+          parentId: optionalId(body, 'parentId'),
         }),
         201,
       );
     })
 
+    // Update and move share one PATCH: a body carrying `parentId` re-parents
+    // (subtree included, optional fractional `sortOrder`); otherwise it renames.
     .patch('/api/categories/:id', jsonBody, (c) => {
       const body = c.req.valid('json');
+      const id = pathId(c, 'Category not found');
+      if ('parentId' in body) {
+        return c.json(core.vocabulary.moveCategory(id, moveParentId(body), optionalSortOrder(body)));
+      }
       return c.json(
-        core.vocabulary.updateCategory(pathId(c, 'Category not found'), {
-          name: 'name' in body ? requiredString(body, 'name') : undefined,
-          description: 'description' in body ? optionalString(body, 'description') : undefined,
-          sectionId: 'sectionId' in body ? optionalId(body, 'sectionId') : undefined,
-        }),
-      );
-    })
-
-    .delete('/api/categories/:id', async (c) => {
-      await core.vocabulary.deleteCategory(pathId(c, 'Category not found'));
-      return c.body(null, 204);
-    })
-
-    .get('/api/sections', (c) => c.json(core.vocabulary.listSections()))
-
-    .post('/api/sections', jsonBody, (c) => {
-      const body = c.req.valid('json');
-      return c.json(
-        core.vocabulary.createSection({
-          name: requiredString(body, 'name'),
-          description: optionalString(body, 'description'),
-        }),
-        201,
-      );
-    })
-
-    .patch('/api/sections/:id', jsonBody, (c) => {
-      const body = c.req.valid('json');
-      return c.json(
-        core.vocabulary.updateSection(pathId(c, 'Section not found'), {
+        core.vocabulary.updateCategory(id, {
           name: 'name' in body ? requiredString(body, 'name') : undefined,
           description: 'description' in body ? optionalString(body, 'description') : undefined,
         }),
       );
     })
 
-    .delete('/api/sections/:id', (c) => {
-      core.vocabulary.deleteSection(pathId(c, 'Section not found'));
-      return c.body(null, 204);
+    // Persists a full drag-reorder of one sibling list (parentId null = roots).
+    .post('/api/categories/reorder', categoryReorder, (c) => {
+      const { parentId, orderedIds } = c.req.valid('json');
+      return c.json(core.vocabulary.reorderCategories(parentId, orderedIds));
     })
+
+    // The response carries the subtree counts the confirmation UI showed
+    // (MODEL.md deletion semantics: bookmarks survive, category_id → NULL).
+    .delete('/api/categories/:id', async (c) =>
+      c.json(await core.vocabulary.deleteCategory(pathId(c, 'Category not found'))),
+    )
 
     .get('/api/tags', (c) => c.json(core.vocabulary.listTags()))
 
@@ -386,7 +412,6 @@ export function createApp(core: Core, config: ServerConfig) {
         core.vocabulary.createTag({
           name: requiredString(body, 'name'),
           description: optionalString(body, 'description'),
-          categoryId: optionalId(body, 'categoryId'),
         }),
         201,
       );
@@ -398,11 +423,11 @@ export function createApp(core: Core, config: ServerConfig) {
         core.vocabulary.updateTag(pathId(c, 'Tag not found'), {
           name: 'name' in body ? requiredString(body, 'name') : undefined,
           description: 'description' in body ? optionalString(body, 'description') : undefined,
-          categoryId: 'categoryId' in body ? optionalId(body, 'categoryId') : undefined,
         }),
       );
     })
 
+    // Tag lifecycle hook (§7 stage 0): only `active` tags are classifier candidates.
     .post('/api/tags/:id/status', jsonBody, (c) => {
       const status = requiredString(c.req.valid('json'), 'status');
       if (status !== 'active' && status !== 'deprecated') {
@@ -425,8 +450,6 @@ export function createApp(core: Core, config: ServerConfig) {
 
     .get('/api/profile', (c) => c.json(core.profile.get()))
 
-    .get('/api/profile/dataset', (c) => c.json(core.profile.getActiveDataset()))
-
     .patch('/api/profile', jsonBody, (c) => {
       const body = c.req.valid('json');
       const patch: ProfilePatchInput = {};
@@ -435,9 +458,6 @@ export function createApp(core: Core, config: ServerConfig) {
       }
       if ('githubUsername' in body) {
         patch.githubUsername = optionalString(body, 'githubUsername');
-      }
-      if ('activeDatasetId' in body) {
-        patch.activeDatasetId = optionalId(body, 'activeDatasetId');
       }
       return c.json(core.profile.update(patch));
     })
@@ -478,17 +498,11 @@ export function createApp(core: Core, config: ServerConfig) {
     // Commit the user-reviewed/edited list directly (no re-extraction).
     .post('/api/import', importCommit, (c) => {
       const { bookmarks } = c.req.valid('json');
-      const datasetIdParam = c.req.query('datasetId');
-      // A non-UUID datasetId would 500 inside the UUID codec; fail as 400 first.
-      if (datasetIdParam !== undefined && !isUuid(datasetIdParam)) {
-        throw new ValidationError('"datasetId" must be a valid UUID');
-      }
-      const datasetId = datasetIdParam || core.defaultDatasetId;
       const file = c.req.query('file') || undefined;
-      return c.json(core.import.commit(bookmarks, datasetId, { file }));
+      return c.json(core.import.commit(bookmarks, { file }));
     })
 
-    // Bookmark export (ARCHITECTURE §Export): a synchronous request/response,
+    // Bookmark export (ARCHITECTURE §7): a synchronous request/response,
     // never a job. Core owns filter/format validation and serialization; this
     // adapter only parses the query and packages bytes — a single format streams
     // that file, multiple formats are zipped here at the edge with fflate.
@@ -544,6 +558,11 @@ export function createApp(core: Core, config: ServerConfig) {
         },
       });
     })
+
+    // Coarse domain events over SSE (ARCHITECTURE §9): opens with a synthetic
+    // `invalidate-all`, then fans out core's hints. Consumed via EventSource,
+    // not the typed RPC client.
+    .get('/api/events', sseEventsHandler(hub))
 
     // Chat streams a UI message stream (AI SDK), not JSON — mounted last so the
     // typed RPC surface above stays clean for apps/web.
