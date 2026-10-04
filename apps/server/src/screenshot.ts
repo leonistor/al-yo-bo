@@ -168,13 +168,23 @@ export function ogImageScreenshotClient(options: {
 
   return {
     async capture(url: string): Promise<ScreenshotResult | null> {
-      const { html } = await fetchPage(url, options.timeoutMs);
+      const { html, finalUrl } = await fetchPage(url, options.timeoutMs);
       const ogImageUrl = extractOgImageUrl(html);
       if (!ogImageUrl) {
         return null;
       }
 
-      const response = await options.fetchImpl(ogImageUrl, {
+      // og:image is frequently root-relative (`/img/og.png`): resolve it
+      // against the final (post-redirect) page URL. An unparseable value
+      // falls through to "no image" like any other fetch failure.
+      let resolved: string;
+      try {
+        resolved = new URL(ogImageUrl, finalUrl ?? url).toString();
+      } catch {
+        return null;
+      }
+
+      const response = await options.fetchImpl(resolved, {
         signal: AbortSignal.timeout(options.timeoutMs),
       });
       if (!response.ok) {
@@ -192,7 +202,7 @@ export function ogImageScreenshotClient(options: {
       if (!buffer) {
         return null;
       }
-      return { buffer, ogImageUrl };
+      return { buffer, ogImageUrl: resolved };
     },
   };
 }

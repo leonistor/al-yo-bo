@@ -54,6 +54,16 @@ const client = (overrides?: {
       }),
   });
 
+/** Minimal fetchPage stub returning the given og:image content/finalUrl. */
+function pageWith(ogImage: string, finalUrl: string | null) {
+  return () =>
+    Promise.resolve({
+      html: `<meta property="og:image" content="${ogImage}">`,
+      contentType: 'text/html',
+      finalUrl,
+    });
+}
+
 describe('ogImageScreenshotClient', () => {
   test('downloads the og:image when within the cap', async () => {
     const result = await client().capture('https://x/');
@@ -78,6 +88,42 @@ describe('ogImageScreenshotClient', () => {
 
   test('streamed body over the cap is cancelled, returning null', async () => {
     const result = await client({ maxBytes: 2 }).capture('https://x/');
+    expect(result).toBeNull();
+  });
+
+  test('root-relative og:image resolves against the final page URL', async () => {
+    let fetched: unknown;
+    const fetchImpl = ((url: unknown) => {
+      fetched = url;
+      return Promise.resolve(imageResponse(new Uint8Array([1, 2, 3])));
+    }) as typeof fetch;
+    const relative = ogImageScreenshotClient({
+      fetchImpl,
+      timeoutMs: 1000,
+      fetchPage: pageWith('/img/og.png', 'https://example.com/post'),
+    });
+    const result = await relative.capture('https://example.com/redirect');
+    expect(result?.ogImageUrl).toBe('https://example.com/img/og.png');
+    expect(fetched).toBe('https://example.com/img/og.png');
+  });
+
+  test('relative og:image falls back to the request URL without a finalUrl', async () => {
+    const relative = ogImageScreenshotClient({
+      fetchImpl: fetchReturning(imageResponse(new Uint8Array([1]))),
+      timeoutMs: 1000,
+      fetchPage: pageWith('og.webp', null),
+    });
+    const result = await relative.capture('https://example.com/post/1');
+    expect(result?.ogImageUrl).toBe('https://example.com/post/og.webp');
+  });
+
+  test('an unparseable og:image value falls through to null', async () => {
+    const unparseable = ogImageScreenshotClient({
+      fetchImpl: fetchReturning(imageResponse(new Uint8Array([1]))),
+      timeoutMs: 1000,
+      fetchPage: pageWith('http://[::1', 'https://example.com/post'),
+    });
+    const result = await unparseable.capture('https://example.com/');
     expect(result).toBeNull();
   });
 });
