@@ -56,6 +56,7 @@ describe('convertHtmlToMarkdown', () => {
         binary: 'html-to-markdown',
         maxAttempts: 3,
         conversionTimeoutMs: 123,
+        maxBytes: 5 * 1024 * 1024,
       },
       {
         fetchPage: async (url) => ({
@@ -85,11 +86,13 @@ describe('fetchPageHtml byte cap', () => {
   // the streaming decode produces the expected string.
   test('a response under the cap is streamed and decoded as text', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response('<h1>ok</h1>', {
-        status: 200,
-        headers: { 'content-type': 'text/html' },
-      });
+    globalThis.fetch = ((): Promise<Response> =>
+      Promise.resolve(
+        new Response('<h1>ok</h1>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+      )) as unknown as typeof fetch;
     try {
       const page = await fetchPageHtml('https://example.com/', 5_000);
       expect(page.html).toBe('<h1>ok</h1>');

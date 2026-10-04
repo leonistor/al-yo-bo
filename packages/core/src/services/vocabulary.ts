@@ -164,14 +164,21 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       if (input.parentId && !getCategoryById(db, input.parentId)) {
         throw new NotFoundError('Parent category not found');
       }
+      // Trim before the sibling-merge check so a stray `##  ` heading does not
+      // become an empty row, and the trim in db's requireVocabularyName stays
+      // consistent (the dedupe scope must use the same rule).
+      const name = input.name.trim();
+      if (name === '') {
+        throw new ValidationError('Category name cannot be empty');
+      }
       // The db create is an idempotent sibling-name merge, so without this
       // pre-check the UI cannot tell "created" from "already existed"; the
       // two partial unique indexes (roots / children) are what backs this up.
-      if (getCategoryBySiblingName(db, input.parentId ?? null, input.name)) {
-        throw new ConflictError(`A category named "${input.name}" already exists there`);
+      if (getCategoryBySiblingName(db, input.parentId ?? null, name)) {
+        throw new ConflictError(`A category named "${name}" already exists there`);
       }
       const category = createCategory(db, {
-        name: input.name,
+        name,
         parentId: input.parentId ?? null,
         description: input.description ?? null,
       });
@@ -295,15 +302,21 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     createTag(input) {
+      // Trim before the dedupe check for the same reason as createCategory
+      // (importer `##  ` headings would otherwise leak empty rows).
+      const name = input.name.trim();
+      if (name === '') {
+        throw new ValidationError('Tag name cannot be empty');
+      }
       // Tag names are globally unique (MODEL.md); the db create is an
       // idempotent merge, so surface the collision explicitly for the UI.
-      if (getTagByName(db, input.name)) {
-        throw new ConflictError(`A tag named "${input.name}" already exists`);
+      if (getTagByName(db, name)) {
+        throw new ConflictError(`A tag named "${name}" already exists`);
       }
       // Tags are created `active` (vocabulary is created in its usable state,
       // MODEL.md principle 3) — a state input would contradict the lifecycle.
       const tag = createTag(db, {
-        name: input.name,
+        name,
         description: input.description ?? null,
       });
       events.emit({ topic: 'tags.changed' });

@@ -155,6 +155,7 @@ describe('makeScraper', () => {
     maxContentChars: 200_000,
     binary: 'html-to-markdown',
     maxAttempts: 3,
+    maxBytes: 5 * 1024 * 1024,
   };
 
   test('converts fetched HTML and hashes the stored content', async () => {

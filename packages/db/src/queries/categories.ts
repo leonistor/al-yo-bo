@@ -5,6 +5,7 @@ import { bytesToUuid, uuidToBytes, type Category, type CategoryNode } from '@al-
 import { mapCategory, type CategoryRow } from '../row-mapping.ts';
 import { lastOrder, orderAfter } from '../sort-order.ts';
 import { newIdBytes } from '../uuid.ts';
+import { requireVocabularyName } from '../vocab-validation.ts';
 import { prepared } from './statements.ts';
 
 /**
@@ -126,9 +127,10 @@ export interface CategoryInput {
  * on; UI callers that need a hard conflict surface it as a no-op + read-back.
  */
 export function createCategory(db: Database, input: CategoryInput): Category {
+  const name = requireVocabularyName('category', input.name);
   const run = db.transaction(() => {
     const parentId = input.parentId ?? null;
-    const existing = getCategoryBySiblingName(db, parentId, input.name);
+    const existing = getCategoryBySiblingName(db, parentId, name);
     if (existing) {
       return existing;
     }
@@ -142,7 +144,7 @@ export function createCategory(db: Database, input: CategoryInput): Category {
       id,
       parentId ? uuidToBytes(parentId) : null,
       sortOrder,
-      input.name,
+      name,
       input.description ?? null,
     );
     const created = getCategoryById(db, bytesToUuid(id));

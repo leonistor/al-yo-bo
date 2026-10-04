@@ -4,6 +4,7 @@ import { bytesToUuid, uuidToBytes, type Tag, type TagStatus } from '@al-yo-bo/sh
 
 import { mapTag, type TagRow } from '../row-mapping.ts';
 import { newIdBytes } from '../uuid.ts';
+import { requireVocabularyName } from '../vocab-validation.ts';
 import { prepared } from './statements.ts';
 
 /**
@@ -64,15 +65,16 @@ export interface TagInput {
  * merge-by-name behavior the importer relies on.
  */
 export function createTag(db: Database, input: TagInput): Tag {
+  const name = requireVocabularyName('tag', input.name);
   const run = db.transaction(() => {
-    const existing = getTagByName(db, input.name);
+    const existing = getTagByName(db, name);
     if (existing) {
       return existing;
     }
     const id = newIdBytes();
     prepared(db, 'INSERT INTO tags (id, name, description, status) VALUES (?, ?, ?, ?)').run(
       id,
-      input.name,
+      name,
       input.description ?? null,
       'active',
     );

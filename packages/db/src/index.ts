@@ -3,6 +3,7 @@ export * from './migrations.ts';
 export * from './paths.ts';
 export * from './row-mapping.ts';
 export * from './seed.ts';
+export * from './vocab-validation.ts';
 export * from './sort-order.ts';
 export * from './uuid.ts';
 

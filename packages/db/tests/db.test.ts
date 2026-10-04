@@ -16,6 +16,7 @@ import {
   deleteCategory,
   candidatesForBookmark,
   CategoryCycleError,
+  InvalidVocabularyNameError,
   getAggregates,
   getBookmarkById,
   getBookmarkCategoryIds,
@@ -225,6 +226,28 @@ describe('schema & triggers', () => {
         .query('INSERT INTO categories (id, parent_id, sort_order, name) VALUES (?, ?, ?, ?)')
         .run(newIdBytes(), uuidToBytes(books.id), 'm', '2024'),
     ).toThrow();
+  });
+
+  test('createCategory and createTag reject blank/whitespace names', () => {
+    // Regression: importer `##  ` headings used to reach the row, and dedupe
+    // was case- and whitespace-sensitive. requireVocabularyName trims and
+    // rejects empty at the db boundary so both HTTP and importer paths agree.
+    expect(() => createCategory(db, { name: '' })).toThrow(InvalidVocabularyNameError);
+    expect(() => createCategory(db, { name: '   ' })).toThrow(InvalidVocabularyNameError);
+    expect(() => createTag(db, { name: '' })).toThrow(InvalidVocabularyNameError);
+    expect(() => createTag(db, { name: '\t\n' })).toThrow(InvalidVocabularyNameError);
+  });
+
+  test('createCategory and createTag trim surrounding whitespace', () => {
+    // The trim is intentional: it makes the dedupe scope honest (Dev vs Dev ).
+    const trimmed = createCategory(db, { name: '  Dev  ' });
+    expect(trimmed.name).toBe('Dev');
+    // A subsequent "Dev" merges instead of becoming a duplicate row.
+    const merged = createCategory(db, { name: 'Dev' });
+    expect(merged.id).toBe(trimmed.id);
+
+    const tag = createTag(db, { name: ' rust ' });
+    expect(tag.name).toBe('rust');
   });
 });
 
