@@ -45,6 +45,11 @@ export interface ServerConfig extends CoreConfig {
 }
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
+  // A blank env value (`PORT=`) means "unset", not 0 — Number('') is 0, which
+  // would silently bind port 0 or turn a timeout into an instant abort.
+  if (value === undefined || value.trim() === '') {
+    return fallback;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }

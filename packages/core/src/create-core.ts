@@ -67,6 +67,12 @@ export interface Core {
   reindex(): Promise<{ ftsRows: number; vectorBackend: 'qdrant' | 'memory' }>;
   /** Stops the enrichment queue; callers also close their own db. */
   stop(): void;
+  /**
+   * Resolves when no enrichment job is queued or running. `stop()` only flags
+   * the in-flight job — callers about to close the db should await this
+   * (behind a timeout) first, so no job writes into a closing database.
+   */
+  waitForIdle(): Promise<void>;
 }
 
 /**
@@ -120,5 +126,6 @@ export function createCore(deps: CoreDeps): Core {
       return { ftsRows, vectorBackend };
     },
     stop: () => enrichment.stop(),
+    waitForIdle: () => enrichment.waitForIdle(),
   };
 }

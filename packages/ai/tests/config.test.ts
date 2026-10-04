@@ -27,6 +27,17 @@ describe('parseAiConfig', () => {
     expect(parseAiConfig({ AUTO_ASSIGN_THRESHOLD: '  ' }).autoAssignThreshold).toBe(0.7);
   });
 
+  test('blank string knobs mean unset, not the empty string', () => {
+    // A bare `EMBEDDING_MODEL=` in .env must fall back to the pinned default,
+    // not become '' (which would break reconciliation comparisons and embeds).
+    expect(parseAiConfig({ EMBEDDING_MODEL: '' }).openrouter.embeddingModel).toBe(
+      'openai/text-embedding-3-small',
+    );
+    expect(parseAiConfig({ OLLAYA_MODEL: '  ' }).ollaya.model).toBe('laya');
+    expect(parseAiConfig({ OLLAMA_CHAT_MODEL: '' }).ollama.chatModel).toBeUndefined();
+    expect(parseAiConfig({ EXTRACT_MODEL: '' }).extractModel).toBeUndefined();
+  });
+
   test('rejects present-but-invalid values (config error, not degradation)', () => {
     expect(() => parseAiConfig({ AUTO_ASSIGN_THRESHOLD: 'abc' })).toThrow();
     expect(() => parseAiConfig({ AUTO_ASSIGN_THRESHOLD: '1.5' })).toThrow();

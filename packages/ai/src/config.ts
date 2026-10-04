@@ -38,19 +38,19 @@ const aiConfigSchema = z.object({
     url: z.string().default(defaults.ollayaUrl),
     apiKey: z.string().optional(),
     /** Decision model *alias*; the daemon resolves it to a checkpoint per call. */
-    model: z.string().default(defaults.ollayaModel),
+    model: z.preprocess(blankToUndefined, z.string().default(defaults.ollayaModel)),
   }),
   /** Local Ollama daemon (chat + local extraction fallback, ARCHITECTURE §3). */
   ollama: z.object({
     url: z.string().default(defaults.ollamaUrl),
     /** Unset disables chat (503) and removes the Ollama extraction fallback. */
-    chatModel: z.string().optional(),
+    chatModel: z.preprocess(blankToUndefined, z.string().optional()),
   }),
   openrouter: z.object({
     apiKey: z.string().optional(),
     baseUrl: z.string().default(defaults.openrouterBaseUrl),
     /** Fixes the vector dimensions; a change requires a re-embed pass (§6). */
-    embeddingModel: z.string().default(defaults.embeddingModel),
+    embeddingModel: z.preprocess(blankToUndefined, z.string().default(defaults.embeddingModel)),
   }),
   /** Minimum probability to auto-assign a classifier tag (§7 stage 4). */
   autoAssignThreshold: z.preprocess(

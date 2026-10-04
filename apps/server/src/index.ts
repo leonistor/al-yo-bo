@@ -111,15 +111,19 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', serveStatic({ path: './apps/web/dist/index.html' }));
 }
 
-function shutdown(): void {
+async function shutdown(): Promise<void> {
   core.stop();
+  // stop() only flags the in-flight job — give it a bounded grace window to
+  // finish its current db write, or checkpoint/close races it (closed-db
+  // write from the job, possible SQLITE_BUSY on the checkpoint).
+  await Promise.race([core.waitForIdle(), Bun.sleep(3_000)]).catch(() => {});
   checkpoint(db);
   db.close();
   process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown());
 
 // Startup reconciliation (ARCHITECTURE §10): recover enrichment a restart dropped.
 // Embedding reconciliation only runs when the embedding client is configured.

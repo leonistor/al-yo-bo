@@ -355,6 +355,13 @@ describe('bookmark API', () => {
     }
   });
 
+  test('blank numeric env values fall back to defaults', () => {
+    // `PORT=` must not coerce to 0; a blank timeout must not become 0 ms.
+    expect(loadConfig({ PORT: '' }).port).toBe(3000);
+    expect(loadConfig({ SCRAPE_TIMEOUT_MS: '   ' }).scrape.timeoutMs).toBe(15_000);
+    expect(loadConfig({ QDRANT_TIMEOUT_MS: '' }).qdrant.timeoutMs).toBe(5_000);
+  });
+
   test('assigns and removes a user tag', async () => {
     const bookmarks = (await (await app.request('/api/bookmarks?limit=1')).json()) as {
       items: { id: string }[];
