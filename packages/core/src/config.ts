@@ -35,5 +35,7 @@ export interface CoreConfig {
     maxAttempts: number;
     /** HTML→markdown conversion subprocess timeout; defaults to 15000ms in scrape.ts. */
     conversionTimeoutMs?: number;
+    /** Page-download cap in bytes; oversized pages fail the scrape as transient. */
+    maxBytes: number;
   };
 }

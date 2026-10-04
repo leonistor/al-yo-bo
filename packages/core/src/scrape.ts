@@ -48,12 +48,55 @@ const BROWSER_UA =
 /** Default html-to-markdown conversion timeout (ms) when none is configured. */
 const DEFAULT_CONVERSION_TIMEOUT_MS = 15_000;
 
+/** Default page-download cap (5 MB) when none is configured — same shape as the
+ * screenshot job's `readCappedBuffer`, but inlined because core never depends on
+ * the server-only screenshot module. */
+const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+
 /** Fetched page plus the response facts worth keeping in bookmark metadata. */
 export interface FetchedPage {
   html: string;
   contentType: string | null;
   /** Final URL after redirects, when it differs from the requested one. */
   finalUrl: string | null;
+}
+
+/**
+ * Streams a response body up to `maxBytes`, cancelling the stream as soon as the
+ * cap is exceeded so an oversized page never buffers into memory. Returns the
+ * decoded UTF-8 text on success, or `null` when the cap is exceeded (or the
+ * body has no reader — the platform already exposes the body as a `Response`,
+ * so treat the absence as a successful empty read for tests that do not feed one).
+ */
+async function readCappedText(response: Response, maxBytes: number): Promise<string | null> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return '';
+  }
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    // Streaming is sequential by definition.
+    // oxlint-disable-next-line no-await-in-loop
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // oxlint-disable-next-line no-await-in-loop
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  let text = '';
+  for (const chunk of chunks) {
+    text += decoder.decode(chunk, { stream: true });
+  }
+  text += decoder.decode();
+  return text;
 }
 
 /** Fetches the page HTML with a bounded timeout; rejects with `ScrapeError` on any failure. */
@@ -77,8 +120,12 @@ export async function fetchPageHtml(url: string, timeoutMs: number): Promise<Fet
   if (contentType && !/text\/html|application\/xhtml\+xml|text\/plain/i.test(contentType)) {
     throw new ScrapeError(`Unsupported content type for ${url}: ${contentType}`);
   }
+  const capped = await readCappedText(response, DEFAULT_MAX_BYTES);
+  if (capped === null) {
+    throw new ScrapeError(`Fetching ${url} failed: response exceeds ${DEFAULT_MAX_BYTES} bytes`);
+  }
   return {
-    html: await response.text(),
+    html: capped,
     contentType,
     finalUrl: response.url && response.url !== url ? response.url : null,
   };

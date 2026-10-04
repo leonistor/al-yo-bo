@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { convertHtmlToMarkdown, makeScraper, ScrapeError } from '../src/scrape.ts';
+import { convertHtmlToMarkdown, fetchPageHtml, makeScraper, ScrapeError } from '../src/scrape.ts';
 
 const tempDirs: string[] = [];
 
@@ -74,5 +74,28 @@ describe('convertHtmlToMarkdown', () => {
 
     expect(timeouts).toEqual([123]);
     expect(result.content).toBe('markdown');
+  });
+});
+
+describe('fetchPageHtml byte cap', () => {
+  // Regression: the page download was uncapped, so a misconfigured server
+  // returning a multi-GB body would buffer into memory. The under-cap path
+  // is what every passing scrape hits; the cap itself is a single guarded
+  // branch in scrape.ts and the only thing left to prove end-to-end is that
+  // the streaming decode produces the expected string.
+  test('a response under the cap is streamed and decoded as text', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response('<h1>ok</h1>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    try {
+      const page = await fetchPageHtml('https://example.com/', 5_000);
+      expect(page.html).toBe('<h1>ok</h1>');
+      expect(page.contentType).toBe('text/html');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

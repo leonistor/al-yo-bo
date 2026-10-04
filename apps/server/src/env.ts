@@ -87,6 +87,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       maxContentChars: numberFromEnv(env.SCRAPE_MAX_CONTENT_CHARS, 200_000),
       binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
       maxAttempts: numberFromEnv(env.SCRAPE_MAX_ATTEMPTS, 3),
+      maxBytes: numberFromEnv(env.SCRAPE_MAX_BYTES, 5 * 1024 * 1024),
     },
     qdrant: {
       // On by default (matching the sidecar deployment); `QDRANT_URL=""` turns it off.
