@@ -2,9 +2,8 @@ import type { Database } from 'bun:sqlite';
 
 import type { ExtractionClient } from '@al-yo-bo/ai';
 import {
-  ingestBookmarks,
+  commitImport,
   parseCollection,
-  resolveVocabulary,
   type IngestReport,
 } from '@al-yo-bo/importer';
 import { isHttpUrl, type ImportedBookmark } from '@al-yo-bo/shared';
@@ -119,8 +118,10 @@ export function createImportService(deps: ImportServiceDeps): ImportService {
           invalidUrlWarnings.push(`Skipped bookmark with invalid URL: ${entry.url}`);
         }
       }
-      const resolution = resolveVocabulary(db, valid);
-      const report = ingestBookmarks(db, valid, resolution, {
+      // ARCHITECTURE §7: vocabulary resolution and ingest run in one
+      // transaction (commitImport). A mid-commit failure rolls the whole
+      // import back instead of leaving a half-created vocabulary behind.
+      const report = commitImport(db, valid, {
         file: options.file,
         // Reviewed list, except rows rejected above for an invalid URL.
         skipped: invalidUrlWarnings.length,

@@ -19,6 +19,7 @@ import {
   listTags,
   moveCategory,
   rebalanceSiblings,
+  reorderSiblings,
   setTagStatus,
   updateCategory,
   updateTag,
@@ -249,34 +250,35 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     reorderCategories(parentId, orderedIds) {
-      const seen = new Set<string>();
-      const currentKeys: string[] = [];
-      for (const id of orderedIds) {
-        if (seen.has(id)) {
-          throw new ValidationError(`Duplicate category id in reorder list: ${id}`);
+      // `reorderSiblings` runs validation + the N moveCategory updates in one
+      // transaction so a mid-loop error never leaves the tree half-shuffled.
+      // Map the raw db errors to the standard domain errors so the HTTP edge
+      // returns the usual 4xx problem+json.
+      let categories: Category[];
+      try {
+        categories = reorderSiblings(db, parentId, orderedIds, (currentKeys) =>
+          // Evenly spaced keys over a fresh span: deterministic, every gap keeps
+          // midpoints free, and the head keeps room below (`orderBefore` still
+          // works — db/sort-order.ts). A full-list reorder is the documented
+          // rebalance path; per-drag midpoint keys go through `moveCategory`.
+          rebalanceSiblings(currentKeys),
+        );
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.startsWith('Duplicate category id in reorder list')) {
+            throw new ValidationError(error.message);
+          }
+          if (error.message === 'Category not found') {
+            throw new NotFoundError(error.message);
+          }
+          if (error.message === 'Reordered categories must share the same parent') {
+            throw new ValidationError(error.message);
+          }
         }
-        seen.add(id);
-        const category = getCategoryById(db, id);
-        if (!category) {
-          throw new NotFoundError('Category not found');
-        }
-        if ((category.parentId ?? null) !== (parentId ?? null)) {
-          throw new ValidationError('Reordered categories must share the same parent');
-        }
-        currentKeys.push(category.sortOrder);
+        throw error;
       }
-      // Evenly spaced keys over a fresh span: deterministic, every gap keeps
-      // midpoints free, and the head keeps room below (`orderBefore` still
-      // works — db/sort-order.ts). A full-list reorder is the documented
-      // rebalance path; per-drag midpoint keys go through `moveCategory`.
-      const keys = rebalanceSiblings(currentKeys);
-      orderedIds.forEach((id, index) => {
-        moveCategory(db, id, parentId, keys[index]);
-      });
       events.emit({ topic: 'categories.changed' });
-      return orderedIds
-        .map((id) => getCategoryById(db, id))
-        .filter((category): category is Category => category !== null);
+      return categories;
     },
 
     subtreeInfo(id) {

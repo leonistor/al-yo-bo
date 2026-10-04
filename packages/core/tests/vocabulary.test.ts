@@ -134,13 +134,39 @@ describe('VocabularyService — category tree', () => {
     expect(tree.map((node) => node.name)).toEqual(['C', 'A', 'B']);
   });
 
-  test('reorderCategories rejects lists that mix parents or duplicate ids', () => {
+test('reorderCategories rejects lists that mix parents or duplicate ids', () => {
     const { service } = makeService();
     const root = service.createCategory({ name: 'Root' });
     const child = service.createCategory({ name: 'Child', parentId: root.id });
 
     expect(() => service.reorderCategories(null, [root.id, child.id])).toThrow(ValidationError);
     expect(() => service.reorderCategories(null, [root.id, root.id])).toThrow(ValidationError);
+    expect(() => service.reorderCategories(null, [root.id, '11111111-1111-4111-8111-111111111111'])).toThrow(NotFoundError);
+  });
+
+  test('reorderCategories is atomic: a bad list leaves the prior order intact', () => {
+    const { service } = makeService();
+    const a = service.createCategory({ name: 'A' });
+    const c = service.createCategory({ name: 'C' });
+
+    const beforeOrder = service.getCategoryTree().map((node) => node.name);
+    const beforeKeys = new Map(
+      service.getCategoryTree().map((node) => [node.name, node.sortOrder]),
+    );
+
+    // The phantom id does not exist; the validation throws before any UPDATE
+    // runs. The contract is "one transaction" so a future failure mode
+    // (a sort-order assertion mid-loop) must also roll back; here the
+    // pre-check fails first and the prior tree is untouched.
+    const phantom = '11111111-1111-4111-8111-111111111111';
+    expect(() => service.reorderCategories(null, [c.id, a.id, phantom])).toThrow();
+
+    const afterTree = service.getCategoryTree();
+    expect(afterTree.map((node) => node.name)).toEqual(beforeOrder);
+    for (const node of afterTree) {
+      expect(beforeKeys.get(node.name)).toBeDefined();
+      expect(node.sortOrder).toBe(beforeKeys.get(node.name)!);
+    }
   });
 });
 

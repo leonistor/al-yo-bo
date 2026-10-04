@@ -307,3 +307,45 @@ export function countCategories(db: Database): number {
     0
   );
 }
+
+/**
+ * Rebalances a sibling group in one transaction. The list must name every
+ * current child of `parentId` exactly once — partial lists would leave the
+ * missing rows stranded at their old keys, and the next midpoint walk would
+ * have to walk past them anyway. One transaction so the rebalance is atomic
+ * (a failure mid-loop rolls the whole reorder back, no half-shuffled tree).
+ * `rebalanceSiblings` comes from sort-order.ts.
+ */
+export function reorderSiblings(
+  db: Database,
+  parentId: string | null,
+  orderedIds: string[],
+  rebalanceSiblings: (currentKeys: string[]) => string[],
+): Category[] {
+  const run = db.transaction(() => {
+    const seen = new Set<string>();
+    const currentKeys: string[] = [];
+    for (const id of orderedIds) {
+      if (seen.has(id)) {
+        throw new Error(`Duplicate category id in reorder list: ${id}`);
+      }
+      seen.add(id);
+      const category = getCategoryById(db, id);
+      if (!category) {
+        throw new Error('Category not found');
+      }
+      if ((category.parentId ?? null) !== (parentId ?? null)) {
+        throw new Error('Reordered categories must share the same parent');
+      }
+      currentKeys.push(category.sortOrder);
+    }
+    const keys = rebalanceSiblings(currentKeys);
+    orderedIds.forEach((id, index) => {
+      moveCategory(db, id, parentId, keys[index]);
+    });
+    return orderedIds
+      .map((id) => getCategoryById(db, id))
+      .filter((category): category is Category => category !== null);
+  });
+  return run.immediate();
+}

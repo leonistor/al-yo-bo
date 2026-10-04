@@ -214,3 +214,146 @@ export function ingestBookmarks(
   }
   return report;
 }
+
+/**
+ * One-shot commit (ARCHITECTURE §7 "single transaction"). Wraps vocabulary
+ * resolution and the ingest pass inside one immediate transaction, so a
+ * failure part-way through (a category path that conflicts, a tag insert
+ * that violates a constraint) rolls back to the pre-import state instead of
+ * leaving a half-created vocabulary behind a partial ingest.
+ *
+ * `resolveVocabulary` and `ingestBookmarks` remain exported for callers that
+ * already hold a partial resolution they want to commit later; the import
+ * service uses `commitImport` directly so the doc contract holds end-to-end.
+ */
+export function commitImport(
+  db: Database,
+  bookmarks: ImportedBookmark[],
+  options: IngestOptions = {},
+): IngestReport {
+  const report: IngestReport = {
+    added: 0,
+    updated: 0,
+    skipped: options.skipped ?? 0,
+    categoriesCreated: 0,
+    tagsAssigned: 0,
+    parsed: bookmarks.length,
+    bookmarks,
+    addedIds: [],
+  };
+
+  const insideTransaction = db.transaction(() => {
+    const resolution = resolveVocabularyInTransaction(db, bookmarks);
+    ingestBookmarksInTransaction(db, bookmarks, resolution, report, options);
+  });
+  insideTransaction.immediate();
+  return report;
+}
+
+/**
+ * Variant of `resolveVocabulary` that runs inside a caller-provided
+ * transaction; it does NOT call `run.immediate()` itself. Returns the same
+ * shape so callers can chain it into their own transaction.
+ */
+function resolveVocabularyInTransaction(
+  db: Database,
+  bookmarks: ImportedBookmark[],
+): VocabularyResolution {
+  const resolution: VocabularyResolution = {
+    categoryIds: new Map(),
+    tagIds: new Map(),
+    skippedTags: [],
+    categoriesCreated: 0,
+  };
+  for (const path of uniquePaths(bookmarks)) {
+    let parentId: string | null = null;
+    const prefix: string[] = [];
+    for (const name of path) {
+      prefix.push(name);
+      const key = categoryPathKey(prefix);
+      let id = resolution.categoryIds.get(key);
+      if (id === undefined) {
+        const existing = getCategoryBySiblingName(db, parentId, name);
+        if (existing) {
+          id = existing.id;
+        } else {
+          // Auto-create as the last sibling (createCategory merges by
+          // sibling name; the pre-check distinguishes "created" from
+          // "merged" for the report count).
+          id = createCategory(db, { name, parentId }).id;
+          resolution.categoriesCreated += 1;
+        }
+        resolution.categoryIds.set(key, id);
+      }
+      parentId = id;
+    }
+  }
+  for (const name of uniqueTagNames(bookmarks)) {
+    const tag = createTag(db, { name });
+    if (tag.status !== 'active') {
+      resolution.skippedTags.push(name);
+      continue;
+    }
+    resolution.tagIds.set(name, tag.id);
+  }
+  return resolution;
+}
+
+/**
+ * Variant of `ingestBookmarks` that runs inside a caller-provided
+ * transaction. Mutates the passed `IngestReport` (added/updated/
+ * tagsAssigned/addedIds) and accumulates skipped-tag warnings on it so the
+ * caller owns the report lifecycle.
+ */
+function ingestBookmarksInTransaction(
+  db: Database,
+  bookmarks: ImportedBookmark[],
+  resolution: VocabularyResolution,
+  report: IngestReport,
+  options: IngestOptions,
+): void {
+  report.categoriesCreated = resolution.categoriesCreated;
+  for (const entry of bookmarks) {
+    const categoryId =
+      entry.categoryPath.length === 0
+        ? null
+        : (resolution.categoryIds.get(categoryPathKey(entry.categoryPath)) ?? null);
+
+    const metadata = {
+      import: {
+        file: options.file ?? null,
+        categoryPath: entry.categoryPath,
+        priority: entry.priority,
+      },
+    };
+
+    const { bookmark, created } = upsertBookmarkByUrl(db, {
+      url: entry.url,
+      title: entry.title,
+      description: entry.description,
+      categoryId,
+      metadata,
+    });
+
+    if (created) {
+      report.added += 1;
+      report.addedIds.push(bookmark.id);
+    } else {
+      report.updated += 1;
+    }
+
+    for (const name of entry.tags) {
+      const tagId = resolution.tagIds.get(name);
+      if (!tagId) {
+        continue;
+      }
+      assignTag(db, { bookmarkId: bookmark.id, tagId, source: 'import' });
+      report.tagsAssigned += 1;
+    }
+  }
+  if (resolution.skippedTags.length > 0) {
+    report.warnings = resolution.skippedTags.map(
+      (name) => `Deprecated tag "${name}" was not assigned to imported bookmarks.`,
+    );
+  }
+}
