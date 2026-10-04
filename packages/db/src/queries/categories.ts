@@ -22,16 +22,15 @@ import { prepared } from './statements.ts';
 const COLUMNS = 'id, parent_id, sort_order, name, description, created_at';
 
 /**
- * Flat category list with siblings grouped together and ordered by
- * `sort_order` inside each parent group (`COALESCE(parent_id, id)` keys the
- * group). The flat order is exactly what `getCategoryTree` needs: iterating it
- * and appending each row under its parent preserves sibling order without a
- * re-sort.
+ * Flat category list ordered for tree assembly: all roots first (NULL parent
+ * group sorts first in SQLite ASC), then each parent group's children, every
+ * sibling run ordered by `sort_order`. Iterating it and appending each row
+ * under its parent preserves both root and sibling order without a re-sort.
  */
 export function listCategories(db: Database): Category[] {
   return prepared<CategoryRow, []>(
     db,
-    `SELECT ${COLUMNS} FROM categories ORDER BY COALESCE(parent_id, id), sort_order`,
+    `SELECT ${COLUMNS} FROM categories ORDER BY parent_id, sort_order`,
   )
     .all()
     .map(mapCategory);

@@ -144,16 +144,10 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
     },
 
     getCategoryTree() {
-      const tree = getCategoryTree(db);
-      // db's flat ordering keys each root category by its own id (`COALESCE(
-      // parent_id, id)`), so roots come back in creation order while children
-      // sort by the fractional key. Re-sorting the top level here keeps root
-      // drag-reorder honest without touching the db package (tracked as a db
-      // fix-up: the ordering predicate should key roots under a shared NULL
-      // group).
-      return tree.toSorted((a, b) =>
-        a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : 0,
-      );
+      // db's flat ordering already puts roots first (shared NULL group) and
+      // every sibling run in fractional-key order, so the assembled tree needs
+      // no re-sort (packages/db listCategories contract).
+      return getCategoryTree(db);
     },
 
     createCategory(input) {
