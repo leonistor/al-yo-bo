@@ -29,7 +29,7 @@ import {
 } from '../src/enrichment/jobs.ts';
 import { makeScraper, ScrapeError, sha256Hex, type ScrapeFn } from '../src/scrape.ts';
 import type { ScreenshotClient } from '../src/screenshot.ts';
-import { testConfig } from './support.ts';
+import { recordingEvents, testConfig } from './support.ts';
 
 /** VectorIndex stub that records upserts and answers searches in insertion order. */
 class RecordingVector implements VectorIndex {
@@ -737,6 +737,230 @@ describe('job queue', () => {
 
     // The assignment policy made the result effective.
     expect(getBookmarkTags(db, id).map((tag) => tag.name)).toEqual(['rust']);
+  });
+});
+
+describe('job queue bookmarks.changed hints', () => {
+  // Background jobs mutate the same visible state as the manual endpoints, so
+  // the queue emits `bookmarks.changed` whenever a handler actually changes the
+  // row — otherwise enrichment storms arrive invisibly in the UI (item 3).
+  test('a scraped job emits bookmarks.changed with the bookmark id', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/hint-scrape',
+      title: 'S',
+    });
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      // No embeddings/screenshot: the chained jobs skip without row changes.
+      scrape: async () => ({
+        content: '# Page',
+        contentHash: sha256Hex('# Page'),
+        metadata: { scrape: { at: 1, contentType: null, finalUrl: null, truncated: false } },
+      }),
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    queue.enqueue(id, 'scrape');
+    await queue.waitForIdle();
+    queue.stop();
+
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+  });
+
+  test('an unchanged scrape stays silent', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/hint-unchanged',
+      content: '# Same',
+      contentHash: sha256Hex('# Same'),
+      scrapedAt: 1,
+    });
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      scrape: async () => ({
+        content: '# Same',
+        contentHash: sha256Hex('# Same'),
+        metadata: { scrape: { at: 2, contentType: null, finalUrl: null, truncated: false } },
+      }),
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    queue.enqueue(id, 'scrape');
+    await queue.waitForIdle();
+    queue.stop();
+
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([]);
+  });
+
+  test('a failed scrape still emits bookmarks.changed (lastError is a row change)', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, { url: 'https://example.com/hint-fail' });
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      scrape: async () => {
+        throw new ScrapeError('HTTP 500', 500);
+      },
+      maxAttempts: 2,
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    queue.enqueue(id, 'scrape');
+    await queue.waitForIdle();
+    queue.stop();
+
+    // Every failed attempt persists metadata.scrape.lastError and hints it.
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+    const scrapeMetadata = getBookmarkById(db, id)!.metadata?.scrape as
+      | { lastError?: { status: number | null } }
+      | undefined;
+    expect(scrapeMetadata?.lastError?.status).toBe(500);
+  });
+
+  test('a classify job emits on assignment and on retraction, never on a no-op', async () => {
+    const db = makeDb();
+    createTag(db, { name: 'rust' });
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/hint-classify',
+      title: 'C',
+      content: 'Body',
+    });
+    const events = recordingEvents();
+    let probability = 0.9;
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      scrape: async () => {
+        throw new ScrapeError('unused');
+      },
+      classifier: {
+        async decide() {
+          return { probabilities: { rust: probability }, model: 'laya:en' };
+        },
+      },
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    // Assign: above-threshold probability qualifies the tag.
+    queue.enqueue(id, 'classify');
+    await queue.waitForIdle();
+
+    // Retract: the rerun no longer qualifies the earlier assignment.
+    probability = 0.1;
+    queue.enqueue(id, 'classify');
+    await queue.waitForIdle();
+    queue.stop();
+
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+  });
+
+  test('a classify job with no candidates stays silent', async () => {
+    const db = makeDb();
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/hint-classify-skip',
+      title: 'N',
+      content: 'Body',
+    });
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new RecordingVector(),
+      scrape: async () => {
+        throw new ScrapeError('unused');
+      },
+      classifier: {
+        async decide() {
+          return { probabilities: {}, model: 'laya:en' };
+        },
+      },
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    queue.enqueue(id, 'classify');
+    await queue.waitForIdle();
+    queue.stop();
+
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([]);
+  });
+
+  test('a captured screenshot emits bookmarks.changed; a skipped one stays silent', async () => {
+    const db = makeDb();
+    const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-hint-shot-'));
+    try {
+      const { id } = createBookmark(db, { url: 'https://example.com/hint-shot' });
+      const capturedEvents = recordingEvents();
+      const capturedQueue = startJobQueue({
+        db,
+        vector: new RecordingVector(),
+        scrape: async () => {
+          throw new ScrapeError('unused');
+        },
+        screenshotsDir: dir,
+        screenshot: {
+          async capture() {
+            return { buffer: Buffer.from('jpeg-bytes'), ogImageUrl: null };
+          },
+        },
+        config: testConfig(),
+        baseDelayMs: 1,
+        events: capturedEvents,
+      });
+
+      capturedQueue.enqueue(id, 'screenshot');
+      await capturedQueue.waitForIdle();
+      capturedQueue.stop();
+
+      expect(capturedEvents.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+        { topic: 'bookmarks.changed', bookmarkIds: [id] },
+      ]);
+
+      // No screenshot client: the job skips, no row change, no hint.
+      const skippedEvents = recordingEvents();
+      const skippedQueue = startJobQueue({
+        db,
+        vector: new RecordingVector(),
+        scrape: async () => {
+          throw new ScrapeError('unused');
+        },
+        config: testConfig(),
+        baseDelayMs: 1,
+        events: skippedEvents,
+      });
+
+      skippedQueue.enqueue(id, 'screenshot');
+      await skippedQueue.waitForIdle();
+      skippedQueue.stop();
+
+      expect(skippedEvents.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual(
+        [],
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,10 +1,20 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createCore, createVectorProvider } from '@al-yo-bo/core';
 import { sha256Hex, startJobQueue } from '@al-yo-bo/core';
-import { createBookmark } from '@al-yo-bo/db';
+import { createBookmark, createTag, getBookmarkById } from '@al-yo-bo/db';
 
-import { StubVectorIndex, makeDb, recordingEvents, stubAi, testConfig } from './support.ts';
+import {
+  StubVectorIndex,
+  makeDb,
+  recordingEvents,
+  stubAi,
+  stubClassifier,
+  testConfig,
+} from './support.ts';
 
 /**
  * Event-emission layer tests (ARCHITECTURE §9, H5): core services are the ONLY
@@ -22,13 +32,16 @@ describe('domain events', () => {
       vector: createVectorProvider(new StubVectorIndex(), 'memory'),
       events,
     });
+    // Stop the queue upfront: this test asserts direct-mutation emits only,
+    // and the scrape job enqueued by `create` would otherwise interleave its
+    // own (asynchronous) hints — queue-path emits have their own tests below.
+    core.stop();
     try {
       const created = core.bookmarks.create({ url: 'https://example.com/ev', title: 'Ev' });
       await core.bookmarks.update(created.id, { title: 'Ev 2' });
       await core.bookmarks.delete(created.id);
 
-      // The scrape enqueued by create also emits jobs.changed — filter to the
-      // bookmark topic; each mutation emitted exactly one hint.
+      // Each mutation emitted exactly one hint.
       const topics = events.events
         .filter((event) => event.topic === 'bookmarks.changed')
         .map((event) => event.topic);
@@ -69,14 +82,14 @@ describe('domain events', () => {
       vector: createVectorProvider(new StubVectorIndex(), 'memory'),
       events,
     });
+    // Stop the queue upfront (same reason as above): commit enqueues scrape
+    // jobs whose queue-path hints must not interleave the commit's own emits.
+    core.stop();
     try {
       const { bookmarks } = await core.import.preview('## Dev\n- https://example.com/a\n');
       core.import.commit(bookmarks);
 
-      const topics = events.events
-        .filter((event) => event.topic !== 'jobs.changed')
-        .map((event) => event.topic)
-        .toSorted();
+      const topics = events.events.map((event) => event.topic).toSorted();
       expect(topics).toEqual(['bookmarks.changed', 'categories.changed', 'tags.changed']);
     } finally {
       core.stop();
@@ -135,5 +148,105 @@ describe('domain events', () => {
     expect(
       events.events.filter((event) => event.topic === 'jobs.changed').length,
     ).toBeGreaterThanOrEqual(5);
+
+    // The scrape changed the row — queue jobs also hint bookmarks.changed so
+    // background enrichment surfaces in the UI (the chained embed/screenshot
+    // jobs skipped without row changes, hence exactly one hint).
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+  });
+
+  test('a failed scrape job emits bookmarks.changed for the error-surface row change', async () => {
+    const db = makeDb();
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new StubVectorIndex(),
+      scrape: async () => {
+        throw new Error('boom');
+      },
+      maxAttempts: 1,
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    const { id } = createBookmark(db, { url: 'https://example.com/ev-failed' });
+    queue.enqueue(id, 'scrape');
+    await queue.waitForIdle();
+    queue.stop();
+
+    // The failure persisted metadata.scrape.lastError — a row change the UI
+    // error surface must see.
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+    expect(getBookmarkById(db, id)!.metadata?.scrape).toBeDefined();
+  });
+
+  test('a classify job that changes assignments emits bookmarks.changed', async () => {
+    const db = makeDb();
+    createTag(db, { name: 'rust' });
+    const events = recordingEvents();
+    const queue = startJobQueue({
+      db,
+      vector: new StubVectorIndex(),
+      scrape: async () => {
+        throw new Error('unused');
+      },
+      classifier: stubClassifier({ rust: 0.9 }),
+      config: testConfig(),
+      baseDelayMs: 1,
+      events,
+    });
+
+    const { id } = createBookmark(db, {
+      url: 'https://example.com/ev-classify',
+      title: 'C',
+      content: 'Body',
+    });
+    queue.enqueue(id, 'classify');
+    await queue.waitForIdle();
+    queue.stop();
+
+    expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+      { topic: 'bookmarks.changed', bookmarkIds: [id] },
+    ]);
+  });
+
+  test('a screenshot job that captures emits bookmarks.changed', async () => {
+    const db = makeDb();
+    const events = recordingEvents();
+    const dir = await mkdtemp(join(tmpdir(), 'al-yo-bo-events-shot-'));
+    try {
+      const queue = startJobQueue({
+        db,
+        vector: new StubVectorIndex(),
+        scrape: async () => {
+          throw new Error('unused');
+        },
+        screenshotsDir: dir,
+        screenshot: {
+          async capture() {
+            return { buffer: Buffer.from('jpeg-bytes'), ogImageUrl: null };
+          },
+        },
+        config: testConfig(),
+        baseDelayMs: 1,
+        events,
+      });
+
+      const { id } = createBookmark(db, { url: 'https://example.com/ev-shot' });
+      queue.enqueue(id, 'screenshot');
+      await queue.waitForIdle();
+      queue.stop();
+
+      expect(events.events.filter((event) => event.topic === 'bookmarks.changed')).toEqual([
+        { topic: 'bookmarks.changed', bookmarkIds: [id] },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

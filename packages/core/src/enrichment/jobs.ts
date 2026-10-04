@@ -27,8 +27,12 @@
  * reconciliation retries on the next start.
  *
  * Every enqueue and completed job emits a coarse `jobs.changed` hint
- * (ARCHITECTURE §9) when an events sink is provided — lossy by design, it only
- * triggers UI refetches.
+ * (ARCHITECTURE §9) when an events sink is provided. A job that actually
+ * mutates the bookmark row (scraped content, assigned tags, captured image —
+ * and failed scrapes, which write `metadata.scrape.lastError`) additionally
+ * emits `bookmarks.changed` with the id, so background enrichment storms
+ * surface in the UI the same way the manual endpoints do. Both hints are
+ * lossy by design — they only trigger UI refetches.
  */
 
 import type { Database } from 'bun:sqlite';
@@ -97,7 +101,11 @@ export interface JobQueueOptions extends Omit<JobDeps, 'queue'> {
   classifier?: ClassifyDeps['classifier'];
   /** Core configuration (threshold, Ollaya model) for the classify job. */
   config: CoreConfig;
-  /** Receives the coarse `jobs.changed` hints (ARCHITECTURE §9); absent = silent. */
+  /**
+   * Receives the coarse hints (ARCHITECTURE §9): `jobs.changed` on enqueue and
+   * completion, plus `bookmarks.changed` when a job mutates the bookmark row.
+   * Absent = silent.
+   */
   events?: EventsSink;
 }
 
@@ -400,6 +408,14 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
   const emitJob = (bookmarkId: string, job: JobType): void =>
     options.events?.emit({ topic: 'jobs.changed', bookmarkId, job });
 
+  /**
+   * Row-change hint mirroring the manual HTTP endpoints (enrichment service):
+   * emitted only when the job actually changed the bookmark row, so UIs that
+   * do not track `jobs.changed` still converge during background enrichment.
+   */
+  const emitBookmark = (bookmarkId: string): void =>
+    options.events?.emit({ topic: 'bookmarks.changed', bookmarkIds: [bookmarkId] });
+
   const queue: JobQueue = {
     enqueue() {},
     pendingCount() {
@@ -412,7 +428,19 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
 
   const handlers: Record<JobType, (bookmarkId: string) => Promise<void>> = {
     scrape: async (id) => {
-      await scrapeAndStore(deps, id);
+      try {
+        const outcome = await scrapeAndStore(deps, id);
+        // 'unchanged' refreshes only scraped_at; 'missing' touches nothing.
+        if (outcome === 'scraped') {
+          emitBookmark(id);
+        }
+      } catch (error) {
+        // A failed scrape still wrote `metadata.scrape.lastError`, so the UI
+        // error surface needs the hint too (same family as the row-change
+        // emits — a stale error badge is as invisible as stale content).
+        emitBookmark(id);
+        throw error;
+      }
     },
     embed: async (id) => {
       const outcome = await embedBookmark(deps, id);
@@ -421,7 +449,7 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
       }
     },
     classify: async (id) => {
-      await classifyBookmark(
+      const outcome = await classifyBookmark(
         {
           db: deps.db,
           vector: deps.vector,
@@ -430,9 +458,16 @@ export function startJobQueue(options: JobQueueOptions): JobQueue {
         },
         id,
       );
+      if (outcome.assigned > 0 || outcome.retracted > 0) {
+        emitBookmark(id);
+      }
     },
     screenshot: async (id) => {
-      await screenshotAndStore(deps, id);
+      const outcome = await screenshotAndStore(deps, id);
+      // Only a capture changes the row (`metadata.image`).
+      if (outcome === 'captured') {
+        emitBookmark(id);
+      }
     },
   };
 

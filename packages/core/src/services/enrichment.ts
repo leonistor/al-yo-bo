@@ -178,6 +178,10 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
         }
         return { status, bookmark: bookmarkViewOrThrow(db, id) };
       } catch (error) {
+        // scrapeAndStore persisted `metadata.scrape.lastError` before
+        // throwing — hint the row change so other clients see the error
+        // surface refresh, even though this caller gets the error directly.
+        events.emit({ topic: 'bookmarks.changed', bookmarkIds: [id] });
         if (error instanceof ScrapeError) {
           throw new DomainError(error.message, 'scrape_failed');
         }
