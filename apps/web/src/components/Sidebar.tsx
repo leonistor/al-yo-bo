@@ -168,7 +168,7 @@ function CategoryTreeRow({
       event.stopPropagation();
       onSetOpenSection(navGroupKey(node.id), !open);
     },
-    [onSetOpenSection, open],
+    [onSetOpenSection, open, node.id],
   );
 
   const handleDragStart = useCallback(

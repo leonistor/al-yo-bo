@@ -6,7 +6,7 @@ Technical reference: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Project status
 
 **In implementation.** The architecture, data model, and design are decided. The Bun workspace and
-`packages/shared|db|search|vectordb|embeddings|classifier|importer|core` plus `apps/server|web` are
+`packages/shared|db|search|vectordb|ai|importer|exporter|core` plus `apps/server|web` are
 being built. Do not invent structure, dependencies, or conventions that contradict the docs — if
 something is genuinely missing, update the docs first or ask.
 

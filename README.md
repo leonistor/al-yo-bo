@@ -60,11 +60,7 @@ export EXTRACT_MODEL=deepseek/deepseek-v4.1-flash   # OpenRouter extraction (nee
 ```sh
 bun install       # install dependencies
 bun run dev       # server (:3000) + web dev server (Vite)
-bun run dev -- --profile=leo  # same, isolated under data/profiles/leo (DB, seeds, vectors)
-bun run dev -- --profile=octocat --seed  # fresh profile, seed it (dataset via --seed=<name>), then boot
-bun run dev -- --list-profiles  # list profiles created by previous --profile runs
-bun run db:seed   # load the seed dataset chosen by SEED_DATASET (default: leo)
-bun run db:clear  # wipe one dataset's content (asks first; --yes to skip)
+bun run db:seed   # load the octocat demo fixture (synthetic, vendorable) into DATA_DIR
 bun run build     # build the web app into apps/web/dist
 bun run start     # production: one Bun process serves API + web
 bun run lint      # lint
@@ -72,6 +68,10 @@ bun run format    # format
 bun run typecheck # typecheck every workspace
 bun test          # tests
 ```
+
+Development isolation is a scratch data root: `DATA_DIR=/tmp/ayo-scratch bun run dev` gives a clean
+tree (DB, seeds, vectors); there is no profile-switching mechanism — the app is single-user with one
+workspace.
 
 On startup the server reconciles enrichment: bookmarks without scraped content are scraped and
 embedded in a background job loop (`docs/ARCHITECTURE.md` §8), so seeded or imported bookmarks get
@@ -81,17 +81,19 @@ their page content and vectors automatically when scraping and embeddings are av
 
 Quick orientation:
 
-- **Search** — one box, three modes: **keyword** (FTS5), **semantic**, and **hybrid** (rank fusion);
-  everything is scoped to the active dataset. Press `/` to focus the search.
+- **Search** — one box, three modes: **keyword** (FTS5), **semantic**, and **hybrid** (rank fusion).
+  Press `/` to focus the search.
 - **Capture** — add a URL from the top bar, or import a whole markdown collection file; bookmarks
-  are upserted by URL within a dataset, so re-importing merges instead of duplicating.
-- **Organize** — categories group bookmarks, tags classify them, and the classifier's
-  below-threshold suggestions wait in the **review queue** for a manual accept.
-- **Switch datasets** — datasets are separate workspaces (own bookmarks + vocabulary); seeding one
-  activates it (`bun run db:seed` is the switch mechanism), and the profile's active dataset is what
-  the app serves.
+  are upserted by URL (globally unique), so re-importing merges instead of duplicating.
+- **Organize** — categories form an orderable tree (drag to reorder or nest in the sidebar), tags
+  classify bookmarks, and the classifier's below-threshold suggestions wait in the **review queue**
+  for a manual accept.
+- **Live updates** — the server pushes coarse events over SSE; lists, tags, and job progress update
+  without a refresh (ARCHITECTURE §9).
 - **Profile** — the single user's name, GitHub username, and avatar (initials until a file is
   uploaded) show in the top bar and sidebar.
+- **MCP** — a read-only bookmarks MCP server is mounted at `/mcp` (search, get, categories, tags;
+  `MCP_TOKEN` adds a bearer check) for agents and Claude Desktop (ARCHITECTURE §8).
 - **Chat** — ask the assistant to search and suggest without losing your place in the list.
 
 ### Importing bookmarks from markdown
@@ -131,49 +133,18 @@ probability fell below the auto-assign threshold. Accept one to assign it manual
 (`source='user'`). Vocabulary itself is curated directly (rename, delete, deprecate) — there is no
 proposal queue.
 
-### Seed datasets
+### Seed fixture
 
-Seed fixtures live in `packages/db/seeds/datasets/` and `bun run db:seed` loads the dataset named
-by `SEED_DATASET` (default `leo`, Leo's real collections). Datasets are registered explicitly in
-`packages/db/src/seed.ts` — dropping a file in the directory doesn't make it selectable:
+The canonical seed is the synthetic **octocat** demo (`packages/db/seeds/` — curated, vendorable
+real well-known URLs under the octocat profile, with a tree-native markdown source that exercises
+the real import path). `bun run db:seed` loads it into `DATA_DIR`, wiping prior content first
+(dev data is disposable; use a scratch `DATA_DIR` for isolation). It is also the fixture every
+integration test and the visual QA run against. Real personal collections are not fixtures;
+`docs/examples-mds/*` are import-format examples only.
 
-```sh
-SEED_DATASET=leo        # which seed fixture db:seed loads (set in .env or via export)
-# SEED_DATASET=grimoire # the synthetic Grimoire demo fixture the tests use
-# SEED_RESET=1          # uncomment to wipe the target dataset's content first
-# SEED_ACTIVATE=0       # uncomment to load WITHOUT making it the active dataset
-```
-
-Seeding **activates** the dataset it loads: the profile's active-dataset pointer is set to it, so
-the server scopes to whatever was loaded on its next boot — seeding is the dataset-switch
-mechanism. `SEED_ACTIVATE=0` loads without switching.
-
-`leo` is generated from the five-file representative sample in `docs/examples-mds/`; regenerate it
-after editing those collections with:
-
-```sh
-bun run scripts/extract-leo-seed.ts
-```
-
-Seeding is otherwise idempotent (bookmarks are upserted by URL).
-
-### Clearing a dataset
-
-To test imports from a clean slate, `bun run db:clear` wipes one dataset's bookmarks and vocabulary
-(sections, categories, tags), keeping the dataset row itself so the name can be reused. It prompts
-for confirmation; pass `--yes` to skip it. Without an argument it clears the **active dataset**
-(the profile's pointer, then `DEFAULT_DATASET`, then `default` — the same precedence the server
-boot uses):
-
-```sh
-bun run db:clear            # clear the active dataset
-bun run db:clear leo --yes  # clear the "leo" dataset without prompting
-```
-
-`SEED_RESET=1` runs the same dataset-scoped wipe before seeding (other datasets are never
-touched); `db:clear` is the standalone form. Qdrant points for removed bookmarks are repaired from
-SQLite at the next server startup.
+Seeding is idempotent (bookmarks are upserted by URL). To start from a clean slate, point `DATA_DIR`
+at an empty directory — the database is born at migration `0001` in the final shape.
 
 The app is built milestone by milestone; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
 target layout (`apps/server`, `apps/web`, `packages/core` + the subsystem packages `db`, `search`,
-`vectordb`, `embeddings`, `classifier`, `importer`, `shared`).
+`vectordb`, `ai`, `importer`, `shared`).
