@@ -6,6 +6,22 @@ import type { ScrapeFn } from '../scrape.ts';
 import type { ScreenshotClient } from '../screenshot.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 
+/**
+ * Package version read once from the manifest at module load. The Bun bundler
+ * inlines the JSON import as a literal, so this is a constant at runtime; a
+ * missing manifest (extremely unlikely) still falls back to `'0.0.0'` so the
+ * service shape stays total.
+ */
+const PACKAGE_VERSION: string = (() => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const manifest = require('../../package.json') as { version?: string };
+    return typeof manifest.version === 'string' ? manifest.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
+
 /** Minimal view of the queue needed for reporting; avoids depending on the queue type. */
 export interface HealthJobs {
   pendingCount(): number;
@@ -13,7 +29,7 @@ export interface HealthJobs {
 
 export interface HealthReport {
   status: 'ok';
-  version: '0.0.0';
+  version: string;
   vector: {
     backend: 'qdrant' | 'memory';
     indexed: number;
@@ -68,7 +84,7 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
       const index = vector.current();
       return {
         status: 'ok' as const,
-        version: '0.0.0' as const,
+        version: PACKAGE_VERSION,
         vector: {
           backend: vector.backend(),
           indexed: index.size,
