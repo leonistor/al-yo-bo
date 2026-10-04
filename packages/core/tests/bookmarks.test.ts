@@ -9,7 +9,7 @@ import {
   updateBookmark,
 } from '@al-yo-bo/db';
 
-import { NotFoundError, ValidationError } from '../src/errors.ts';
+import { ConflictError, NotFoundError, ValidationError } from '../src/errors.ts';
 import { createBookmarkService } from '../src/services/bookmarks.ts';
 import { createVectorProvider } from '../src/vector/provider.ts';
 import { StubVectorIndex, makeDb, recordingEvents, recordingJobs } from './support.ts';
@@ -69,6 +69,26 @@ describe('BookmarkService — get/create', () => {
         categoryId: '11111111-1111-4111-8111-111111111111',
       }),
     ).toThrow(NotFoundError);
+  });
+
+  test('create with an already-saved URL conflicts instead of a raw SQLite error', () => {
+    const { service } = makeService();
+    service.create({ url: 'https://example.com/taken' });
+
+    expect(() => service.create({ url: 'https://example.com/taken' })).toThrow(ConflictError);
+  });
+
+  test('update changing a URL onto an existing bookmark conflicts; keeping the own URL is fine', async () => {
+    const { service } = makeService();
+    service.create({ url: 'https://example.com/first' });
+    const second = service.create({ url: 'https://example.com/second' });
+
+    await expect(service.update(second.id, { url: 'https://example.com/first' })).rejects.toThrow(
+      ConflictError,
+    );
+
+    const unchanged = await service.update(second.id, { url: 'https://example.com/second' });
+    expect(unchanged.url).toBe('https://example.com/second');
   });
 });
 

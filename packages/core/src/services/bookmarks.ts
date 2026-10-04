@@ -5,6 +5,7 @@ import {
   createBookmark,
   deleteBookmark,
   getBookmarkById,
+  getBookmarkByUrl,
   getBookmarksWithTagsByIds,
   getCategoryById,
   getTagById,
@@ -14,7 +15,7 @@ import {
 } from '@al-yo-bo/db';
 import { isHttpUrl, isUuid, normalizeUrl, type BookmarkWithTags } from '@al-yo-bo/shared';
 
-import { NotFoundError, ValidationError } from '../errors.ts';
+import { ConflictError, NotFoundError, ValidationError } from '../errors.ts';
 import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
@@ -88,6 +89,12 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
       if (input.categoryId) {
         assertCategoryExists(db, input.categoryId);
       }
+      // URLs are globally unique (`bookmarks_url_unique`, one workspace). The
+      // pre-check matches db's normalized storage, so the collision surfaces
+      // as a domain conflict instead of a raw SQLite error at the HTTP edge.
+      if (getBookmarkByUrl(db, input.url)) {
+        throw new ConflictError('A bookmark with this URL already exists');
+      }
       const bookmark = createBookmark(db, {
         url: input.url,
         title: input.title ?? null,
@@ -110,6 +117,13 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
         // raw URL parse error for invalid input instead of a ValidationError.
         if (!isHttpUrl(input.url)) {
           throw new ValidationError('Only HTTP(S) URLs can be saved');
+        }
+        // Same unique-URL gate as `create` — moving a bookmark onto another
+        // row's URL is a conflict, not a raw constraint violation. Comparing
+        // ids keeps an unchanged (or only re-normalized) URL valid.
+        const clash = getBookmarkByUrl(db, input.url);
+        if (clash && clash.id !== id) {
+          throw new ConflictError('A bookmark with this URL already exists');
         }
         patch.url = input.url;
       }
