@@ -37,7 +37,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import {
   deleteAvatar,
-  fetchActiveDataset,
   fetchHealth,
   updateProfile,
   uploadAvatar,
@@ -193,24 +192,29 @@ interface HealthRowConfig {
   pending?: (health: HealthReport) => number;
 }
 
+/**
+ * System status rows mapped onto the v2 health report: AI capability probes
+ * live under `health.ai.*` (packages/ai `AiHealthReport`), vector/screenshot/
+ * enrichment remain top-level. Degradation is per-row, never a single error
+ * surface (DESIGN.md §Profile).
+ */
 const HEALTH_ROWS: HealthRowConfig[] = [
   {
     id: 'classifier',
     name: 'Classifier',
     icon: BrainCircuitIcon,
-    status: (h) => ({
-      available: h.classifier.available && h.classifier.reachable,
-      degraded: h.classifier.available && !h.classifier.reachable,
-    }),
-    meta: (h) => h.classifier.model,
+    // Ollaya reachable = the daemon answered; a 4xx still proves it is up.
+    status: (h) => ({ available: h.ai.ollayaReachable, degraded: false }),
+    meta: (h) => h.ai.classifierModel,
     pending: (h) => h.enrichment.jobsPending,
   },
   {
     id: 'embeddings',
     name: 'Embeddings',
     icon: BinaryIcon,
-    status: (h) => ({ available: h.embeddings.enabled, degraded: false }),
-    meta: (h) => h.embeddings.model,
+    // No key → keyword-only search (ARCHITECTURE §6 degradation).
+    status: (h) => ({ available: h.ai.embeddingsConfigured, degraded: false }),
+    meta: (h) => h.ai.embeddingModel,
   },
   {
     id: 'vectors',
@@ -223,15 +227,17 @@ const HEALTH_ROWS: HealthRowConfig[] = [
     id: 'chat',
     name: 'Chat',
     icon: MessageSquareIcon,
-    status: (h) => ({ available: h.chat.available, degraded: false }),
-    meta: (h) => h.chat.model,
+    // `OLLAMA_CHAT_MODEL` unset → 503; daemon down surfaces in-stream (§12).
+    status: (h) => ({ available: h.ai.chatAvailable, degraded: false }),
+    meta: (h) => h.ai.chatModel,
   },
   {
     id: 'extract',
     name: 'Extract',
     icon: FileTextIcon,
-    status: (h) => ({ available: h.extract.available, degraded: false }),
-    meta: (h) => h.extract.provider,
+    // No provider → the deterministic parser serves imports (§7 stage 1).
+    status: (h) => ({ available: h.ai.extractConfigured, degraded: false }),
+    meta: (h) => h.ai.extractModel,
   },
   {
     id: 'screenshot',
@@ -456,11 +462,6 @@ export function ProfilePage({
 
   const hasAvatar = Boolean(profile?.avatarPath);
 
-  const { data: activeDataset } = useQuery({
-    queryKey: queryKeys.activeDataset,
-    queryFn: fetchActiveDataset,
-  });
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <h1 className="text-lg font-semibold tracking-tight">Profile & settings</h1>
@@ -587,15 +588,10 @@ export function ProfilePage({
         </section>
 
         <section className="rounded-lg border p-3">
-          <h2 className="text-sm font-medium">Dataset</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Active dataset</p>
-          {activeDataset === undefined ? (
-            <Skeleton className="mt-1 h-5 w-28" />
-          ) : (
-            <p className="mt-0.5 text-sm">{activeDataset ? activeDataset.name : 'Default'}</p>
-          )}
+          <h2 className="text-sm font-medium">Workspace</h2>
           <p className="mt-2 text-xs text-muted-foreground">
-            Switch datasets by seeding; live switching is a planned follow-up.
+            One library, one workspace — isolation for development or a second instance is a
+            separate <span className="font-mono">DATA_DIR</span>, not a schema concept.
           </p>
         </section>
         </div>

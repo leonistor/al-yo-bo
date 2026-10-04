@@ -12,7 +12,9 @@ import { cn } from '@/lib/utils';
 /**
  * Editable state for one extracted bookmark. Text fields stay as strings while
  * the user edits (empty string = null on commit); conversion back to
- * `ImportedBookmark` happens once, in the page's commit handler.
+ * `ImportedBookmark` happens once, in the page's commit handler. The category
+ * path is kept as its array form (`["dev","web","2024"]`) — the wire shape —
+ * and rendered/edited as an `a / b / c` text field with a breadcrumb preview.
  */
 export interface ImportRowState {
   /** Stable client-side key (not a bookmark id — nothing is persisted yet). */
@@ -21,7 +23,8 @@ export interface ImportRowState {
   url: string;
   title: string;
   description: string;
-  category: string;
+  /** Ancestor chain from the root, e.g. `["dev", "web", "2024"]` (v2 path grammar). */
+  categoryPath: string[];
   /** Raw priority text ('' = none); validated at commit time. */
   priority: string;
   /** Comma-separated tag names; split/trimmed at commit time. */
@@ -69,8 +72,15 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
     [onChange, row.key],
   );
 
-  const handleCategoryChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(row.key, { category: event.target.value }),
+  const handleCategoryPathChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      // `/` separates levels in the input; `▸` (rendered below) is display-only.
+      const path = event.target.value
+        .split('/')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment !== '');
+      onChange(row.key, { categoryPath: path });
+    },
     [onChange, row.key],
   );
 
@@ -131,13 +141,18 @@ export const ImportRow = memo(function ImportRow({ row, onChange, onRemove }: Im
 
       <TableCell className="min-w-[8rem] align-top">
         <Input
-          value={row.category}
-          onChange={handleCategoryChange}
-          placeholder="Category"
-          aria-label="Category"
+          value={row.categoryPath.join(' / ')}
+          onChange={handleCategoryPathChange}
+          placeholder="dev / web"
+          aria-label="Category path"
           className={fieldClass}
           disabled={!row.included}
         />
+        {row.categoryPath.length > 0 && (
+          <p className="mt-1 truncate text-xs text-muted-foreground" title={row.categoryPath.join(' ▸ ')}>
+            {row.categoryPath.join(' ▸ ')}
+          </p>
+        )}
       </TableCell>
 
       <TableCell className="w-12 text-center align-top">

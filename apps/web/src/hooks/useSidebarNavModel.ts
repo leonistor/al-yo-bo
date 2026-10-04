@@ -1,22 +1,20 @@
 import { useMemo } from 'react';
-import type { Aggregates, CategoryAggregate, TagAggregate } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryNode, TagAggregate } from '@al-yo-bo/shared';
+
+import { directCountMap, subtreeCountMap } from '@/lib/categories';
 
 export interface SidebarNavModel {
-  /** Categories with at least one bookmark. */
-  categories: CategoryAggregate[];
+  /** The category tree (roots and children in fractional `sortOrder` order). */
+  tree: CategoryNode[];
+  /** Subtree bookmark counts per category id (node + all descendants). */
+  categoryCounts: Map<string, number>;
   /** Top tags with at least one bookmark. */
   tags: TagAggregate[];
-  /** Sections with at least one bookmark. */
-  sections: NonNullable<Aggregates['sections']>;
-  /** Categories not belonging to any section. */
-  uncategorized: CategoryAggregate[];
   /** Total bookmark count. */
   total: number;
   /** Pending review count. */
   reviewCount: number;
-  /** Number of non-empty categories. */
-  categoryCount: number;
-  /** Number of displayed tags. */
+  /** Number of non-empty tags shown. */
   tagCount: number;
   /** True when the "All" view is active. */
   isAllActive: boolean;
@@ -29,11 +27,13 @@ export interface SidebarNavModel {
 }
 
 /**
- * Shared derivation of the sidebar navigation model. Both the expanded/mobile
- * nav tree and the collapsed rail consume this so counts, filters, and active
- * states stay in sync and never drift apart.
+ * Shared derivation of the sidebar navigation model over the v2 category
+ * tree (MODEL.md principle 2). Both the expanded/mobile nav and the collapsed
+ * rail consume this so counts, filters, and active states stay in sync and
+ * never drift apart.
  */
 export function useSidebarNavModel(
+  tree: CategoryNode[],
   aggregates: Aggregates | null,
   view: 'library' | 'review',
   selectedCategoryId: string | null,
@@ -41,7 +41,9 @@ export function useSidebarNavModel(
   reviewCount: number,
 ): SidebarNavModel {
   return useMemo(() => {
-    const categories = aggregates?.categories.filter((category) => category.count > 0) ?? [];
+    // Sidebar rows show subtree totals: a collapsed branch must still account
+    // for the bookmarks inside it. Derived from the aggregates' direct counts.
+    const counts = subtreeCountMap(tree, directCountMap(aggregates?.categories));
     // Deterministic order: the active tag floats to the top, then A–Z, before
     // the top-14 slice so selection never shifts out of the cloud.
     const tags =
@@ -53,22 +55,18 @@ export function useSidebarNavModel(
           return a.name.localeCompare(b.name);
         })
         .slice(0, 14) ?? [];
-    const sections = aggregates?.sections.filter((section) => section.count > 0) ?? [];
-    const uncategorized = categories.filter((category) => category.sectionId === null);
 
     return {
-      categories,
+      tree,
+      categoryCounts: counts,
       tags,
-      sections,
-      uncategorized,
       total: aggregates?.total ?? 0,
       reviewCount,
-      categoryCount: categories.length,
       tagCount: tags.length,
       isAllActive: view === 'library' && !selectedCategoryId && !selectedTagId,
       isReviewActive: view === 'review',
       isCategoryActive: view === 'library' && selectedCategoryId !== null,
       isTagActive: view === 'library' && selectedTagId !== null,
     };
-  }, [aggregates, view, selectedCategoryId, selectedTagId, reviewCount]);
+  }, [tree, aggregates, view, selectedCategoryId, selectedTagId, reviewCount]);
 }

@@ -1,15 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Aggregates, Category, Section, Tag } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryNode, Tag } from '@al-yo-bo/shared';
 import {
   ArchiveIcon,
   CheckIcon,
-  FolderIcon,
-  FolderTreeIcon,
+  FolderPlusIcon,
   PencilIcon,
   TagsIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { cva, type VariantProps } from 'class-variance-authority';
 
@@ -28,28 +27,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useCategoryDropHandler } from '@/hooks/useCategoryMutations';
 import { useInlineEdit } from '@/hooks/useInlineEdit';
 import { useListKeyboardNav } from '@/hooks/use-list-keyboard-nav';
 import {
   createCategory,
-  createSection,
   createTag,
   deleteCategory,
-  deleteSection,
   deleteTag,
   setTagStatus,
   updateCategory,
-  updateSection,
   updateTag,
 } from '@/lib/client';
+import { dropPositionFromEvent, isSelfOrDescendant } from '@/lib/categories';
 import { queryKeys } from '@/lib/queryKeys';
 import { cn } from '@/lib/utils';
 
@@ -68,37 +59,6 @@ function VocabInput({ id, value, onChange, placeholder }: VocabInputProps) {
   );
 
   return <FieldControl render={render} />;
-}
-
-interface VocabSelectProps {
-  value: string;
-  onValueChange: (value: string) => void;
-  items: Record<string, string>;
-  triggerClassName?: string;
-  children: React.ReactNode;
-}
-
-/** Field-wrapped select with stable items and a stable value handler. */
-function VocabSelect({
-  value,
-  onValueChange,
-  items,
-  triggerClassName,
-  children,
-}: VocabSelectProps) {
-  const handleValueChange = useCallback(
-    (v: string | null) => onValueChange(v ?? 'none'),
-    [onValueChange],
-  );
-
-  return (
-    <Select items={items} value={value} onValueChange={handleValueChange}>
-      <SelectTrigger className={triggerClassName}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>{children}</SelectContent>
-    </Select>
-  );
 }
 
 const statusBadgeVariants = cva(
@@ -126,16 +86,14 @@ function StatusBadge({ status, children }: StatusBadgeProps) {
 
 interface VocabularyPageProps {
   tags: Tag[];
-  categories: Category[];
-  sections: Section[];
+  tree: CategoryNode[];
   aggregates: Aggregates | null;
   tagsLoading?: boolean;
   categoriesLoading?: boolean;
-  sectionsLoading?: boolean;
   onChanged: () => void;
 }
 
-/** Filter input shared by all three tabs. */
+/** Filter input shared by both tabs. */
 function FilterInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
@@ -171,7 +129,15 @@ function VocabSkeleton() {
 }
 
 /** Empty state nudging the user back to the create form above. */
-function VocabEmpty({ icon: Icon, title, description }: { icon: typeof TagsIcon; title: string; description: string }) {
+function VocabEmpty({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof TagsIcon;
+  title: string;
+  description: string;
+}) {
   return (
     <Empty className="py-10">
       <EmptyHeader>
@@ -185,11 +151,16 @@ function VocabEmpty({ icon: Icon, title, description }: { icon: typeof TagsIcon;
   );
 }
 
+function invalidateVocab(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
+}
+
 interface TagRowProps {
   tag: Tag;
   index: number;
-  categories: Category[];
-  categoryMap: Map<string, Category>;
   bookmarkCount: number;
   active: boolean;
   onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
@@ -197,11 +168,14 @@ interface TagRowProps {
   queryClient: ReturnType<typeof useQueryClient>;
 }
 
+/**
+ * One vocabulary tag row (MODEL.md principle 3): rename + description inline,
+ * the `active ⇄ deprecated` lifecycle toggle, and a delete whose impact list
+ * names the assignment and immutable-evidence loss.
+ */
 function TagRow({
   tag,
   index,
-  categories,
-  categoryMap,
   bookmarkCount,
   active,
   onKeyDown,
@@ -209,17 +183,10 @@ function TagRow({
   queryClient,
 }: TagRowProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const categoryItems = useMemo(
-    () => ({
-      none: 'Global scope',
-      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-    }),
-    [categories],
-  );
 
   const updateMutation = useMutation({
-    mutationFn: async (patch: { name: string; categoryId: string | null }) =>
-      updateTag(tag.id, { name: patch.name, categoryId: patch.categoryId }),
+    mutationFn: async (patch: { name: string; description: string | null }) =>
+      updateTag(tag.id, { name: patch.name, description: patch.description }),
     onSuccess: () => {
       toast.success('Tag updated');
       invalidateVocab(queryClient);
@@ -258,13 +225,13 @@ function TagRow({
   // Stable identity is a useInlineEdit contract: a fresh literal per render
   // would make the not-editing draft resync loop (see useInlineEdit doc).
   const inlineValue = useMemo(
-    () => ({ name: tag.name, categoryId: tag.categoryId ?? 'none' }),
-    [tag.name, tag.categoryId],
+    () => ({ name: tag.name, description: tag.description ?? '' }),
+    [tag.name, tag.description],
   );
   const inline = useInlineEdit(inlineValue, async (draft) => {
     await updateMutation.mutateAsync({
       name: draft.name.trim(),
-      categoryId: draft.categoryId === 'none' ? null : draft.categoryId,
+      description: draft.description.trim() === '' ? null : draft.description.trim(),
     });
   });
 
@@ -275,8 +242,9 @@ function TagRow({
       setDraft((prev) => ({ ...prev, name: event.target.value })),
     [setDraft],
   );
-  const handleCategoryChange = useCallback(
-    (value: string | null) => setDraft((prev) => ({ ...prev, categoryId: value ?? 'none' })),
+  const handleDescriptionChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) =>
+      setDraft((prev) => ({ ...prev, description: event.target.value })),
     [setDraft],
   );
 
@@ -350,37 +318,22 @@ function TagRow({
             <span className="text-xs text-muted-foreground tabular-nums">{bookmarkCount}</span>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          {inline.editing ? (
-            <Select
-              value={inline.draft.categoryId}
-              onValueChange={handleCategoryChange}
-              items={categoryItems}
-            >
-              <SelectTrigger className="h-7 w-44 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Global scope</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <span className="truncate">
-              {tag.categoryId ? categoryMap.get(tag.categoryId)?.name ?? 'Unknown category' : 'Global scope'}
-            </span>
-          )}
-          {tag.description && (
-            <>
-              <span aria-hidden>·</span>
+        {inline.editing ? (
+          <InlineEditInput
+            editing={inline.editing}
+            value={inline.draft.description}
+            onChange={handleDescriptionChange}
+            onKeyDown={inline.handleKeyDown}
+            placeholder="Description (optional)"
+            className={cn(editableInputClass, 'text-muted-foreground')}
+          />
+        ) : (
+          tag.description && (
+            <div className="text-xs text-muted-foreground">
               <span className="truncate">{tag.description}</span>
-            </>
-          )}
-        </div>
+            </div>
+          )
+        )}
       </div>
       <div className="flex items-center gap-2">
         {inline.pending || statusMutation.isPending ? (
@@ -403,355 +356,18 @@ function TagRow({
   );
 }
 
-interface CategoryRowProps {
-  category: Category;
-  index: number;
-  sections: Section[];
-  sectionMap: Map<string, Section>;
-  tagCount: number;
-  bookmarkCount: number;
-  active: boolean;
-  onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
-  onChanged: () => void;
-  queryClient: ReturnType<typeof useQueryClient>;
-}
-
-function CategoryRow({
-  category,
-  index,
-  sections,
-  sectionMap,
-  tagCount,
-  bookmarkCount,
-  active,
-  onKeyDown,
-  onChanged,
-  queryClient,
-}: CategoryRowProps) {
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const sectionItems = useMemo(
-    () => ({
-      none: 'No section',
-      ...Object.fromEntries(sections.map((section) => [section.id, section.name])),
-    }),
-    [sections],
-  );
-
-  const updateMutation = useMutation({
-    mutationFn: async (patch: { name: string; sectionId: string | null }) =>
-      updateCategory(category.id, { name: patch.name, sectionId: patch.sectionId }),
-    onSuccess: () => {
-      toast.success('Category updated');
-      invalidateVocab(queryClient);
-      onChanged();
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to update category');
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async () => deleteCategory(category.id),
-    onSuccess: () => {
-      toast.success('Category deleted');
-      invalidateVocab(queryClient);
-      onChanged();
-      setDeleteOpen(false);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete category');
-    },
-  });
-
-  const inlineValue = useMemo(
-    () => ({ name: category.name, sectionId: category.sectionId ?? 'none' }),
-    [category.name, category.sectionId],
-  );
-  const inline = useInlineEdit(inlineValue, async (draft) => {
-    await updateMutation.mutateAsync({
-      name: draft.name.trim(),
-      sectionId: draft.sectionId === 'none' ? null : draft.sectionId,
-    });
-  });
-
-  const { setDraft } = inline;
-
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) =>
-      setDraft((prev) => ({ ...prev, name: event.target.value })),
-    [setDraft],
-  );
-  const handleSectionChange = useCallback(
-    (value: string | null) => setDraft((prev) => ({ ...prev, sectionId: value ?? 'none' })),
-    [setDraft],
-  );
-
-  const categoryImpact = useMemo(
-    () => [
-      `${bookmarkCount} bookmark${bookmarkCount === 1 ? '' : 's'} become uncategorized`,
-      `${tagCount} tag${tagCount === 1 ? '' : 's'} lose their category`,
-    ],
-    [bookmarkCount, tagCount],
-  );
-
-  const handleDeleteConfirm = useCallback(() => deleteMutation.mutate(), [deleteMutation]);
-
-  const actions: RowAction[] = useMemo(
-    () => [
-      {
-        id: 'edit',
-        icon: <PencilIcon />,
-        label: `Edit ${category.name}`,
-        onClick: inline.startEdit,
-      },
-      {
-        id: 'delete',
-        icon: <Trash2Icon />,
-        label: `Delete ${category.name}`,
-        onClick: () => setDeleteOpen(true),
-        destructive: true,
-      },
-    ],
-    [category, inline.startEdit],
-  );
-
-  return (
-    <EditableRow asListItem data-item-id={category.id} data-index={index}>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {inline.editing ? (
-          <InlineEditInput
-            editing={inline.editing}
-            value={inline.draft.name}
-            onChange={handleNameChange}
-            onKeyDown={inline.handleKeyDown}
-            placeholder="Category name"
-            className={cn(editableInputClass, 'w-48 font-medium')}
-            data-row-focus
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={inline.startEdit}
-            onKeyDown={onKeyDown}
-            tabIndex={active ? 0 : -1}
-            data-row-focus
-            className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none"
-          >
-            <span className="truncate text-sm font-medium">{category.name}</span>
-          </button>
-        )}
-        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          {inline.editing ? (
-            <Select
-              value={inline.draft.sectionId}
-              onValueChange={handleSectionChange}
-              items={sectionItems}
-            >
-              <SelectTrigger className="h-7 w-44 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No section</SelectItem>
-                {sections.map((section) => (
-                  <SelectItem key={section.id} value={section.id}>
-                    {section.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <span className="truncate">
-              {category.sectionId
-                ? sectionMap.get(category.sectionId)?.name ?? 'Unknown section'
-                : 'No section'}
-            </span>
-          )}
-          {tagCount > 0 && (
-            <>
-              <span aria-hidden>·</span>
-              <span className="tabular-nums">{tagCount} tag{tagCount === 1 ? '' : 's'}</span>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {inline.pending ? (
-          <Spinner className="size-4" />
-        ) : (
-          <RowActions actions={actions} visibleCount={1} active={active} onKeyDown={onKeyDown} />
-        )}
-      </div>
-
-      <ConfirmDeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={`Delete category “${category.name}”?`}
-        description="This removes the category from the vocabulary."
-        impact={categoryImpact}
-        confirmLabel="Delete"
-        onConfirm={handleDeleteConfirm}
-      />
-    </EditableRow>
-  );
-}
-
-interface SectionRowProps {
-  section: Section;
-  index: number;
-  categoryCount: number;
-  active: boolean;
-  onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
-  onChanged: () => void;
-  queryClient: ReturnType<typeof useQueryClient>;
-}
-
-function SectionRow({
-  section,
-  index,
-  categoryCount,
-  active,
-  onKeyDown,
-  onChanged,
-  queryClient,
-}: SectionRowProps) {
-  const [deleteOpen, setDeleteOpen] = useState(false);
-
-  const updateMutation = useMutation({
-    mutationFn: async (name: string) => updateSection(section.id, { name: name.trim() }),
-    onSuccess: () => {
-      toast.success('Section updated');
-      invalidateVocab(queryClient);
-      onChanged();
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to update section');
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async () => deleteSection(section.id),
-    onSuccess: () => {
-      toast.success('Section deleted');
-      invalidateVocab(queryClient);
-      onChanged();
-      setDeleteOpen(false);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete section');
-    },
-  });
-
-  const inline = useInlineEdit(section.name, async (name) => {
-    await updateMutation.mutateAsync(name);
-  });
-
-  const { setDraft } = inline;
-
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => setDraft(event.target.value),
-    [setDraft],
-  );
-
-  const sectionImpact = useMemo(
-    () => [`${categoryCount} categor${categoryCount === 1 ? 'y becomes' : 'ies become'} ungrouped`],
-    [categoryCount],
-  );
-
-  const handleDeleteConfirm = useCallback(() => deleteMutation.mutate(), [deleteMutation]);
-
-  const actions: RowAction[] = useMemo(
-    () => [
-      {
-        id: 'edit',
-        icon: <PencilIcon />,
-        label: `Edit ${section.name}`,
-        onClick: inline.startEdit,
-      },
-      {
-        id: 'delete',
-        icon: <Trash2Icon />,
-        label: `Delete ${section.name}`,
-        onClick: () => setDeleteOpen(true),
-        destructive: true,
-      },
-    ],
-    [section, inline.startEdit],
-  );
-
-  return (
-    <EditableRow asListItem data-item-id={section.id} data-index={index}>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {inline.editing ? (
-          <InlineEditInput
-            editing={inline.editing}
-            value={inline.draft}
-            onChange={handleNameChange}
-            onKeyDown={inline.handleKeyDown}
-            placeholder="Section name"
-            className={cn(editableInputClass, 'w-48 font-medium')}
-            data-row-focus
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={inline.startEdit}
-            onKeyDown={onKeyDown}
-            tabIndex={active ? 0 : -1}
-            data-row-focus
-            className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none"
-          >
-            <span className="truncate text-sm font-medium">{section.name}</span>
-          </button>
-        )}
-        <div className="text-xs text-muted-foreground">
-          {categoryCount} categor{categoryCount === 1 ? 'y' : 'ies'}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {inline.pending ? (
-          <Spinner className="size-4" />
-        ) : (
-          <RowActions actions={actions} visibleCount={1} active={active} onKeyDown={onKeyDown} />
-        )}
-      </div>
-
-      <ConfirmDeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={`Delete section “${section.name}”?`}
-        description="This removes the section from the vocabulary."
-        impact={sectionImpact}
-        confirmLabel="Delete"
-        onConfirm={handleDeleteConfirm}
-      />
-    </EditableRow>
-  );
-}
-
-function invalidateVocab(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.sections });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
-}
-
 interface TagPanelProps {
   tags: Tag[];
-  categories: Category[];
   aggregates: Aggregates | null;
   loading: boolean;
   onChanged: () => void;
 }
 
-function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanelProps) {
+function TagPanel({ tags, aggregates, loading, onChanged }: TagPanelProps) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState('');
   const [name, setName] = useState('');
-  const [categoryId, setCategoryId] = useState('none');
   const listRef = useRef<HTMLUListElement | null>(null);
-
-  const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
   const filtered = useMemo(
     () =>
@@ -767,12 +383,10 @@ function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanel
   );
 
   const createMutation = useMutation({
-    mutationFn: async () =>
-      createTag({ name: name.trim(), categoryId: categoryId === 'none' ? null : categoryId }),
+    mutationFn: async () => createTag({ name: name.trim() }),
     onSuccess: () => {
       toast.success('Tag created');
       setName('');
-      setCategoryId('none');
       invalidateVocab(queryClient);
       onChanged();
     },
@@ -786,14 +400,6 @@ function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanel
   const handleNameChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value),
     [],
-  );
-
-  const categoryItems = useMemo(
-    () => ({
-      none: 'Global scope',
-      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-    }),
-    [categories],
   );
 
   const { activeId, handleFocusIn, handleKeyDown } = useListKeyboardNav({
@@ -815,19 +421,6 @@ function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanel
             onChange={handleNameChange}
             placeholder="e.g. accessibility"
           />
-          <VocabSelect
-            items={categoryItems}
-            value={categoryId}
-            onValueChange={setCategoryId}
-            triggerClassName="w-40"
-          >
-            <SelectItem value="none">Global scope</SelectItem>
-            {categories.map((category) => (
-              <SelectItem key={category.id} value={category.id}>
-                {category.name}
-              </SelectItem>
-            ))}
-          </VocabSelect>
           <Button onClick={handleCreate} disabled={name.trim() === '' || createMutation.isPending}>
             Create
           </Button>
@@ -847,8 +440,6 @@ function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanel
             key={tag.id}
             tag={tag}
             index={index}
-            categories={categories}
-            categoryMap={categoryMap}
             bookmarkCount={tagCounts.get(tag.id) ?? 0}
             active={activeId === tag.id}
             onKeyDown={handleKeyDown}
@@ -879,60 +470,435 @@ function TagPanel({ tags, categories, aggregates, loading, onChanged }: TagPanel
   );
 }
 
+interface VocabCategoryRowProps {
+  node: CategoryNode;
+  depth: number;
+  /** Subtree (own + descendants) bookmark count — meta line and delete impact. */
+  bookmarkCount: number;
+  /** Categories removed by a delete of this node (itself + descendants). */
+  subtreeCategoryCount: number;
+  dragId: string | null;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  /** Panel-provided drop (full tree in scope): move (`into`) or sibling reorder. */
+  onDropNode: (dragId: string, targetId: string, position: 'before' | 'after' | 'into') => void;
+  onAddChild: (parentId: string) => void;
+  onChanged: () => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+}
+
+/**
+ * One editable tree row: rename/description inline, add-child, drag
+ * move/reorder (three-zone drop, same semantics as the sidebar), and a
+ * delete confirm backed by client-computed subtree counts (the server
+ * has no pre-delete info route; DELETE echoes the same numbers).
+ */
+function VocabCategoryRow({
+  node,
+  depth,
+  bookmarkCount,
+  subtreeCategoryCount,
+  dragId,
+  onDragStart,
+  onDragEnd,
+  onDropNode,
+  onAddChild,
+  onChanged,
+  queryClient,
+}: VocabCategoryRowProps) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [hover, setHover] = useState<'before' | 'after' | 'into' | null>(null);
+
+  const updateMutation = useMutation({
+    mutationFn: async (patch: { name: string; description: string | null }) =>
+      updateCategory(node.id, { name: patch.name, description: patch.description }),
+    onSuccess: () => {
+      toast.success('Category updated');
+      invalidateVocab(queryClient);
+      onChanged();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to update category');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => deleteCategory(node.id),
+    onSuccess: (info) => {
+      toast.success(
+        `Category deleted — ${info.categories} categor${info.categories === 1 ? 'y' : 'ies'} removed, ${info.bookmarks} bookmark${info.bookmarks === 1 ? '' : 's'} kept`,
+      );
+      invalidateVocab(queryClient);
+      onChanged();
+      setDeleteOpen(false);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete category');
+    },
+  });
+
+  const inlineValue = useMemo(
+    () => ({ name: node.name, description: node.description ?? '' }),
+    [node.name, node.description],
+  );
+  const inline = useInlineEdit(inlineValue, async (draft) => {
+    await updateMutation.mutateAsync({
+      name: draft.name.trim(),
+      description: draft.description.trim() === '' ? null : draft.description.trim(),
+    });
+  });
+
+  const { setDraft } = inline;
+
+  const handleNameChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) =>
+      setDraft((prev) => ({ ...prev, name: event.target.value })),
+    [setDraft],
+  );
+  const handleDescriptionChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) =>
+      setDraft((prev) => ({ ...prev, description: event.target.value })),
+    [setDraft],
+  );
+
+  const categoryImpact = useMemo(
+    () => [
+      `${bookmarkCount} bookmark${bookmarkCount === 1 ? '' : 's'} become uncategorized`,
+      `${subtreeCategoryCount} categor${subtreeCategoryCount === 1 ? 'y' : 'ies'} removed (children cascade)`,
+    ],
+    [bookmarkCount, subtreeCategoryCount],
+  );
+
+  const handleDeleteConfirm = useCallback(() => deleteMutation.mutate(), [deleteMutation]);
+
+  const handleDragStart = useCallback(
+    (event: React.DragEvent) => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', node.id);
+      onDragStart(node.id);
+    },
+    [node.id, onDragStart],
+  );
+
+  const handleDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (!dragId || dragId === node.id) {
+        return;
+      }
+      // Cycle guard (MODEL.md principle 2): never offer to drop a subtree
+      // into itself.
+      if (isSelfOrDescendant(node, dragId)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setHover(dropPositionFromEvent(event));
+    },
+    [dragId, node],
+  );
+
+  const handleDragLeave = useCallback(() => setHover(null), []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const position = dropPositionFromEvent(event);
+      setHover(null);
+      onDragEnd();
+      if (!dragId || dragId === node.id) {
+        return;
+      }
+      onDropNode(dragId, node.id, position);
+    },
+    [onDropNode, dragId, node, onDragEnd],
+  );
+
+  const actions: RowAction[] = useMemo(
+    () => [
+      {
+        id: 'add-child',
+        icon: <FolderPlusIcon />,
+        label: `Add child under ${node.name}`,
+        onClick: () => onAddChild(node.id),
+      },
+      {
+        id: 'edit',
+        icon: <PencilIcon />,
+        label: `Edit ${node.name}`,
+        onClick: inline.startEdit,
+      },
+      {
+        id: 'delete',
+        icon: <Trash2Icon />,
+        label: `Delete ${node.name}`,
+        onClick: () => setDeleteOpen(true),
+        destructive: true,
+      },
+    ],
+    [node, inline.startEdit, onAddChild],
+  );
+
+  return (
+    <EditableRow
+      asListItem
+      data-item-id={node.id}
+      className={cn(
+        'relative transition-opacity',
+        dragId === node.id && 'opacity-40',
+        hover === 'into' && 'bg-accent/60',
+      )}
+    >
+      {/* Reorder guide lines: 1px before/after indicators over the row edges. */}
+      {hover === 'before' && (
+        <span aria-hidden className="absolute inset-x-2 top-0 h-0.5 bg-primary" />
+      )}
+      {hover === 'after' && (
+        <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 bg-primary" />
+      )}
+      <div
+        className="flex min-w-0 flex-1 cursor-grab flex-col gap-1"
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={onDragEnd}
+      >
+        <div className="flex items-center gap-2">
+          {depth > 0 && (
+            <span
+              className="shrink-0 font-mono text-xs text-muted-foreground"
+              aria-hidden
+            >
+              {'·'.repeat(depth)}
+            </span>
+          )}
+          {inline.editing ? (
+            <InlineEditInput
+              editing={inline.editing}
+              value={inline.draft.name}
+              onChange={handleNameChange}
+              onKeyDown={inline.handleKeyDown}
+              placeholder="Category name"
+              className={cn(editableInputClass, 'w-48 font-medium')}
+              data-row-focus
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={inline.startEdit}
+              tabIndex={-1}
+              className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none"
+            >
+              <span className="truncate text-sm font-medium">{node.name}</span>
+            </button>
+          )}
+          {node.children.length > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {node.children.length} {node.children.length === 1 ? 'child' : 'children'}
+            </span>
+          )}
+          {bookmarkCount > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">{bookmarkCount}</span>
+          )}
+        </div>
+        {inline.editing ? (
+          <InlineEditInput
+            editing={inline.editing}
+            value={inline.draft.description}
+            onChange={handleDescriptionChange}
+            onKeyDown={inline.handleKeyDown}
+            placeholder="Description (optional)"
+            className={cn(editableInputClass, 'text-muted-foreground')}
+          />
+        ) : (
+          node.description && (
+            <div className="text-xs text-muted-foreground">
+              <span className="truncate">{node.description}</span>
+            </div>
+          )
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {inline.pending || deleteMutation.isPending ? (
+          <Spinner className="size-4" />
+        ) : (
+          <RowActions actions={actions} visibleCount={2} />
+        )}
+      </div>
+
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete category “${node.name}”?`}
+        description="This removes the category and its whole subtree from the vocabulary. Bookmarks survive uncategorized."
+        impact={categoryImpact}
+        confirmLabel="Delete"
+        onConfirm={handleDeleteConfirm}
+      />
+    </EditableRow>
+  );
+}
+
+/** The inline "new child category" form shown under exactly one parent row. */
+function NewChildForm({
+  parent,
+  onDone,
+  onChanged,
+  queryClient,
+}: {
+  parent: CategoryNode;
+  onDone: () => void;
+  onChanged: () => void;
+  queryClient: ReturnType<typeof useQueryClient>;
+}) {
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Autofocus via ref: the attribute form trips usability lint and screen
+  // readers; focusing once on mount keeps the keyboard flow intact.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const createMutation = useMutation({
+    mutationFn: async () => createCategory({ name: name.trim(), parentId: parent.id }),
+    onSuccess: () => {
+      toast.success('Category created');
+      setName('');
+      onDone();
+      invalidateVocab(queryClient);
+      onChanged();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to create category');
+    },
+  });
+
+  const handleNameChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value),
+    [],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter' && name.trim() !== '') {
+        createMutation.mutate();
+      }
+      if (event.key === 'Escape') {
+        onDone();
+      }
+    },
+    [name, createMutation, onDone],
+  );
+
+  return (
+    <div className="ml-6 flex items-center gap-2">
+      <Input
+        ref={inputRef}
+        value={name}
+        placeholder="Child category name"
+        aria-label="Child category name"
+        className="h-8 max-w-xs"
+        onChange={handleNameChange}
+        onKeyDown={handleKeyDown}
+      />
+      <Button
+        size="sm"
+        disabled={name.trim() === '' || createMutation.isPending}
+        onClick={() => createMutation.mutate()}
+      >
+        Add
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onDone}>
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 interface CategoryPanelProps {
-  categories: Category[];
-  sections: Section[];
-  tags: Tag[];
+  tree: CategoryNode[];
   aggregates: Aggregates | null;
   loading: boolean;
   onChanged: () => void;
 }
 
-function CategoryPanel({
-  categories,
-  sections,
-  tags,
-  aggregates,
-  loading,
-  onChanged,
-}: CategoryPanelProps) {
+/**
+ * The category tree management panel (MODEL.md principle 2): unlimited-depth
+ * tree with drag move/reorder, rename/description, add-child, and delete with
+ * subtree-count confirmation. The filter flattens matches to path labels —
+ * drag-reorder is a tree operation, so it only exists in the unfiltered view.
+ */
+function CategoryPanel({ tree, aggregates, loading, onChanged }: CategoryPanelProps) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState('');
   const [name, setName] = useState('');
-  const [sectionId, setSectionId] = useState('none');
-  const listRef = useRef<HTMLUListElement | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [newChildParent, setNewChildParent] = useState<string | null>(null);
 
-  const sectionMap = useMemo(() => new Map(sections.map((s) => [s.id, s])), [sections]);
+  const { handleDrop, handleDropToRoot } = useCategoryDropHandler();
 
-  const filtered = useMemo(
-    () =>
-      categories
-        .filter((category) => category.name.toLowerCase().includes(filter.toLowerCase()))
-        .toSorted((a, b) => a.name.localeCompare(b.name)),
-    [categories, filter],
-  );
-
-  const bookmarkCounts = useMemo(
-    () => new Map(aggregates?.categories.map((c) => [c.id, c.count]) ?? []),
-    [aggregates],
-  );
-  const tagCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const tag of tags) {
-      if (tag.categoryId) {
-        counts.set(tag.categoryId, (counts.get(tag.categoryId) ?? 0) + 1);
+  // Subtree bookmark counts from the aggregates (delete dialog + meta lines).
+  const subtreeCounts = useMemo(() => {
+    const direct = new Map(aggregates?.categories.map((c) => [c.id, c.count]) ?? []);
+    const totals = new Map<string, number>();
+    const walk = (node: CategoryNode): number => {
+      let sum = direct.get(node.id) ?? 0;
+      for (const child of node.children) {
+        sum += walk(child);
       }
+      totals.set(node.id, sum);
+      return sum;
+    };
+    for (const node of tree) {
+      walk(node);
     }
-    return counts;
-  }, [tags]);
+    return totals;
+  }, [tree, aggregates]);
+
+  // Subtree category counts (node + descendants) for the delete impact list.
+  const subtreeSizes = useMemo(() => {
+    const sizes = new Map<string, number>();
+    const walk = (node: CategoryNode): number => {
+      let size = 1;
+      for (const child of node.children) {
+        size += walk(child);
+      }
+      sizes.set(node.id, size);
+      return size;
+    };
+    for (const node of tree) {
+      walk(node);
+    }
+    return sizes;
+  }, [tree]);
+
+  // The filter flattens the tree; matches render with their full path label.
+  const matches = useMemo(() => {
+    if (filter.trim() === '') {
+      return null;
+    }
+    const needle = filter.toLowerCase();
+    const found: { id: string; label: string }[] = [];
+    const walk = (nodes: CategoryNode[], prefix: string) => {
+      for (const node of nodes) {
+        const path = prefix === '' ? node.name : `${prefix} ▸ ${node.name}`;
+        if (node.name.toLowerCase().includes(needle)) {
+          found.push({ id: node.id, label: path });
+        }
+        walk(node.children, path);
+      }
+    };
+    walk(tree, '');
+    return found;
+  }, [tree, filter]);
 
   const createMutation = useMutation({
-    mutationFn: async () =>
-      createCategory({ name: name.trim(), sectionId: sectionId === 'none' ? null : sectionId }),
+    mutationFn: async () => createCategory({ name: name.trim(), parentId: null }),
     onSuccess: () => {
       toast.success('Category created');
       setName('');
-      setSectionId('none');
       invalidateVocab(queryClient);
       onChanged();
     },
@@ -948,26 +914,61 @@ function CategoryPanel({
     [],
   );
 
-  const sectionItems = useMemo(
-    () => ({
-      none: 'No section',
-      ...Object.fromEntries(sections.map((section) => [section.id, section.name])),
-    }),
-    [sections],
+  const endDrag = useCallback(() => setDragId(null), []);
+
+  const onDropNode = useCallback(
+    (drag: string, target: string, position: 'before' | 'after' | 'into') => {
+      handleDrop(tree, drag, target, position);
+    },
+    [handleDrop, tree],
   );
 
-  const { activeId, handleFocusIn, handleKeyDown } = useListKeyboardNav({
-    items: filtered,
-    getId: (category) => category.id,
-    listRef,
-    mode: 'list',
-    focusSelector: '[data-row-focus]',
-  });
+  const onDropToRootNode = useCallback(() => {
+    if (dragId) {
+      handleDropToRoot(tree, dragId);
+    }
+    endDrag();
+  }, [dragId, handleDropToRoot, tree, endDrag]);
+
+  // Recursive renderer as a named in-component function: a useCallback cannot
+  // reference itself during initialization (react/immutability).
+  function renderTree(nodes: CategoryNode[], depth: number): React.ReactNode {
+    return nodes.map((node) => (
+      <div key={node.id} className="flex flex-col gap-2">
+        <VocabCategoryRow
+          node={node}
+          depth={depth}
+          bookmarkCount={subtreeCounts.get(node.id) ?? 0}
+          subtreeCategoryCount={subtreeSizes.get(node.id) ?? 1}
+          dragId={dragId}
+          onDragStart={setDragId}
+          onDragEnd={endDrag}
+          onDropNode={onDropNode}
+          onAddChild={setNewChildParent}
+          onChanged={onChanged}
+          queryClient={queryClient}
+        />
+        {newChildParent === node.id && (
+          <NewChildForm
+            parent={node}
+            onDone={() => setNewChildParent(null)}
+            onChanged={onChanged}
+            queryClient={queryClient}
+          />
+        )}
+        {node.children.length > 0 && (
+          <div className="ml-4 flex flex-col gap-2 border-l-2 border-border/60 pl-3">
+            {renderTree(node.children, depth + 1)}
+          </div>
+        )}
+      </div>
+    ));
+  }
 
   return (
     <div className="flex flex-col gap-3">
       <Field>
-        <FieldLabel htmlFor="new-category">New category</FieldLabel>
+        <FieldLabel htmlFor="new-category">New root category</FieldLabel>
         <FieldItem className="w-full gap-2">
           <VocabInput
             id="new-category"
@@ -975,19 +976,6 @@ function CategoryPanel({
             onChange={handleNameChange}
             placeholder="e.g. dev"
           />
-          <VocabSelect
-            items={sectionItems}
-            value={sectionId}
-            onValueChange={setSectionId}
-            triggerClassName="w-36"
-          >
-            <SelectItem value="none">No section</SelectItem>
-            {sections.map((section) => (
-              <SelectItem key={section.id} value={section.id}>
-                {section.name}
-              </SelectItem>
-            ))}
-          </VocabSelect>
           <Button
             onClick={handleCreate}
             disabled={name.trim() === '' || createMutation.isPending}
@@ -999,224 +987,98 @@ function CategoryPanel({
 
       <FilterInput value={filter} onChange={setFilter} />
 
-      <ul
-        ref={listRef}
-        aria-label="Categories"
-        onFocusCapture={handleFocusIn}
-        className="flex flex-col gap-2"
-      >
-        {filtered.map((category, index) => (
-          <CategoryRow
-            key={category.id}
-            category={category}
-            index={index}
-            sections={sections}
-            sectionMap={sectionMap}
-            tagCount={tagCounts.get(category.id) ?? 0}
-            bookmarkCount={bookmarkCounts.get(category.id) ?? 0}
-            active={activeId === category.id}
-            onKeyDown={handleKeyDown}
-            onChanged={onChanged}
-            queryClient={queryClient}
-          />
-        ))}
-      </ul>
-
-      {loading ? (
-        <div className="flex flex-col gap-2">
-          <VocabSkeleton />
-          <VocabSkeleton />
-          <VocabSkeleton />
+      {matches !== null ? (
+        <ul aria-label="Matching categories" className="flex flex-col gap-2">
+          {matches.map((match) => (
+            <EditableRow key={match.id} asListItem>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{match.label}</span>
+            </EditableRow>
+          ))}
+          {matches.length === 0 && (
+            <VocabEmpty
+              icon={TagsIcon}
+              title={`No categories match "${filter}"`}
+              description="Try a different filter term."
+            />
+          )}
+        </ul>
+      ) : (
+        <div aria-label="Categories" className="flex flex-col gap-2">
+          {renderTree(tree, 0)}
+          {/* Root drop strip: move a nested category to the top level. A plain
+              div — drag targets are not interactive controls. */}
+          {dragId !== null && (
+            <div
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                onDropToRootNode();
+              }}
+              className="flex items-center justify-center rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted-foreground"
+            >
+              Drop to move to top level
+            </div>
+          )}
+          {loading ? (
+            <div className="flex flex-col gap-2">
+              <VocabSkeleton />
+              <VocabSkeleton />
+            </div>
+          ) : tree.length === 0 ? (
+            <VocabEmpty
+              icon={FolderPlusIcon}
+              title="No categories yet"
+              description="Create a root category above, or import a collection — the importer creates categories from headings."
+            />
+          ) : null}
         </div>
-      ) : filtered.length === 0 ? (
-        <VocabEmpty
-          icon={FolderIcon}
-          title={filter ? `No categories match "${filter}"` : 'No categories yet'}
-          description={
-            filter
-              ? 'Try a different filter term.'
-              : 'Create a category above to group your bookmarks.'
-          }
-        />
-      ) : null}
-    </div>
-  );
-}
-
-interface SectionPanelProps {
-  sections: Section[];
-  categories: Category[];
-  loading: boolean;
-  onChanged: () => void;
-}
-
-function SectionPanel({ sections, categories, loading, onChanged }: SectionPanelProps) {
-  const queryClient = useQueryClient();
-  const [filter, setFilter] = useState('');
-  const [name, setName] = useState('');
-  const listRef = useRef<HTMLUListElement | null>(null);
-
-  const filtered = useMemo(
-    () =>
-      sections
-        .filter((section) => section.name.toLowerCase().includes(filter.toLowerCase()))
-        .toSorted((a, b) => a.name.localeCompare(b.name)),
-    [sections, filter],
-  );
-
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const category of categories) {
-      if (category.sectionId) {
-        counts.set(category.sectionId, (counts.get(category.sectionId) ?? 0) + 1);
-      }
-    }
-    return counts;
-  }, [categories]);
-
-  const createMutation = useMutation({
-    mutationFn: async () => createSection({ name: name.trim() }),
-    onSuccess: () => {
-      toast.success('Section created');
-      setName('');
-      invalidateVocab(queryClient);
-      onChanged();
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to create section');
-    },
-  });
-
-  const handleCreate = useCallback(() => createMutation.mutate(), [createMutation]);
-
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value),
-    [],
-  );
-
-  const { activeId, handleFocusIn, handleKeyDown } = useListKeyboardNav({
-    items: filtered,
-    getId: (section) => section.id,
-    listRef,
-    mode: 'list',
-    focusSelector: '[data-row-focus]',
-  });
-
-  return (
-    <div className="flex flex-col gap-3">
-      <Field>
-        <FieldLabel htmlFor="new-section">New section</FieldLabel>
-        <FieldItem className="w-full gap-2">
-          <VocabInput
-            id="new-section"
-            value={name}
-            onChange={handleNameChange}
-            placeholder="e.g. AI"
-          />
-          <Button
-            onClick={handleCreate}
-            disabled={name.trim() === '' || createMutation.isPending}
-          >
-            Create
-          </Button>
-        </FieldItem>
-      </Field>
-
-      <FilterInput value={filter} onChange={setFilter} />
-
-      <ul
-        ref={listRef}
-        aria-label="Sections"
-        onFocusCapture={handleFocusIn}
-        className="flex flex-col gap-2"
-      >
-        {filtered.map((section, index) => (
-          <SectionRow
-            key={section.id}
-            section={section}
-            index={index}
-            categoryCount={categoryCounts.get(section.id) ?? 0}
-            active={activeId === section.id}
-            onKeyDown={handleKeyDown}
-            onChanged={onChanged}
-            queryClient={queryClient}
-          />
-        ))}
-      </ul>
-
-      {loading ? (
-        <div className="flex flex-col gap-2">
-          <VocabSkeleton />
-          <VocabSkeleton />
-          <VocabSkeleton />
-        </div>
-      ) : filtered.length === 0 ? (
-        <VocabEmpty
-          icon={FolderTreeIcon}
-          title={filter ? `No sections match "${filter}"` : 'No sections yet'}
-          description={
-            filter
-              ? 'Try a different filter term.'
-              : 'Create a section above to group categories.'
-          }
-        />
-      ) : null}
+      )}
     </div>
   );
 }
 
 export function VocabularyPage({
   tags,
-  categories,
-  sections,
+  tree,
   aggregates,
   tagsLoading,
   categoriesLoading,
-  sectionsLoading,
   onChanged,
 }: VocabularyPageProps) {
+  const categoryCount = aggregates?.categories.length ?? 0;
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Vocabulary</h1>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {tags.length} tag{tags.length === 1 ? '' : 's'} · {categories.length} categor{categories.length === 1 ? 'y' : 'ies'} · {sections.length} section{sections.length === 1 ? '' : 's'}
+          {tags.length} tag{tags.length === 1 ? '' : 's'} · {categoryCount} categor
+          {categoryCount === 1 ? 'y' : 'ies'}
         </span>
       </div>
 
-      <Tabs defaultValue="tags">
+      <Tabs defaultValue="categories">
         <TabsList variant="line">
-          <TabsTrigger value="tags">Tags</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="sections">Sections</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="tags" className="mt-3">
-          <TagPanel
-            tags={tags}
-            categories={categories}
-            aggregates={aggregates}
-            loading={tagsLoading ?? false}
-            onChanged={onChanged}
-          />
-        </TabsContent>
 
         <TabsContent value="categories" className="mt-3">
           <CategoryPanel
-            categories={categories}
-            sections={sections}
-            tags={tags}
+            tree={tree}
             aggregates={aggregates}
             loading={categoriesLoading ?? false}
             onChanged={onChanged}
           />
         </TabsContent>
 
-        <TabsContent value="sections" className="mt-3">
-          <SectionPanel
-            sections={sections}
-            categories={categories}
-            loading={sectionsLoading ?? false}
+        <TabsContent value="tags" className="mt-3">
+          <TagPanel
+            tags={tags}
+            aggregates={aggregates}
+            loading={tagsLoading ?? false}
             onChanged={onChanged}
           />
         </TabsContent>

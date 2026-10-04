@@ -1,8 +1,9 @@
 import { useMutation } from '@tanstack/react-query';
-import type { Category } from '@al-yo-bo/shared';
+import type { CategoryNode } from '@al-yo-bo/shared';
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { categoryOptionItems, flattenCategoryTree } from '@/lib/categories';
 import { Button } from '@/components/ui/button';
 import { Field, FieldControl, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -26,7 +27,7 @@ import { createBookmark } from '@/lib/client';
 
 interface AddBookmarkSheetProps {
   open: boolean;
-  categories: Category[];
+  categories: CategoryNode[];
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }
@@ -63,18 +64,17 @@ function AddTextarea({ id, value, onChange }: AddTextareaProps) {
 }
 
 interface AddCategorySelectProps {
-  categories: Category[];
+  categories: CategoryNode[];
   value: string;
   onValueChange: (value: string) => void;
 }
 
 function AddCategorySelect({ categories, value, onValueChange }: AddCategorySelectProps) {
+  // Options flatten to `dev ▸ web` path labels — names are only sibling-unique.
+  const options = useMemo(() => flattenCategoryTree(categories), [categories]);
   const items = useMemo(
-    () => ({
-      none: 'No category',
-      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-    }),
-    [categories],
+    () => ({ none: 'No category', ...categoryOptionItems(options) }),
+    [options],
   );
 
   const handleValueChange = useCallback(
@@ -89,9 +89,9 @@ function AddCategorySelect({ categories, value, onValueChange }: AddCategorySele
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="none">No category</SelectItem>
-        {categories.map((category) => (
-          <SelectItem key={category.id} value={category.id}>
-            {category.name}
+        {options.map((option) => (
+          <SelectItem key={option.id} value={option.id}>
+            {option.path}
           </SelectItem>
         ))}
       </SelectContent>

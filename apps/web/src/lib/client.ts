@@ -4,14 +4,13 @@ import type {
   BookmarkSort,
   BookmarkWithTags,
   Category,
-  Dataset,
+  CategoryNode,
   ImportedBookmark,
   ImportReport,
   Profile,
   ReviewCandidate,
   SearchMode,
   SearchResponse,
-  Section,
   Tag,
   TagStatus,
 } from '@al-yo-bo/shared';
@@ -108,16 +107,6 @@ export function fetchProfile(): Promise<Profile | null> {
   });
 }
 
-/** The dataset the profile's active-dataset pointer names; null when unset. */
-export function fetchActiveDataset(): Promise<Dataset | null> {
-  return api.api.profile.dataset.$get().then(async (response) => {
-    if (!response.ok) {
-      throw await toError(response);
-    }
-    return response.json();
-  });
-}
-
 /** Partial update of the singleton profile. Only name/githubUsername are exposed to the web app. */
 export function updateProfile(patch: {
   name?: string | null;
@@ -171,17 +160,13 @@ export function fetchHealth(): Promise<HealthReport> {
   });
 }
 
-export function fetchCategories(): Promise<Category[]> {
+/**
+ * The nested category tree (MODEL.md principle 2) — roots and children in
+ * fractional `sortOrder` order. All category writes flow through the tree
+ * mutations in `useCategoryMutations` so optimistic updates share one shape.
+ */
+export function fetchCategories(): Promise<CategoryNode[]> {
   return api.api.categories.$get().then(async (response) => {
-    if (!response.ok) {
-      throw await toError(response);
-    }
-    return response.json();
-  });
-}
-
-export function fetchSections(): Promise<Section[]> {
-  return api.api.sections.$get().then(async (response) => {
     if (!response.ok) {
       throw await toError(response);
     }
@@ -340,9 +325,9 @@ export function setTagStatus(id: string, status: TagStatus): Promise<Tag> {
     });
 }
 
-export function createTag(input: { name: string; categoryId?: string | null }): Promise<Tag> {
+export function createTag(input: { name: string; description?: string | null }): Promise<Tag> {
   return api.api.tags
-    .$post({ json: { name: input.name, categoryId: input.categoryId ?? null } })
+    .$post({ json: { name: input.name, description: input.description ?? null } })
     .then(async (response) => {
       if (!response.ok) {
         throw await toError(response);
@@ -351,40 +336,14 @@ export function createTag(input: { name: string; categoryId?: string | null }): 
     });
 }
 
-export function createCategory(input: {
-  name: string;
-  sectionId?: string | null;
-}): Promise<Category> {
-  return api.api.categories
-    .$post({ json: { name: input.name, sectionId: input.sectionId ?? null } })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw await toError(response);
-      }
-      return response.json();
-    });
-}
-
-export function createSection(input: { name: string }): Promise<Section> {
-  return api.api.sections
-    .$post({ json: { name: input.name } })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw await toError(response);
-      }
-      return response.json();
-    });
-}
-
-/** Renames/describes/re-scopes a tag; only supplied fields are sent. */
+/** Renames/describes a tag; only supplied fields are sent. */
 export function updateTag(
   id: string,
-  patch: { name?: string; description?: string | null; categoryId?: string | null },
+  patch: { name?: string; description?: string | null },
 ): Promise<Tag> {
   const json = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
-    ...(patch.categoryId !== undefined ? { categoryId: patch.categoryId } : {}),
   };
   return api.api.tags[':id']
     .$patch({ param: { id }, json })
@@ -407,15 +366,35 @@ export function deleteTag(id: string): Promise<void> {
     });
 }
 
-/** Renames/describes/re-sections a category; only supplied fields are sent. */
+export function createCategory(input: {
+  name: string;
+  parentId?: string | null;
+  description?: string | null;
+}): Promise<Category> {
+  return api.api.categories
+    .$post({
+      json: {
+        name: input.name,
+        parentId: input.parentId ?? null,
+        description: input.description ?? null,
+      },
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** Renames/describes a category; only supplied fields are sent. */
 export function updateCategory(
   id: string,
-  patch: { name?: string; description?: string | null; sectionId?: string | null },
+  patch: { name?: string; description?: string | null },
 ): Promise<Category> {
   const json = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
-    ...(patch.sectionId !== undefined ? { sectionId: patch.sectionId } : {}),
   };
   return api.api.categories[':id']
     .$patch({ param: { id }, json })
@@ -427,28 +406,21 @@ export function updateCategory(
     });
 }
 
-/** 204 routes have no body; the ok guard is all that's needed. */
-export function deleteCategory(id: string): Promise<void> {
-  return api.api.categories[':id']
-    .$delete({ param: { id } })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw await toError(response);
-      }
-    });
-}
-
-/** Renames/describes a section; only supplied fields are sent. */
-export function updateSection(
+/**
+ * Re-parents a category (subtree included) to `parentId` — `null` moves to
+ * root — optionally at an explicit fractional `sortOrder`. Distinct from
+ * `updateCategory` because the PATCH route branches on `parentId`.
+ */
+export function moveCategory(
   id: string,
-  patch: { name?: string; description?: string | null },
-): Promise<Section> {
-  const json = {
-    ...(patch.name !== undefined ? { name: patch.name } : {}),
-    ...(patch.description !== undefined ? { description: patch.description } : {}),
-  };
-  return api.api.sections[':id']
-    .$patch({ param: { id }, json })
+  parentId: string | null,
+  sortOrder?: string,
+): Promise<Category> {
+  return api.api.categories[':id']
+    .$patch({
+      param: { id },
+      json: { parentId, ...(sortOrder !== undefined ? { sortOrder } : {}) },
+    })
     .then(async (response) => {
       if (!response.ok) {
         throw await toError(response);
@@ -457,14 +429,35 @@ export function updateSection(
     });
 }
 
-/** 204 routes have no body; the ok guard is all that's needed. */
-export function deleteSection(id: string): Promise<void> {
-  return api.api.sections[':id']
+/**
+ * Persists one sibling-list reorder: `parentId` null = roots, `orderedIds` is
+ * the complete sibling list in the desired order (server rebalances the
+ * fractional keys from it — MODEL.md principle 2).
+ */
+export function reorderCategories(parentId: string | null, orderedIds: string[]): Promise<Category[]> {
+  return api.api.categories.reorder
+    .$post({ json: { parentId, orderedIds } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/**
+ * Deletes a category and its subtree (children cascade, bookmarks survive
+ * with `category_id` NULL — MODEL.md deletion semantics). Returns the subtree
+ * counts the UI confirmed against.
+ */
+export function deleteCategory(id: string): Promise<{ categories: number; bookmarks: number }> {
+  return api.api.categories[':id']
     .$delete({ param: { id } })
     .then(async (response) => {
       if (!response.ok) {
         throw await toError(response);
       }
+      return response.json();
     });
 }
 

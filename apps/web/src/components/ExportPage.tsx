@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import type { BookmarkListStatus, Category, ExportFormat, Tag } from '@al-yo-bo/shared';
+import type { BookmarkListStatus, CategoryNode, ExportFormat, Tag } from '@al-yo-bo/shared';
 import type { LucideIcon } from 'lucide-react';
 import { BanIcon, CheckIcon, DownloadIcon, LayersIcon } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { categoryOptionItems, flattenCategoryTree } from '@/lib/categories';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -77,7 +78,8 @@ function FormatOption({ option, checked, onToggle }: FormatOptionProps) {
 }
 
 interface ExportPageProps {
-  categories: Category[];
+  /** The nested category tree; options flatten to `dev ▸ web` path labels. */
+  categories: CategoryNode[];
   tags: Tag[];
 }
 
@@ -124,12 +126,10 @@ export function ExportPage({ categories, tags }: ExportPageProps) {
     [],
   );
 
+  const categoryOptions = useMemo(() => flattenCategoryTree(categories), [categories]);
   const categoryItems = useMemo(
-    () => ({
-      [ALL]: 'All categories',
-      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-    }),
-    [categories],
+    () => ({ [ALL]: 'All categories', ...categoryOptionItems(categoryOptions) }),
+    [categoryOptions],
   );
   const tagItems = useMemo(
     () => ({
@@ -260,9 +260,9 @@ export function ExportPage({ categories, tags }: ExportPageProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ALL}>All categories</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
+                    {categoryOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.path}
                       </SelectItem>
                     ))}
                   </SelectContent>

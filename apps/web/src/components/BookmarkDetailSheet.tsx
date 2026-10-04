@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { BookmarkTagView, BookmarkWithTags, Category, Tag } from '@al-yo-bo/shared';
+import type { BookmarkTagView, BookmarkWithTags, CategoryNode, Tag } from '@al-yo-bo/shared';
 import {
   ChevronsUpDownIcon,
   CircleAlertIcon,
@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { categoryOptionItems, flattenCategoryTree } from '@/lib/categories';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
@@ -298,18 +299,17 @@ function DetailDescriptionInput({ value, onChange }: DetailDescriptionInputProps
 }
 
 interface DetailCategorySelectProps {
-  categories: Category[];
+  categories: CategoryNode[];
   value: string;
   onValueChange: (value: string) => void;
 }
 
 function DetailCategorySelect({ categories, value, onValueChange }: DetailCategorySelectProps) {
+  // Options flatten to `dev ▸ web` path labels — names are only sibling-unique.
+  const options = useMemo(() => flattenCategoryTree(categories), [categories]);
   const items = useMemo(
-    () => ({
-      none: 'No category',
-      ...Object.fromEntries(categories.map((category) => [category.id, category.name])),
-    }),
-    [categories],
+    () => ({ none: 'No category', ...categoryOptionItems(options) }),
+    [options],
   );
 
   const handleValueChange = useCallback(
@@ -322,7 +322,7 @@ function DetailCategorySelect({ categories, value, onValueChange }: DetailCatego
       <FieldLabel htmlFor="detail-category">Category</FieldLabel>
       <Select
         // items registers value→label pairs so SelectValue renders the
-        // category name, not the raw id.
+        // category path, not the raw id.
         items={items}
         value={value}
         onValueChange={handleValueChange}
@@ -332,9 +332,9 @@ function DetailCategorySelect({ categories, value, onValueChange }: DetailCatego
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="none">No category</SelectItem>
-          {categories.map((category) => (
-            <SelectItem key={category.id} value={category.id}>
-              {category.name}
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.path}
             </SelectItem>
           ))}
         </SelectContent>
@@ -345,7 +345,7 @@ function DetailCategorySelect({ categories, value, onValueChange }: DetailCatego
 
 interface BookmarkDetailSheetProps {
   bookmark: BookmarkWithTags | null;
-  categories: Category[];
+  categories: CategoryNode[];
   tags: Tag[];
   onOpenChange: (open: boolean) => void;
   onChanged: () => void;

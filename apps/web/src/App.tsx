@@ -3,10 +3,9 @@ import type {
   BookmarkListStatus,
   BookmarkSort,
   BookmarkWithTags,
-  Category,
+  CategoryNode,
   ReviewCandidate,
   SearchMode,
-  Section,
   Tag,
 } from '@al-yo-bo/shared';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -47,13 +46,13 @@ import {
   fetchCategories,
   fetchProfile,
   fetchReviewCandidates,
-  fetchSections,
   fetchTags,
 } from '@/lib/client';
 import { navigate, useRoute } from '@/lib/router';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
 import { useDefaultSearchMode } from '@/lib/useDefaultSearchMode';
+import { useEvents } from '@/lib/useEvents';
 import { useLayout } from '@/lib/useLayout';
 import type { Layout } from '@/lib/useLayout';
 import { useSidebar } from '@/lib/useSidebar';
@@ -66,8 +65,7 @@ type View = 'library' | 'review';
 // Stable empty fallbacks: passing a fresh [] as a prop would defeat prop-identity
 // memoization in the list components on every render.
 const NO_ITEMS: BookmarkWithTags[] = [];
-const NO_CATEGORIES: Category[] = [];
-const NO_SECTIONS: Section[] = [];
+const NO_TREE: CategoryNode[] = [];
 const NO_TAGS: Tag[] = [];
 const NO_CANDIDATES: ReviewCandidate[] = [];
 
@@ -284,6 +282,9 @@ export function App() {
 
   const queryClient = useQueryClient();
 
+  // Real-time layer (ARCHITECTURE §9): SSE domain events → cache invalidations.
+  useEvents();
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearchQuery(query);
@@ -424,13 +425,11 @@ export function App() {
     queryKey: queryKeys.aggregates,
     queryFn: fetchAggregates,
   });
+  // The nested category tree (MODEL.md principle 2) — the sidebar, vocabulary,
+  // and every category select consume this one shape.
   const categoriesQuery = useQuery({
     queryKey: queryKeys.categories,
     queryFn: fetchCategories,
-  });
-  const sectionsQuery = useQuery({
-    queryKey: queryKeys.sections,
-    queryFn: fetchSections,
   });
   const tagsQuery = useQuery({
     queryKey: queryKeys.tags,
@@ -447,8 +446,7 @@ export function App() {
 
   const aggregates = aggregatesQuery.data ?? null;
   const profile = profileQuery.data ?? null;
-  const categories = categoriesQuery.data ?? NO_CATEGORIES;
-  const sections = sectionsQuery.data ?? NO_SECTIONS;
+  const tree = categoriesQuery.data ?? NO_TREE;
   const tags = tagsQuery.data ?? NO_TAGS;
   const candidates = candidatesQuery.data ?? NO_CANDIDATES;
 
@@ -491,17 +489,16 @@ export function App() {
     [queryClient],
   );
 
-  // Vocabulary edits change tag/category/section data; status flips (e.g. a tag
-  // going inactive) also affect bookmark lists and aggregates.
+  // Vocabulary edits change tag/category data; status flips (e.g. a tag going
+  // deprecated) also affect bookmark lists and aggregates.
   const onVocabChanged = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
     void queryClient.invalidateQueries({ queryKey: queryKeys.categories });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.sections });
     void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
     void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
   }, [queryClient]);
 
-  // An import can create bookmarks, categories, sections, and tags at once.
+  // An import can create bookmarks, categories, and tags at once.
   const onImportCommitted = useCallback(() => {
     setView('library');
     void queryClient.invalidateQueries();
@@ -651,6 +648,7 @@ export function App() {
     searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
 
   const sidebarProps = {
+    tree,
     aggregates,
     profile,
     theme,
@@ -703,16 +701,14 @@ export function App() {
           {route === 'import' ? (
             <ImportPage onCommitted={onImportCommitted} />
           ) : route === 'export' ? (
-            <ExportPage categories={categories} tags={tags} />
+            <ExportPage categories={tree} tags={tags} />
           ) : route === 'vocabulary' ? (
             <VocabularyPage
               tags={tags}
-              categories={categories}
-              sections={sections}
+              tree={tree}
               aggregates={aggregates}
               tagsLoading={tagsQuery.isPending}
               categoriesLoading={categoriesQuery.isPending}
-              sectionsLoading={sectionsQuery.isPending}
               onChanged={onVocabChanged}
             />
           ) : route === 'share' ? (
@@ -867,13 +863,13 @@ export function App() {
 
       <AddBookmarkSheet
         open={addOpen}
-        categories={categories}
+        categories={tree}
         onOpenChange={setAddOpen}
         onCreated={reload}
       />
       <BookmarkDetailSheet
         bookmark={selected}
-        categories={categories}
+        categories={tree}
         tags={tags}
         onOpenChange={closeDetail}
         onChanged={onDetailChanged}
@@ -883,7 +879,7 @@ export function App() {
       <CommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        categories={categories}
+        categories={tree}
         tags={tags}
         recentQueries={recentQueries}
         onSearch={handlePaletteSearch}

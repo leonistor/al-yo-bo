@@ -1,6 +1,6 @@
 "use client";
 
-import type { Category, Tag } from '@al-yo-bo/shared';
+import type { CategoryNode, Tag } from '@al-yo-bo/shared';
 import type { AutocompleteRootChangeEventDetails } from '@base-ui/react/autocomplete';
 import {
   ClockIcon,
@@ -24,11 +24,13 @@ import {
   CommandPanel,
   CommandShortcut,
 } from '@/components/ui/command';
+import { flattenCategoryTree, type CategoryOption } from '@/lib/categories';
 
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  categories: Category[];
+  /** The nested tree; flattened to `dev ▸ web` path options for jumping. */
+  categories: CategoryNode[];
   tags: Tag[];
   recentQueries: string[];
   onSearch: (query: string) => void;
@@ -90,7 +92,7 @@ function RecentSearchItem({ query, onSearch }: RecentSearchItemProps) {
 }
 
 interface CategoryItemProps {
-  category: Category;
+  category: CategoryOption;
   onJump: (id: string) => void;
 }
 
@@ -99,7 +101,7 @@ function CategoryItem({ category, onJump }: CategoryItemProps) {
 
   return (
     <ActionItem value={`category:${category.id}`} onClick={handleClick} icon={FolderIcon}>
-      <span className="truncate">{category.name}</span>
+      <span className="truncate">{category.path}</span>
     </ActionItem>
   );
 }
@@ -134,12 +136,13 @@ export function CommandPalette({
   const term = inputValue.trim();
   const hasTerm = term.length > 0;
 
+  const categoryOptions = useMemo(() => flattenCategoryTree(categories), [categories]);
   const filteredCategories = useMemo(
     () =>
-      categories
-        .filter((category) => matchesTerm(category.name, term))
+      categoryOptions
+        .filter((option) => matchesTerm(option.path, term))
         .slice(0, MAX_GROUP_ITEMS),
-    [categories, term],
+    [categoryOptions, term],
   );
 
   const filteredTags = useMemo(

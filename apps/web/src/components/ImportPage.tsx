@@ -39,7 +39,7 @@ function toImportedBookmark(row: ImportRowState): ImportedBookmark {
     url: row.url.trim(),
     title: row.title.trim() === '' ? null : row.title.trim(),
     description: row.description.trim() === '' ? null : row.description.trim(),
-    category: row.category.trim() === '' ? null : row.category.trim(),
+    categoryPath: row.categoryPath.map((segment) => segment.trim()).filter((s) => s !== ''),
     priority: priority !== null && Number.isFinite(priority) ? priority : null,
     tags: row.tagsText
       .split(',')
@@ -55,7 +55,7 @@ function toRow(bookmark: ImportedBookmark): ImportRowState {
     url: bookmark.url,
     title: bookmark.title ?? '',
     description: bookmark.description ?? '',
-    category: bookmark.category ?? '',
+    categoryPath: bookmark.categoryPath,
     priority: bookmark.priority === null ? '' : String(bookmark.priority),
     tagsText: bookmark.tags.join(', '),
   };
@@ -348,7 +348,7 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
                       <span className="sr-only">Include</span>
                     </TableHead>
                     <TableHead scope="col">Bookmark</TableHead>
-                    <TableHead scope="col">Category</TableHead>
+                    <TableHead scope="col">Category path</TableHead>
                     <TableHead scope="col" className="w-12 text-center">
                       Priority
                     </TableHead>

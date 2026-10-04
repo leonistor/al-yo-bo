@@ -1,7 +1,9 @@
-import type { Aggregates, CategoryAggregate, Profile } from '@al-yo-bo/shared';
+import type { Aggregates, CategoryNode, Profile } from '@al-yo-bo/shared';
 import {
+  ChevronRightIcon,
   DownloadIcon,
   FolderIcon,
+  FolderOpenIcon,
   HashIcon,
   InboxIcon,
   LibraryBigIcon,
@@ -12,7 +14,7 @@ import {
   UploadIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { FilterTagPill } from '@/components/FilterTagPill';
@@ -22,7 +24,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useCategoryDropHandler } from '@/hooks/useCategoryMutations';
 import { useSidebarNavModel } from '@/hooks/useSidebarNavModel';
+import { dropPositionFromEvent } from '@/lib/categories';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -33,10 +37,11 @@ import type { Theme } from '@/lib/useTheme';
 import { cn } from '@/lib/utils';
 
 /** Keys used in the persisted `ayb:sidebar:sections` open/closed map. */
-const sectionKey = (id: string) => `section:${id}`;
+const navGroupKey = (id: string) => `section:${id}`;
 const TAGS_KEY = 'tags';
 
 interface SidebarNavProps {
+  tree: CategoryNode[];
   aggregates: Aggregates | null;
   profile: Profile | null;
   theme: Theme;
@@ -81,46 +86,323 @@ interface NavSelectionProps {
   onNavigate?: () => void;
 }
 
-interface CategoryRowProps extends NavSelectionProps {
-  category: CategoryAggregate;
-  /** Row highlights only while the library view is showing categories. */
-  active: boolean;
-  selectedCategoryId: string | null;
+/**
+ * Drag-and-drop context for the category tree: the dragged id lives at the
+ * nav level so a row only needs its own identity to behave as a drop target.
+ * Native HTML5 DnD — no dependency — with a three-zone drop semantics
+ * (before / into / after, see `dropPositionFromEvent`).
+ */
+interface TreeDndContextValue {
+  dragId: string | null;
+  startDrag: (id: string) => void;
+  endDrag: () => void;
+  drop: (dragId: string, targetId: string, position: 'before' | 'after' | 'into') => void;
 }
 
-/** One category entry; owns its per-row select handler so the list body stays clean. */
-function CategoryRow({
-  category,
-  active,
+const TreeDndContext = createContext<TreeDndContextValue>({
+  dragId: null,
+  startDrag: () => {},
+  endDrag: () => {},
+  drop: () => {},
+});
+
+interface CategoryTreeRowProps {
+  node: CategoryNode;
+  depth: number;
+  counts: Map<string, number>;
+  view: 'library' | 'review';
+  selectedCategoryId: string | null;
+  openSections: Record<string, boolean>;
+  onSetOpenSection: (key: string, open: boolean) => void;
+  hover: { id: string; position: 'before' | 'after' | 'into' } | null;
+  onHover: (hover: { id: string; position: 'before' | 'after' | 'into' } | null) => void;
+  selection: NavSelectionProps;
+}
+
+/** Drop-highlight classes per zone: a 1px guide line for reorder, a tint for nest-into. */
+function dropIndicatorClass(
+  hover: { id: string; position: 'before' | 'after' | 'into' } | null,
+  id: string,
+): string {
+  if (!hover || hover.id !== id) {
+    return '';
+  }
+  if (hover.position === 'before') {
+    return 'before:absolute before:inset-x-1 before:top-0 before:h-0.5 before:bg-primary before:content-[""]';
+  }
+  if (hover.position === 'after') {
+    return 'before:absolute before:inset-x-1 before:bottom-0 before:h-0.5 before:bg-primary before:content-[""]';
+  }
+  return 'bg-sidebar-accent/60';
+}
+
+/** One category entry with its collapsible children; also an HTML5 drop target. */
+function CategoryTreeRow({
+  node,
+  depth,
+  counts,
+  view,
   selectedCategoryId,
+  openSections,
+  onSetOpenSection,
+  hover,
+  onHover,
+  selection,
+}: CategoryTreeRowProps) {
+  const dnd = useContext(TreeDndContext);
+  const hasChildren = node.children.length > 0;
+  const open = openSections[navGroupKey(node.id)] ?? true;
+  const active = view === 'library' && selectedCategoryId === node.id;
+  const count = counts.get(node.id) ?? 0;
+  const isDragging = dnd.dragId === node.id;
+
+  const handleSelect = useCallback(() => {
+    selection.onSelectView('library');
+    selection.onSelectTag(null);
+    selection.onSelectCategory(selectedCategoryId === node.id ? null : node.id);
+    selection.onNavigate?.();
+  }, [selection, selectedCategoryId, node.id]);
+
+  const toggleOpen = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+      onSetOpenSection(navGroupKey(node.id), !open);
+    },
+    [onSetOpenSection, open],
+  );
+
+  const handleDragStart = useCallback(
+    (event: React.DragEvent) => {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', node.id);
+      dnd.startDrag(node.id);
+    },
+    [dnd, node.id],
+  );
+
+  const handleDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (!dnd.dragId || dnd.dragId === node.id) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      onHover({ id: node.id, position: dropPositionFromEvent(event) });
+    },
+    [dnd.dragId, node.id, onHover],
+  );
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const dragId = dnd.dragId;
+      onHover(null);
+      dnd.endDrag();
+      if (!dragId || dragId === node.id) {
+        return;
+      }
+      dnd.drop(dragId, node.id, dropPositionFromEvent(event));
+    },
+    [dnd, node.id, onHover],
+  );
+
+  const handleDragLeave = useCallback(() => onHover(null), [onHover]);
+
+  return (
+    <div className="relative" data-category-id={node.id}>
+      <div
+        className={cn(
+          'relative transition-colors duration-150',
+          dropIndicatorClass(hover, node.id),
+          isDragging && 'opacity-40',
+        )}
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={dnd.endDrag}
+      >
+        <div className={cn('flex items-center gap-0.5', depth > 0 && 'pl-4')}>
+          {hasChildren ? (
+            <button
+              type="button"
+              aria-label={open ? `Collapse ${node.name}` : `Expand ${node.name}`}
+              aria-expanded={open}
+              onClick={toggleOpen}
+              className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronRightIcon
+                className={cn(
+                  'size-3.5 transition-transform duration-150',
+                  open && 'rotate-90',
+                )}
+              />
+            </button>
+          ) : (
+            <span className="size-6 shrink-0" aria-hidden />
+          )}
+          <Button
+            variant="ghost"
+            className={cn(rowClass, 'min-w-0 flex-1')}
+            data-active={active}
+            onClick={handleSelect}
+          >
+            {open && hasChildren ? <FolderOpenIcon /> : <FolderIcon />}
+            <span className="truncate">{node.name}</span>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">{count}</span>
+          </Button>
+        </div>
+      </div>
+
+      {hasChildren && open && (
+        <div className="ml-4 flex flex-col border-l-2 border-border/60">
+          {node.children.map((child) => (
+            <CategoryTreeRow
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              counts={counts}
+              view={view}
+              selectedCategoryId={selectedCategoryId}
+              openSections={openSections}
+              onSetOpenSection={onSetOpenSection}
+              hover={hover}
+              onHover={onHover}
+              selection={selection}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface DropToRootProps {
+  active: boolean;
+  onDropToRoot: () => void;
+}
+
+/**
+ * Root-level drop strip, visible only while a row is dragged: dropping here
+ * moves the category to the top level (appended after the roots). A plain
+ * div on purpose — drag targets are not interactive controls, so neither a
+ * role nor focus semantics apply.
+ */
+function DropToRoot({ active, onDropToRoot }: DropToRootProps) {
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      onDropToRoot();
+    },
+    [onDropToRoot],
+  );
+
+  if (!active) {
+    return null;
+  }
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      className="mt-1 flex items-center justify-center rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground"
+    >
+      Drop to move to top level
+    </div>
+  );
+}
+
+interface CategoryTreeProps extends NavSelectionProps {
+  tree: CategoryNode[];
+  counts: Map<string, number>;
+  view: 'library' | 'review';
+  selectedCategoryId: string | null;
+  openSections: Record<string, boolean>;
+  onSetOpenSection: (key: string, open: boolean) => void;
+}
+
+/** The whole category tree with drag-reorder; owns the shared drag state. */
+function CategoryTree({
+  tree,
+  counts,
+  view,
+  selectedCategoryId,
+  openSections,
+  onSetOpenSection,
   onSelectView,
   onSelectCategory,
   onSelectTag,
   onNavigate,
-}: CategoryRowProps) {
-  const handleSelect = useCallback(() => {
-    onSelectView('library');
-    onSelectTag(null);
-    onSelectCategory(selectedCategoryId === category.id ? null : category.id);
-    onNavigate?.();
-  }, [onSelectView, onSelectTag, onSelectCategory, selectedCategoryId, category.id, onNavigate]);
+}: CategoryTreeProps) {
+  const { handleDrop, handleDropToRoot } = useCategoryDropHandler();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ id: string; position: 'before' | 'after' | 'into' } | null>(
+    null,
+  );
+
+  const endDrag = useCallback(() => {
+    setDragId(null);
+    setHover(null);
+  }, []);
+
+  // Closes over the tree prop so a drop always reads the optimistic shape
+  // (the mutation re-renders this component with the predicted tree).
+  const drop = useCallback(
+    (drag: string, target: string, position: 'before' | 'after' | 'into') => {
+      handleDrop(tree, drag, target, position);
+    },
+    [handleDrop, tree],
+  );
+
+  const dnd = useMemo<TreeDndContextValue>(
+    () => ({ dragId, startDrag: setDragId, endDrag, drop }),
+    [dragId, endDrag, drop],
+  );
+
+  const onDropToRoot = useCallback(() => {
+    if (dragId) {
+      handleDropToRoot(tree, dragId);
+    }
+    endDrag();
+  }, [dragId, handleDropToRoot, tree, endDrag]);
+
+  const selection = useMemo<NavSelectionProps>(
+    () => ({ onSelectView, onSelectCategory, onSelectTag, onNavigate }),
+    [onSelectView, onSelectCategory, onSelectTag, onNavigate],
+  );
 
   return (
-    <Button
-      variant="ghost"
-      className={cn(rowClass, 'pl-4')}
-      data-active={active}
-      onClick={handleSelect}
-    >
-      <FolderIcon />
-      <span className="truncate">{category.name}</span>
-      <span className="ml-auto text-xs text-muted-foreground tabular-nums">{category.count}</span>
-    </Button>
+    <TreeDndContext.Provider value={dnd}>
+      <div className="flex flex-col">
+        {tree.map((node) => (
+          <CategoryTreeRow
+            key={node.id}
+            node={node}
+            depth={0}
+            counts={counts}
+            view={view}
+            selectedCategoryId={selectedCategoryId}
+            openSections={openSections}
+            onSetOpenSection={onSetOpenSection}
+            hover={hover}
+            onHover={setHover}
+            selection={selection}
+          />
+        ))}
+        <DropToRoot active={dragId !== null} onDropToRoot={onDropToRoot} />
+      </div>
+    </TreeDndContext.Provider>
   );
 }
 
 interface CollapsibleGroupProps {
-  groupKey: string;
+  storageKey: string;
   title: string;
   count?: number;
   open: boolean;
@@ -130,7 +412,7 @@ interface CollapsibleGroupProps {
 
 /** Thin adapter that keeps the CollapsibleSection open handler stable per group. */
 function CollapsibleGroup({
-  groupKey,
+  storageKey,
   title,
   count,
   open,
@@ -138,8 +420,8 @@ function CollapsibleGroup({
   children,
 }: CollapsibleGroupProps) {
   const handleOpenChange = useCallback(
-    (next: boolean) => onSetOpenSection(groupKey, next),
-    [onSetOpenSection, groupKey],
+    (next: boolean) => onSetOpenSection(storageKey, next),
+    [onSetOpenSection, storageKey],
   );
 
   return (
@@ -209,6 +491,7 @@ function SidebarTools({
 
 /** Shared nav body: identical content in the persistent sidebar and the mobile sheet. */
 function SidebarNav({
+  tree,
   aggregates,
   view,
   selectedCategoryId,
@@ -227,6 +510,7 @@ function SidebarNav({
   showTools = true,
 }: SidebarNavProps) {
   const model = useSidebarNavModel(
+    tree,
     aggregates,
     view,
     selectedCategoryId,
@@ -256,12 +540,7 @@ function SidebarNav({
     [onSelectView, onSelectCategory, onSelectTag, selectedTagId, onNavigate],
   );
 
-  const categoryNavProps: NavSelectionProps = {
-    onSelectView,
-    onSelectCategory,
-    onSelectTag,
-    onNavigate,
-  };
+  const hasCategories = tree.length > 0;
 
   return (
     <nav className="flex flex-col gap-1 px-2 pb-4">
@@ -287,55 +566,31 @@ function SidebarNav({
         {model.reviewCount > 0 && <NavCount>{model.reviewCount}</NavCount>}
       </Button>
 
-      {model.sections.map((section) => {
-        const sectionCategories = model.categories.filter((c) => c.sectionId === section.id);
-        return (
-          <CollapsibleGroup
-            key={section.id}
-            groupKey={sectionKey(section.id)}
-            title={section.name}
-            count={section.count}
-            open={openSections[sectionKey(section.id)] ?? true}
-            onSetOpenSection={onSetOpenSection}
-          >
-            <div className="ml-3 flex flex-col border-l-2 border-border/60">
-              {sectionCategories.map((category) => (
-                <CategoryRow
-                  key={category.id}
-                  category={category}
-                  active={view === 'library' && selectedCategoryId === category.id}
-                  selectedCategoryId={selectedCategoryId}
-                  {...categoryNavProps}
-                />
-              ))}
-            </div>
-          </CollapsibleGroup>
-        );
-      })}
-
-      {model.uncategorized.length > 0 && (
+      {hasCategories && (
         <CollapsibleGroup
-          groupKey={sectionKey('uncategorized')}
-          title="Other"
-          open={openSections[sectionKey('uncategorized')] ?? true}
+          storageKey={navGroupKey('categories')}
+          title="Categories"
+          count={tree.length}
+          open={openSections[navGroupKey('categories')] ?? true}
           onSetOpenSection={onSetOpenSection}
         >
-          <div className="ml-3 flex flex-col border-l-2 border-border/60">
-            {model.uncategorized.map((category) => (
-              <CategoryRow
-                key={category.id}
-                category={category}
-                active={view === 'library' && selectedCategoryId === category.id}
-                selectedCategoryId={selectedCategoryId}
-                {...categoryNavProps}
-              />
-            ))}
-          </div>
+          <CategoryTree
+            tree={tree}
+            counts={model.categoryCounts}
+            view={view}
+            selectedCategoryId={selectedCategoryId}
+            openSections={openSections}
+            onSetOpenSection={onSetOpenSection}
+            onSelectView={onSelectView}
+            onSelectCategory={onSelectCategory}
+            onSelectTag={onSelectTag}
+            onNavigate={onNavigate}
+          />
         </CollapsibleGroup>
       )}
 
       <CollapsibleGroup
-        groupKey={TAGS_KEY}
+        storageKey={TAGS_KEY}
         title="Tags"
         count={model.tagCount}
         open={openSections[TAGS_KEY] ?? true}
@@ -430,6 +685,7 @@ function RailButton({ label, onClick, children, badge, active }: RailButtonProps
 }
 
 export function Sidebar({
+  tree,
   aggregates,
   profile,
   theme,
@@ -455,6 +711,7 @@ export function Sidebar({
   onSetCollapsed,
 }: SidebarProps) {
   const model = useSidebarNavModel(
+    tree,
     aggregates,
     view,
     selectedCategoryId,
@@ -633,7 +890,7 @@ export function Sidebar({
               <Settings2Icon />
             </RailButton>
             <RailButton
-              label={`Categories (${model.categoryCount})`}
+              label="Categories"
               active={model.isCategoryActive}
               onClick={expand}
             >
@@ -696,6 +953,7 @@ export function Sidebar({
 
           <ScrollArea className="flex-1">
             <SidebarNav
+              tree={tree}
               aggregates={aggregates}
               profile={profile}
               theme={theme}
@@ -735,3 +993,4 @@ export function Sidebar({
 }
 
 export { SidebarNav };
+export type { SidebarNavProps };

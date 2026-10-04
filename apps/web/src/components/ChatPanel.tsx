@@ -79,7 +79,6 @@ function messageText(message: ChatMessage): string {
 function toBookmarkWithTags(hit: SearchBookmarkHit): BookmarkWithTags {
   return {
     id: hit.id,
-    datasetId: '',
     url: hit.url,
     title: hit.title,
     description: hit.description,
