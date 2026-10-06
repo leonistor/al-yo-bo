@@ -16,7 +16,7 @@ export interface AiHealthReport {
   /** Chat capability: `OLLAMA_CHAT_MODEL` is set (an unreachable daemon surfaces an in-stream error instead, §12). */
   chatAvailable: boolean;
   chatModel: string | null;
-  /** Embedding capability: `OPENROUTER_API_KEY` is set (without it, search degrades to keyword-only, §6). */
+  /** Embedding capability: production (`NODE_ENV=production`) with `OPENROUTER_API_KEY` set — otherwise search degrades to keyword-only (§6/§8). */
   embeddingsConfigured: boolean;
   /** The configured `EMBEDDING_MODEL` — the id stored in `bookmark_embeddings.model` (§6/§8, M4). */
   embeddingModel: string;
@@ -75,7 +75,7 @@ export function createAiHealth(config: AiConfig): AiHealth {
         ollamaReachable,
         chatAvailable: config.ollama.chatModel !== undefined,
         chatModel: config.ollama.chatModel ?? null,
-        embeddingsConfigured: config.openrouter.apiKey !== undefined,
+        embeddingsConfigured: config.production && config.openrouter.apiKey !== undefined,
         embeddingModel: config.openrouter.embeddingModel,
         classifierModel: config.ollaya.model,
         extractConfigured: route.openrouterModel !== null || route.ollamaModel !== null,

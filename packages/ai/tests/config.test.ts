@@ -18,6 +18,8 @@ describe('parseAiConfig', () => {
     expect(config.openrouter.apiKey).toBeUndefined();
     expect(config.extractModel).toBeUndefined();
     expect(config.mcpToken).toBeUndefined();
+    // Outside `NODE_ENV=production` (the default) OpenRouter defaults stay off.
+    expect(config.production).toBe(false);
   });
 
   test('coerces the threshold and treats blank env values as unset', () => {
@@ -55,6 +57,7 @@ describe('parseAiConfig', () => {
       EMBEDDING_MODEL: 'openai/text-embedding-3-large',
       EXTRACT_MODEL: 'qwen/qwen3-14b',
       MCP_TOKEN: 'mcp-secret',
+      NODE_ENV: 'production',
     });
 
     expect(config.ollaya.url).toBe('http://127.0.0.1:21435/');
@@ -67,5 +70,6 @@ describe('parseAiConfig', () => {
     expect(config.openrouter.embeddingModel).toBe('openai/text-embedding-3-large');
     expect(config.extractModel).toBe('qwen/qwen3-14b');
     expect(config.mcpToken).toBe('mcp-secret');
+    expect(config.production).toBe(true);
   });
 });

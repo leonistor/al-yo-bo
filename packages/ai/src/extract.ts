@@ -95,8 +95,11 @@ export const DEFAULT_OPENROUTER_EXTRACT_MODEL = 'deepseek/deepseek-v4.1-flash';
  * shared by the adapter construction and the health report. Ported from the
  * legacy server `resolveExtractModel`/`resolveExtractConfig` (§8 table):
  *
- * 1. `EXTRACT_MODEL` wins when set;
- * 2. otherwise the OpenRouter default when a key is configured;
+ * 1. `EXTRACT_MODEL` wins when set (an OpenRouter id is honored in any
+ *    environment — explicit config beats the dev/prod default);
+ * 2. otherwise the OpenRouter default when a key is configured AND the app
+ *    runs in production (`NODE_ENV=production`): the cloud provider is never
+ *    the dev default (§8), so development falls through to Ollama;
  * 3. otherwise `OLLAMA_CHAT_MODEL`;
  * 4. otherwise no LLM path (deterministic parser).
  *
@@ -116,7 +119,9 @@ export interface ExtractionRoute {
 export function resolveExtractionRoute(config: AiConfig): ExtractionRoute {
   const modelId =
     config.extractModel ??
-    (config.openrouter.apiKey ? DEFAULT_OPENROUTER_EXTRACT_MODEL : undefined) ??
+    (config.production && config.openrouter.apiKey
+      ? DEFAULT_OPENROUTER_EXTRACT_MODEL
+      : undefined) ??
     config.ollama.chatModel ??
     null;
   const prefersOpenRouter = modelId !== null && modelId.includes('/');

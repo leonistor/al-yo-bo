@@ -146,7 +146,11 @@ describe('createSuggestClient', () => {
   test('a failed LLM call degrades to null', async () => {
     const baseUrl = serve(() => new Response('oops', { status: 500 }));
     const client = createSuggestClient(
-      parseAiConfig({ OPENROUTER_API_KEY: 'k', OPENROUTER_BASE_URL: baseUrl }),
+      parseAiConfig({
+        OPENROUTER_API_KEY: 'k',
+        OPENROUTER_BASE_URL: baseUrl,
+        NODE_ENV: 'production',
+      }),
     );
 
     const result = await client!.suggest(sampleInput());
@@ -157,7 +161,11 @@ describe('createSuggestClient', () => {
   test('a non-JSON model reply degrades to null (no silent garbage)', async () => {
     const baseUrl = serve(() => openRouterResponse('not json at all'));
     const client = createSuggestClient(
-      parseAiConfig({ OPENROUTER_API_KEY: 'k', OPENROUTER_BASE_URL: baseUrl }),
+      parseAiConfig({
+        OPENROUTER_API_KEY: 'k',
+        OPENROUTER_BASE_URL: baseUrl,
+        NODE_ENV: 'production',
+      }),
     );
 
     const result = await client!.suggest(sampleInput());

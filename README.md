@@ -36,10 +36,12 @@ install); on Linux, install the pinned headless Chrome once with `bun run chrome
 Bun auto-loads a root `.env` file — copy `.env.example` and uncomment what you need (see
 `.env.example` for the full list of optional variables).
 
-Enrichment and semantic search are optional and degrade gracefully:
+Enrichment and semantic search are optional and degrade gracefully. OpenRouter is a
+production-only provider: its defaults engage under `NODE_ENV=production` (`bun run start`);
+development (`bun run dev`) runs on the local Ollama path with keyword-only search:
 
 ```sh
-export OPENROUTER_API_KEY=...   # embeddings; without it search stays keyword-only
+export OPENROUTER_API_KEY=...   # production embeddings; dev search stays keyword-only
 # EMBEDDING_MODEL defaults to openai/text-embedding-3-small (1536 dims)
 ```
 
@@ -50,12 +52,13 @@ export OLLAMA_CHAT_MODEL=llama3.2   # must support tool calling
 # OLLAMA_URL defaults to http://127.0.0.1:11434
 ```
 
-Import extraction uses an LLM by default. Set an OpenRouter model id to run it there (a `/`-containing
-id needs `OPENROUTER_API_KEY`); without `EXTRACT_MODEL`, a configured Ollama chat model is used, and
-with neither the deterministic markdown parser is the fallback:
+Import extraction uses an LLM by default. In production the default is the OpenRouter model
+`deepseek/deepseek-v4.1-flash` (needs `OPENROUTER_API_KEY`); development prefers the configured
+Ollama chat model, and with neither the deterministic markdown parser is the fallback. An explicit
+`EXTRACT_MODEL` wins in either environment (a `/`-containing id selects OpenRouter):
 
 ```sh
-export EXTRACT_MODEL=deepseek/deepseek-v4.1-flash   # OpenRouter extraction (needs OPENROUTER_API_KEY)
+export EXTRACT_MODEL=deepseek/deepseek-v4.1-flash   # any environment (needs OPENROUTER_API_KEY)
 ```
 
 ```sh

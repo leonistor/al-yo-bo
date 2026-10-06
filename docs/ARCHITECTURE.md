@@ -568,7 +568,8 @@ instead of duplicated per-adapter plumbing.
 ```
 packages/ai/
   config.ts      one zod schema over the env (OLLAYA_*, OLLAMA_*, OPENROUTER_*,
-                 EMBEDDING_MODEL, EXTRACT_MODEL, AUTO_ASSIGN_THRESHOLD, MCP_TOKEN) — parsed once
+                 EMBEDDING_MODEL, EXTRACT_MODEL, AUTO_ASSIGN_THRESHOLD, MCP_TOKEN,
+                 NODE_ENV) — parsed once
   registry.ts    createProviderRegistry({ openrouter, local? }) — explicit instances,
                  no ambient default provider
   embedding.ts   embed/embedMany behind the EmbeddingClient contract
@@ -587,6 +588,14 @@ config, then agents (`ToolLoopAgent`) when features need them.
 - **Embeddings model rule (restated, test-pinned).** `bookmark_embeddings.model` stores the
   configured `EMBEDDING_MODEL`, never the provider echo (§6). The AI SDK `embed()` result's model
   field is ignored for storage; a test fails if the two are ever conflated.
+- **OpenRouter is production-only (decided).** Default routing — the embedding client and the
+  default extraction model — engages only under `NODE_ENV=production` (`bun run start` sets it);
+  development (`bun run dev`) degrades to the local Ollama path and keyword-only search instead of
+  spending the cloud key. An explicit `EXTRACT_MODEL` override is honored in either environment.
+- **Structured outputs declared per provider (decided).** Every `createOpenAICompatible` provider
+  sets `supportsStructuredOutputs: true` so schema-bearing calls send `json_schema` instead of
+  silently degrading to unconstrained `json_object` (the AI SDK warns
+  "responseFormat is not supported" otherwise).
 - **Ollaya stays bespoke.** It is a decision server, not an LLM gateway (§3): typed
   `choice`/`score`/`noul` questions, no text generation, no OpenAI-compatible endpoints. Its client
   remains a hand-rolled `ClassifierClient` adapter inside `packages/ai`, centrally configured.
@@ -615,10 +624,10 @@ adapter providing the localhost Host/Origin DNS-rebinding guard. Posture:
 | `OLLAMA_URL`            | Ollama daemon base URL (chat + local extraction fallback) | `http://127.0.0.1:11434` |
 | `OLLAMA_CHAT_MODEL`     | Chat model on the local Ollama daemon; unset disables chat (503, health reports unavailable) | unset |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default `0.7` after observing `laya`'s softly-calibrated probabilities (at `0.5` it cleared ~30 of 67 tags per bookmark) | `0.7` |
-| `OPENROUTER_API_KEY`    | Embedding/LLM provider credential             | unset                    |
+| `OPENROUTER_API_KEY`    | Embedding/LLM provider credential (OpenRouter defaults are production-only, see above) | unset                    |
 | `OPENROUTER_BASE_URL`   | OpenAI-compatible API base URL                | `https://openrouter.ai/api/v1` |
 | `EMBEDDING_MODEL`       | Embedding model (fixes the vector dimensions) | `openai/text-embedding-3-small` |
-| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); a non-`/` id selects that model on the local Ollama path; unset → OpenRouter default when a key is set, else `OLLAMA_CHAT_MODEL`, else the deterministic parser | provider-dependent |
+| `EXTRACT_MODEL`         | Import-extraction model. A `/`-containing id selects OpenRouter (`OPENROUTER_API_KEY`); a non-`/` id selects that model on the local Ollama path; unset → OpenRouter default when a key is set and `NODE_ENV=production`, else `OLLAMA_CHAT_MODEL`, else the deterministic parser | provider-dependent |
 | `MCP_TOKEN`             | Optional bearer token for the bookmarks MCP server (loopback) | unset |
 
 ## 9. Real-time layer

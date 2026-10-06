@@ -73,9 +73,14 @@ describe('createAiHealth', () => {
     expect(second.ollayaReachable).toBe(true);
   });
 
-  test('extraction flags follow the EXTRACT_MODEL route', async () => {
+  test('extraction flags follow the EXTRACT_MODEL route (production engages OpenRouter)', async () => {
     const health = createAiHealth(
-      parseAiConfig({ OPENROUTER_API_KEY: 'k', OLLAYA_URL: DEAD_URL, OLLAMA_URL: DEAD_URL }),
+      parseAiConfig({
+        OPENROUTER_API_KEY: 'k',
+        NODE_ENV: 'production',
+        OLLAYA_URL: DEAD_URL,
+        OLLAMA_URL: DEAD_URL,
+      }),
     );
 
     const report = await health.report();

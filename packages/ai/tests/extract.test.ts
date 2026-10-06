@@ -97,10 +97,21 @@ describe('resolveExtractionRoute', () => {
     expect(route.prefersOpenRouter).toBe(false);
   });
 
-  test('unset falls back to the OpenRouter default when a key is set', () => {
-    const route = resolveExtractionRoute(parseAiConfig({ OPENROUTER_API_KEY: 'k' }));
+  test('unset falls back to the OpenRouter default in production when a key is set', () => {
+    const route = resolveExtractionRoute(
+      parseAiConfig({ OPENROUTER_API_KEY: 'k', NODE_ENV: 'production' }),
+    );
     expect(route.openrouterModel).toBe(DEFAULT_OPENROUTER_EXTRACT_MODEL);
     expect(route.prefersOpenRouter).toBe(true);
+  });
+
+  test('unset keeps development on the local Ollama path even with a key (OpenRouter is prod-only)', () => {
+    const route = resolveExtractionRoute(
+      parseAiConfig({ OPENROUTER_API_KEY: 'k', OLLAMA_CHAT_MODEL: 'llama3.2' }),
+    );
+    expect(route.openrouterModel).toBeNull();
+    expect(route.ollamaModel).toBe('llama3.2');
+    expect(route.prefersOpenRouter).toBe(false);
   });
 
   test('unset falls back to OLLAMA_CHAT_MODEL without a key', () => {
@@ -186,7 +197,11 @@ describe('createExtractionClient', () => {
   test('a failed LLM call throws so the caller falls back to the deterministic parser', async () => {
     const baseUrl = serve(() => new Response('oops', { status: 500 }));
     const client = createExtractionClient(
-      parseAiConfig({ OPENROUTER_API_KEY: 'k', OPENROUTER_BASE_URL: baseUrl }),
+      parseAiConfig({
+        OPENROUTER_API_KEY: 'k',
+        OPENROUTER_BASE_URL: baseUrl,
+        NODE_ENV: 'production',
+      }),
     );
 
     const failure = await client!.extract('hello').catch((error: unknown) => error);
@@ -199,7 +214,11 @@ describe('createExtractionClient', () => {
   test('a non-JSON model reply surfaces as ExtractionError (no silent garbage)', async () => {
     const baseUrl = serve(() => openRouterResponse('not json at all'));
     const client = createExtractionClient(
-      parseAiConfig({ OPENROUTER_API_KEY: 'k', OPENROUTER_BASE_URL: baseUrl }),
+      parseAiConfig({
+        OPENROUTER_API_KEY: 'k',
+        OPENROUTER_BASE_URL: baseUrl,
+        NODE_ENV: 'production',
+      }),
     );
 
     const failure = await client!.extract('hello').catch((error: unknown) => error);

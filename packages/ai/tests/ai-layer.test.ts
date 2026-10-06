@@ -34,4 +34,14 @@ describe('buildAiLayer', () => {
     expect(layer.suggest).not.toBeNull();
     expect(layer.extract).not.toBeNull();
   });
+
+  test('embeddings engage only in production; development stays keyword-only', () => {
+    const dev = buildAiLayer(parseAiConfig({ OPENROUTER_API_KEY: 'k' }));
+    expect(dev.embeddings).toBeNull();
+
+    const prod = buildAiLayer(
+      parseAiConfig({ OPENROUTER_API_KEY: 'k', NODE_ENV: 'production' }),
+    );
+    expect(prod.embeddings).not.toBeNull();
+  });
 });

@@ -65,6 +65,15 @@ const aiConfigSchema = z.object({
   extractModel: z.preprocess(blankToUndefined, z.string().optional()),
   /** Optional bearer token for the bookmarks MCP server (loopback, §8). */
   mcpToken: z.preprocess(blankToUndefined, z.string().optional()),
+  /**
+   * Dev/prod switch (`NODE_ENV=production`, set by `bun run start`). OpenRouter
+   * is a production provider (§8): its defaults — the embedding client and the
+   * default extraction model — engage only here; development degrades to the
+   * local Ollama path and keyword-only search instead of spending the cloud
+   * key. An explicit `EXTRACT_MODEL` overrides the default in either
+   * environment.
+   */
+  production: z.boolean().default(false),
 });
 
 export type AiConfig = z.infer<typeof aiConfigSchema>;
@@ -92,5 +101,6 @@ export function parseAiConfig(env: Record<string, string | undefined> = process.
     autoAssignThreshold: env.AUTO_ASSIGN_THRESHOLD,
     extractModel: env.EXTRACT_MODEL,
     mcpToken: env.MCP_TOKEN,
+    production: env.NODE_ENV === 'production' ? true : undefined,
   });
 }

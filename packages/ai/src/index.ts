@@ -35,7 +35,7 @@ export interface AiLayer {
   readonly config: AiConfig;
   /** Explicit provider instances (no ambient defaults, §8). */
   readonly registry: ProviderRegistry;
-  /** OpenRouter embeddings; `null` when `OPENROUTER_API_KEY` is unset. */
+  /** OpenRouter embeddings; `null` unless production with `OPENROUTER_API_KEY` (dev → keyword-only search, §8). */
   readonly embeddings: EmbeddingClient | null;
   /** Ollaya decision client (bespoke — not an AI SDK provider, §3/§8). */
   readonly classifier: ClassifierClient;
@@ -64,15 +64,18 @@ export function buildAiLayer(config: AiConfig): AiLayer {
   return {
     config,
     registry,
-    embeddings: config.openrouter.apiKey
-      ? new AiEmbeddingClient(registry, { model: config.openrouter.embeddingModel })
-      : null,
     classifier: new OllayaClassifierClient({
       baseUrl: config.ollaya.url,
       apiKey: config.ollaya.apiKey,
     }),
     extract: createExtractionClient(config),
     suggest: createSuggestClient(config),
+    // OpenRouter is a production provider (§8): development keeps its search
+    // keyword-only rather than spending the cloud key on embeddings.
+    embeddings:
+      config.production && config.openrouter.apiKey
+        ? new AiEmbeddingClient(registry, { model: config.openrouter.embeddingModel })
+        : null,
     health: createAiHealth(config),
   };
 }
