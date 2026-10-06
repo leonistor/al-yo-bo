@@ -51,12 +51,15 @@ export {
   type CategoryPatch,
   type TagInput,
   type TagPatch,
+  type BulkVocabularyInput,
+  type BulkVocabularyReport,
 } from './services/vocabulary.ts';
 export {
-  createReviewService,
-  type ReviewService,
-  type ReviewServiceDeps,
-} from './services/review.ts';
+  createSetupService,
+  type SetupService,
+  type SetupServiceDeps,
+  type SuggestOutput,
+} from './services/setup.ts';
 export {
   createImportService,
   type ImportService,

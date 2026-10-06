@@ -1,8 +1,9 @@
 /**
  * Classification workflow (ARCHITECTURE §7): build a state string from the
- * bookmark, ask one batched `noul` question per candidate tag, persist immutable
- * runs/results, then apply the deterministic assignment policy
- * (probability ≥ threshold AND tag active AND not user-assigned).
+ * bookmark, ask one batched `noul` question per candidate tag, persist one
+ * `classification_runs` row per decide call, then apply the deterministic
+ * assignment policy (probability ≥ threshold AND tag active AND not
+ * user-assigned).
  *
  * Ollaya is optional (§1.5): without a classifier client this degrades to a
  * no-op — bookmarks stay browsable, searchable and manually taggable.
@@ -12,9 +13,9 @@
  * per-call cap below keeps run size bounded; candidate-set precision as the
  * vocabulary grows is a §13 revisit trigger.
  *
- * The classifier never creates vocabulary (MODEL.md principle 5): unknown
- * labels are persisted as `unknown_classification_labels` evidence rows and
- * never become assignments.
+ * The classifier never creates vocabulary (MODEL.md principle 5). Unknown
+ * labels returned by the daemon are logged with `console.warn` and counted for
+ * observability, but they never become assignments or vocabulary rows.
  */
 
 import type { Database } from 'bun:sqlite';
@@ -23,9 +24,7 @@ import type { ClassifierClient, NoulQuestion } from '@al-yo-bo/ai';
 import {
   assignTag,
   candidatesForBookmark,
-  createClassificationResult,
   createClassificationRun,
-  createUnknownClassificationLabel,
   getBookmarksWithTagsByIds,
   listUserTagIds,
   reconcileClassifierAssignments,
@@ -56,7 +55,7 @@ export interface ClassifyOutcome {
   assigned: number;
   /** Stale classifier assignments removed because this run no longer qualified them. */
   retracted: number;
-  /** Unknown labels the daemon returned (recorded as evidence, never auto-assigned). */
+  /** Unknown labels the daemon returned (logged, never persisted). */
   unknown: number;
 }
 
@@ -148,18 +147,14 @@ export async function classifyBookmark(
   };
   /** Tags this pass qualified, across every batch run. */
   const qualifiedTagIds = new Set<string>();
-  /** Runs created by this pass (the authoritative evidence for `selected`). */
-  const runIds: string[] = [];
+  let runId = '';
 
-  /** Persists one result row and applies the assignment policy. */
-  const recordResult = (runId: string, name: string, probability: number, rank: number): void => {
+  /** Applies the assignment policy for one daemon answer. */
+  const recordResult = (name: string, probability: number): void => {
     const tag = candidates.get(name);
     if (!tag) {
-      // The daemon answered a label we did not ask for (or a name vanished):
-      // record it as durable evidence with no tag mapping (MODEL.md — unknown
-      // labels never create vocabulary and never become assignments).
+      // The daemon answered a label we did not ask for (or a name vanished).
       console.warn(`[classify] unknown label from daemon: ${name}`);
-      createUnknownClassificationLabel(db, { runId, rawLabel: name, probability });
       outcome.unknown += 1;
       return;
     }
@@ -168,15 +163,6 @@ export async function classifyBookmark(
       probability >= config.autoAssignThreshold &&
       tag.status === 'active' &&
       !userTagIds.has(tag.id);
-
-    createClassificationResult(db, {
-      runId,
-      tagId: tag.id,
-      probability,
-      rank,
-      selected: qualifies,
-      rawLabel: name,
-    });
 
     if (qualifies) {
       // assignTag never overwrites user/import rows (MODEL.md / ARCHITECTURE
@@ -204,46 +190,37 @@ export async function classifyBookmark(
       questions: buildQuestions(batch),
     });
 
-    const runId = createClassificationRun(db, {
+    runId = createClassificationRun(db, {
       bookmarkId,
       classifier: 'ollaya',
       model: response.model ?? config.ollaya.model,
     });
-    runIds.push(runId);
     outcome.runs += 1;
 
     const ranked = batch
       .map((name) => ({ name, probability: response.probabilities[name] ?? 0 }))
       .toSorted((a, b) => b.probability - a.probability);
-    for (const [index, { name, probability }] of ranked.entries()) {
-      recordResult(runId, name, probability, index + 1);
+    for (const { name, probability } of ranked) {
+      recordResult(name, probability);
     }
 
-    // Labels the daemon returned that we didn't ask about — these can never
-    // be mapped to a tag (no row to point at) and never become an assignment;
-    // they persist as evidence linked to the run (MODEL.md).
+    // Labels the daemon returned that we didn't ask about can never be mapped
+    // to a tag (no row to point at) and never become an assignment.
     for (const label of Object.keys(response.probabilities)) {
       if (!candidates.has(label)) {
         console.warn(`[classify] unknown label from daemon: ${label}`);
-        createUnknownClassificationLabel(db, {
-          runId,
-          rawLabel: label,
-          probability: response.probabilities[label] ?? 0,
-        });
         outcome.unknown += 1;
       }
     }
   }
 
   // Recompute the effective state under the current policy (ARCHITECTURE §7
-  // "Retraction"): retract classifier assignments this pass did not re-qualify
-  // and reconcile `selected` flags — effective state only, evidence rows stay
-  // immutable (MODEL.md principle 4). Runs after all batches so qualification
-  // is the union across runs.
+  // "Retraction"): retract classifier assignments this pass did not re-qualify.
+  // User/import rows survive by construction because they are never
+  // source='classifier'.
   outcome.retracted = reconcileClassifierAssignments(db, {
     bookmarkId,
     qualifiedTagIds: [...qualifiedTagIds],
-    runIds,
   }).retracted;
 
   if (outcome.assigned > 0 || outcome.retracted > 0) {

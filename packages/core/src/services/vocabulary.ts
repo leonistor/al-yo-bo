@@ -54,6 +54,17 @@ export interface TagPatch {
   description?: string | null;
 }
 
+export interface BulkVocabularyInput {
+  tags: { name: string; description?: string }[];
+  categories: { path: string[]; description?: string }[];
+}
+
+export interface BulkVocabularyReport {
+  tagsCreated: number;
+  categoriesCreated: number;
+  tags: Tag[];
+  categories: Category[];
+}
 export interface VocabularyServiceDeps {
   db: Database;
   jobs: JobScheduler;
@@ -97,6 +108,12 @@ export interface VocabularyService {
   deleteTag(id: string): Promise<void>;
   /** Tag-only lifecycle hook: switch between `active` and `deprecated`. */
   setTagStatus(id: string, status: TagStatus): Tag;
+  /**
+   * Idempotent batch creation for wizard-confirmed vocabulary. Tags and
+   * category paths are merged by their existing names; new rows are created
+   * active. Emits one `tags.changed` / `categories.changed` event each.
+   */
+  createBulk(input: BulkVocabularyInput): BulkVocabularyReport;
 }
 
 /**
@@ -147,6 +164,50 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
    */
   function subtreeBookmarkIds(categoryId: string): string[] {
     return listBookmarksForExport(db, { categoryId }).map((bookmark) => bookmark.id);
+  }
+
+  /**
+   * Resolves one category path root → leaf, creating any missing intermediate
+   * categories. The leaf keeps the supplied description; intermediates are
+   * created without one. Sibling-name merges are silent (idempotent bulk).
+   */
+  function resolveCategoryPath(
+    path: string[],
+    description?: string,
+  ): { category: Category; createdCount: number } | null {
+    let parentId: string | null = null;
+    let leafId: string | null = null;
+    let createdCount = 0;
+    const segments = path.map((segment) => segment.trim()).filter((segment) => segment !== '');
+    if (segments.length === 0) {
+      return null;
+    }
+    for (let index = 0; index < segments.length; index += 1) {
+      const name = segments[index]!;
+      const isLeaf = index === segments.length - 1;
+      const existing = getCategoryBySiblingName(db, parentId, name);
+      let id: string;
+      if (existing) {
+        id = existing.id;
+      } else {
+        const created = createCategory(db, {
+          name,
+          parentId,
+          description: isLeaf ? (description ?? null) : null,
+        });
+        id = created.id;
+        createdCount += 1;
+      }
+      parentId = id;
+      if (isLeaf) {
+        leafId = id;
+      }
+    }
+    const category = leafId ? getCategoryById(db, leafId) : null;
+    if (!category) {
+      return null;
+    }
+    return { category, createdCount };
   }
 
   return {
@@ -379,6 +440,47 @@ export function createVocabularyService(deps: VocabularyServiceDeps): Vocabulary
       }
       events.emit({ topic: 'tags.changed' });
       return updated;
+    },
+
+    createBulk(input) {
+      const report = db.transaction((): BulkVocabularyReport => {
+        const result: BulkVocabularyReport = {
+          tagsCreated: 0,
+          categoriesCreated: 0,
+          tags: [],
+          categories: [],
+        };
+
+        for (const entry of input.tags) {
+          const name = entry.name.trim();
+          if (name === '') {
+            continue;
+          }
+          const existed = getTagByName(db, name);
+          const tag = createTag(db, { name, description: entry.description });
+          if (!existed) {
+            result.tagsCreated += 1;
+          }
+          result.tags.push(tag);
+        }
+
+        for (const entry of input.categories) {
+          const resolved = resolveCategoryPath(entry.path, entry.description);
+          if (!resolved) {
+            continue;
+          }
+          result.categories.push(resolved.category);
+          result.categoriesCreated += resolved.createdCount;
+        }
+
+        return result;
+      }).immediate();
+
+      if (input.tags.length > 0 || input.categories.length > 0) {
+        events.emit({ topic: 'tags.changed' });
+        events.emit({ topic: 'categories.changed' });
+      }
+      return report;
     },
   };
 }

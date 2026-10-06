@@ -10,7 +10,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { getProfile, updateProfile } from '@al-yo-bo/db';
-import type { Profile } from '@al-yo-bo/shared';
+import type { DevProfile, Profile } from '@al-yo-bo/shared';
 
 import { NotFoundError, ValidationError } from '../errors.ts';
 import type { EventsSink } from '../events.ts';
@@ -42,6 +42,86 @@ export interface ProfileServiceDeps {
 export interface ProfilePatchInput {
   name?: string | null;
   githubUsername?: string | null;
+  devProfile?: DevProfile | null;
+  setupCompletedAt?: number | null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function optionalStringField(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Validates a wizard questionnaire payload. Only `source` is required; all
+ * other fields are optional and must match their declared shapes before they
+ * reach the db JSON column.
+ */
+function validateDevProfile(value: unknown): DevProfile | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new ValidationError('devProfile must be an object or null');
+  }
+  const input = value as Record<string, unknown>;
+  const source = input['source'];
+  if (typeof source !== 'string' || source.trim() === '') {
+    throw new ValidationError('devProfile.source must be a non-empty string');
+  }
+  const profile: DevProfile = { source };
+
+  const focus = optionalStringField(input['focus']);
+  if (focus !== undefined) {
+    profile.focus = focus;
+  }
+  const experience = optionalStringField(input['experience']);
+  if (experience !== undefined) {
+    profile.experience = experience;
+  }
+  const notes = optionalStringField(input['notes']);
+  if (notes !== undefined) {
+    profile.notes = notes;
+  }
+
+  const languages = input['languages'];
+  if (languages !== undefined) {
+    if (!isStringArray(languages)) {
+      throw new ValidationError('devProfile.languages must be an array of strings');
+    }
+    profile.languages = languages;
+  }
+  const frameworks = input['frameworks'];
+  if (frameworks !== undefined) {
+    if (!isStringArray(frameworks)) {
+      throw new ValidationError('devProfile.frameworks must be an array of strings');
+    }
+    profile.frameworks = frameworks;
+  }
+  const tools = input['tools'];
+  if (tools !== undefined) {
+    if (!isStringArray(tools)) {
+      throw new ValidationError('devProfile.tools must be an array of strings');
+    }
+    profile.tools = tools;
+  }
+
+  return profile;
+}
+
+function validateSetupCompletedAt(value: unknown): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ValidationError('setupCompletedAt must be a number or null');
+  }
+  return value;
 }
 
 export interface ProfileService {
@@ -81,7 +161,19 @@ export function createProfileService(deps: ProfileServiceDeps): ProfileService {
         patch.githubUsername === undefined || patch.githubUsername === null
           ? patch.githubUsername
           : patch.githubUsername.replace(/^@/, '');
-      updateProfile(db, { ...patch, githubUsername });
+      const dbPatch: { name?: string | null; githubUsername?: string | null; devProfile?: DevProfile | null; setupCompletedAt?: number | null } = {
+        githubUsername,
+      };
+      if ('name' in patch) {
+        dbPatch.name = patch.name;
+      }
+      if ('devProfile' in patch) {
+        dbPatch.devProfile = validateDevProfile(patch.devProfile);
+      }
+      if ('setupCompletedAt' in patch) {
+        dbPatch.setupCompletedAt = validateSetupCompletedAt(patch.setupCompletedAt);
+      }
+      updateProfile(db, dbPatch);
       const profile = requireProfile();
       events.emit({ topic: 'profile.changed' });
       return profile;

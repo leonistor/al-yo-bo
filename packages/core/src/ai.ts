@@ -1,4 +1,4 @@
-import type { AiHealth, ClassifierClient, EmbeddingClient, ExtractionClient } from '@al-yo-bo/ai';
+import type { AiHealth, ClassifierClient, EmbeddingClient, ExtractionClient, SuggestClient } from '@al-yo-bo/ai';
 
 /**
  * The AI capabilities core consumes, as one structural port (ARCHITECTURE §4
@@ -18,6 +18,8 @@ export interface CoreAi {
   readonly classifier: ClassifierClient | null;
   /** LLM extraction client; `null` → deterministic parser fallback (§7 stage 1). */
   readonly extract: ExtractionClient | null;
+  /** LLM vocabulary-suggestion client; `null` → manual wizard vocabulary. */
+  readonly suggest: SuggestClient | null;
   /** Capability probes feeding the health report (§8). */
   readonly health: AiHealth;
 }

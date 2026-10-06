@@ -312,3 +312,55 @@ describe('VocabularyService — events', () => {
     expect(events.events.filter((event) => event.topic === 'tags.changed').length).toBe(4);
   });
 });
+
+describe('VocabularyService.createBulk', () => {
+  test('creates tags and categories in one batch and emits one event each', () => {
+    const { service, events } = makeService();
+
+    const result = service.createBulk({
+      tags: [{ name: 'rust' }, { name: 'wasm', description: 'webassembly' }],
+      categories: [
+        { path: ['dev', 'web'] },
+        { path: ['dev', 'systems'], description: 'low-level' },
+      ],
+    });
+
+    expect(result.tagsCreated).toBe(2);
+    expect(result.categoriesCreated).toBe(3); // dev + web + systems
+    expect(result.tags.map((tag) => tag.name)).toEqual(['rust', 'wasm']);
+    expect(result.categories.map((category) => category.name)).toEqual(['web', 'systems']);
+
+    expect(events.events.filter((event) => event.topic === 'tags.changed').length).toBe(1);
+    expect(events.events.filter((event) => event.topic === 'categories.changed').length).toBe(1);
+  });
+
+  test('merges existing vocabulary instead of conflicting', () => {
+    const { service } = makeService();
+    service.createTag({ name: 'rust' });
+    const dev = service.createCategory({ name: 'dev' });
+
+    const result = service.createBulk({
+      tags: [{ name: 'rust' }, { name: 'zig' }],
+      categories: [{ path: ['dev', 'web'] }],
+    });
+
+    expect(result.tagsCreated).toBe(1);
+    expect(result.categoriesCreated).toBe(1);
+    expect(result.tags).toHaveLength(2);
+    expect(result.categories[0]!.parentId).toBe(dev.id);
+  });
+
+  test('trims names and skips empty entries', () => {
+    const { service } = makeService();
+
+    const result = service.createBulk({
+      tags: [{ name: '  rust  ' }, { name: '' }, { name: '  ' }],
+      categories: [{ path: ['  dev  ', '', '  web  '] }],
+    });
+
+    expect(result.tagsCreated).toBe(1);
+    expect(result.categoriesCreated).toBe(2);
+    expect(result.tags[0]!.name).toBe('rust');
+    expect(result.categories[0]!.name).toBe('web');
+  });
+});

@@ -13,8 +13,8 @@ import { createExportService, type ExportService } from './services/export.ts';
 import { createHealthService, type HealthService } from './services/health.ts';
 import { createImportService, type ImportService } from './services/import.ts';
 import { createProfileService, type AvatarStore, type ProfileService } from './services/profile.ts';
-import { createReviewService, type ReviewService } from './services/review.ts';
 import { createSearchService, type SearchService } from './services/search.ts';
+import { createSetupService, type SetupService } from './services/setup.ts';
 import { createVocabularyService, type VocabularyService } from './services/vocabulary.ts';
 import type { VectorProvider } from './vector/provider.ts';
 
@@ -56,7 +56,7 @@ export interface Core {
   search: SearchService;
   bookmarks: BookmarkService;
   vocabulary: VocabularyService;
-  review: ReviewService;
+  setup: SetupService;
   import: ImportService;
   export: ExportService;
   enrichment: EnrichmentService;
@@ -111,7 +111,7 @@ export function createCore(deps: CoreDeps): Core {
       screenshotsDir: deps.screenshotsDir,
     }),
     vocabulary: createVocabularyService({ db, jobs: enrichment, vector, events }),
-    review: createReviewService({ db, config, vector, events }),
+    setup: createSetupService({ db, ai }),
     import: createImportService({ db, jobs: enrichment, extract: ai.extract, events }),
     export: createExportService({ db }),
     enrichment,

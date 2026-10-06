@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import type { AiHealth, AiHealthReport, ClassifierClient, EmbeddingClient } from '@al-yo-bo/ai';
+import type { AiHealth, AiHealthReport, ClassifierClient, EmbeddingClient, SuggestClient } from '@al-yo-bo/ai';
 import { openDatabase, setupDatabase } from '@al-yo-bo/db';
 import type {
   DomainEvent,
@@ -134,12 +134,25 @@ export function fakeAiHealth(report: Partial<AiHealthReport> = {}): AiHealth {
   };
 }
 
-/** CoreAi fake — embeddings on, classifier/extract off, static health probes. */
+/** SuggestClient stub returning a fixed suggestion. */
+export function stubSuggest(suggestion: { tags: string[]; categories: string[][] }): SuggestClient {
+  return {
+    async suggest() {
+      return {
+        tags: suggestion.tags.map((name) => ({ name })),
+        categories: suggestion.categories.map((path) => ({ path })),
+      };
+    },
+  };
+}
+
+/** CoreAi fake — embeddings on, classifier/extract/suggest off, static health probes. */
 export function stubAi(overrides: Partial<CoreAi> = {}): CoreAi {
   return {
     embeddings: stubEmbeddings,
     classifier: null,
     extract: null,
+    suggest: null,
     health: fakeAiHealth(),
     ...overrides,
   };
