@@ -3,7 +3,14 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { convertHtmlToMarkdown, fetchPageHtml, makeScraper, ScrapeError } from '../src/scrape.ts';
+import {
+  convertHtmlToMarkdown,
+  fetchPageHtml,
+  makeScraper,
+  ScrapeError,
+  type ScrapeSidecarClient,
+  type ScrapeSidecarResponse,
+} from '../src/scrape.ts';
 
 const tempDirs: string[] = [];
 
@@ -22,6 +29,192 @@ function makeScript(script: string): string {
   chmodSync(path, 0o755);
   return path;
 }
+
+function successSidecarResponse(html: string): ScrapeSidecarResponse {
+  return { status: 200, html, contentType: 'text/html', finalUrl: null, error: null };
+}
+
+function stubSidecar(stubs: {
+  reachable?: boolean;
+  fetch?: ScrapeSidecarResponse;
+  browse?: ScrapeSidecarResponse;
+}): ScrapeSidecarClient {
+  return {
+    async reachable() {
+      return stubs.reachable ?? true;
+    },
+    async fetchTier() {
+      return (
+        stubs.fetch ?? {
+          status: null,
+          html: '',
+          contentType: null,
+          finalUrl: null,
+          error: 'fetch tier not stubbed',
+        }
+      );
+    },
+    async browseTier() {
+      return (
+        stubs.browse ?? {
+          status: null,
+          html: '',
+          contentType: null,
+          finalUrl: null,
+          error: 'browse tier not stubbed',
+        }
+      );
+    },
+  };
+}
+
+describe('scrape ladder', () => {
+  const options = {
+    timeoutMs: 1_000,
+    maxContentChars: 200_000,
+    binary: 'html-to-markdown',
+    maxAttempts: 3,
+    maxBytes: 5 * 1024 * 1024,
+    sidecar: {
+      url: 'http://127.0.0.1:9383',
+      fetchTimeoutMs: 15_000,
+      browseTimeoutMs: 45_000,
+      humanize: true,
+    },
+  };
+
+  test('plain success uses tier plain and never touches the sidecar', async () => {
+    let sidecarCalls = 0;
+    const scraper = makeScraper(options, {
+      fetchPage: async () => ({ html: '<h1>Hi</h1>', contentType: 'text/html', finalUrl: null }),
+      convert: async (html) => html,
+      sidecar: {
+        ...stubSidecar({}),
+        async reachable() {
+          sidecarCalls += 1;
+          return true;
+        },
+      },
+    });
+    const result = await scraper('https://example.com');
+    expect(result.content).toBe('<h1>Hi</h1>');
+    expect(result.metadata.scrape.tier).toBe('plain');
+    expect(sidecarCalls).toBe(0);
+  });
+
+  test('plain 403 escalates to TLS tier and runs markdown conversion on the returned HTML', async () => {
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw new ScrapeError('HTTP 403', 403);
+      },
+      convert: async (html) => `# ${html}`,
+      sidecar: stubSidecar({
+        fetch: successSidecarResponse('<h1>TLS page</h1>'),
+      }),
+    });
+    const result = await scraper('https://blocked.example.com');
+    expect(result.content).toBe('# <h1>TLS page</h1>');
+    expect(result.metadata.scrape.tier).toBe('tls');
+  });
+
+  test('TLS empty HTML escalates to browse tier', async () => {
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw new ScrapeError('HTTP 403', 403);
+      },
+      convert: async (html) => html,
+      sidecar: stubSidecar({
+        fetch: { status: 200, html: '', contentType: 'text/html', finalUrl: null, error: null },
+        browse: successSidecarResponse('<h1>Browsed page</h1>'),
+      }),
+    });
+    const result = await scraper('https://blocked.example.com');
+    expect(result.content).toBe('<h1>Browsed page</h1>');
+    expect(result.metadata.scrape.tier).toBe('browse');
+  });
+
+  test('a TLS error escalates to browse tier', async () => {
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw new ScrapeError('HTTP 403', 403);
+      },
+      convert: async (html) => html,
+      sidecar: stubSidecar({
+        fetch: { status: 200, html: 'ok', contentType: 'text/html', finalUrl: null, error: 'sidecar failed' },
+        browse: successSidecarResponse('<h1>Browsed page</h1>'),
+      }),
+    });
+    const result = await scraper('https://blocked.example.com');
+    expect(result.content).toBe('<h1>Browsed page</h1>');
+    expect(result.metadata.scrape.tier).toBe('browse');
+  });
+
+  test('all tiers fail rethrows the original plain error', async () => {
+    const original = new ScrapeError('HTTP 403', 403);
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw original;
+      },
+      convert: async (html) => html,
+      sidecar: stubSidecar({
+        fetch: { status: 403, html: '', contentType: null, finalUrl: null, error: null },
+        browse: { status: 500, html: '', contentType: null, finalUrl: null, error: null },
+      }),
+    });
+    const error = await scraper('https://blocked.example.com').catch((e: unknown) => e);
+    expect(error).toBe(original);
+    expect(error).toBeInstanceOf(ScrapeError);
+    expect((error as ScrapeError).statusCode).toBe(403);
+  });
+
+  test('unreachable sidecar preserves plain transient failure semantics', async () => {
+    const original = new ScrapeError('socket hang up');
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw original;
+      },
+      convert: async (html) => html,
+      sidecar: stubSidecar({ reachable: false }),
+    });
+    const error = await scraper('https://down.example.com').catch((e: unknown) => e);
+    expect(error).toBe(original);
+    expect((error as ScrapeError).statusCode).toBeUndefined();
+  });
+
+  test('plain 404 does not escalate so dead-link counting stays intact', async () => {
+    let sidecarCalls = 0;
+    const scraper = makeScraper(options, {
+      fetchPage: async () => {
+        throw new ScrapeError('HTTP 404', 404);
+      },
+      convert: async (html) => html,
+      sidecar: {
+        ...stubSidecar({}),
+        async reachable() {
+          sidecarCalls += 1;
+          return true;
+        },
+      },
+    });
+    const error = await scraper('https://dead.example.com').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ScrapeError);
+    expect((error as ScrapeError).statusCode).toBe(404);
+    expect(sidecarCalls).toBe(0);
+  });
+
+  test('without sidecar config a transient failure is unchanged from today', async () => {
+    const original = new ScrapeError('socket hang up');
+    const scraper = makeScraper({ ...options, sidecar: undefined }, {
+      fetchPage: async () => {
+        throw original;
+      },
+      convert: async (html) => html,
+    });
+    const error = await scraper('https://plain-fail.example.com').catch((e: unknown) => e);
+    expect(error).toBe(original);
+    expect((error as ScrapeError).statusCode).toBeUndefined();
+  });
+});
 
 describe('convertHtmlToMarkdown', () => {
   test('pipes HTML through the CLI and returns its stdout', async () => {

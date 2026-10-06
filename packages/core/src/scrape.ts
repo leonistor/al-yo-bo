@@ -25,6 +25,8 @@ export interface ScrapeResult {
       /** Final URL after redirects, when it differs from the bookmark URL. */
       finalUrl: string | null;
       truncated: boolean;
+      /** Which tier of the scrape ladder produced the page. */
+      tier?: 'plain' | 'tls' | 'browse';
     };
   };
 }
@@ -59,6 +61,116 @@ export interface FetchedPage {
   contentType: string | null;
   /** Final URL after redirects, when it differs from the requested one. */
   finalUrl: string | null;
+}
+
+/** Sidecar /fetch and /browse response shape (Lane A contract). */
+export interface ScrapeSidecarResponse {
+  status: number | null;
+  html: string;
+  contentType: string | null;
+  finalUrl: string | null;
+  error: string | null;
+}
+
+/** Injectable client for the scrape sidecar's TLS-impersonated fetch and browser tiers. */
+export interface ScrapeSidecarClient {
+  /** Cached reachability probe: any HTTP answer means the sidecar is up. */
+  reachable(): Promise<boolean>;
+  /** curl_cffi TLS-impersonated fetch tier. */
+  fetchTier(url: string, timeoutMs: number): Promise<ScrapeSidecarResponse>;
+  /** Camoufox JS-rendered browse tier. */
+  browseTier(url: string, timeoutMs: number, humanize: boolean): Promise<ScrapeSidecarResponse>;
+}
+
+/** Cached probe TTL and timeout — same rationale as `packages/ai` health probes. */
+const PROBE_TTL_MS = 30_000;
+const PROBE_TIMEOUT_MS = 750;
+
+/**
+ * Build a scrape-sidecar client from core config. Returns `null` when the feature
+ * is disabled, so callers can stay branch-free: `sidecar ?? null` degrades the ladder.
+ * Transport failures are absorbed into the response as `error`/empty html, never
+ * thrown as scrape results — the ladder just escalates or rethrows the original error.
+ */
+export function createScrapeSidecarClient(
+  config: CoreConfig['scrape']['sidecar'],
+): ScrapeSidecarClient | null {
+  if (!config) {
+    return null;
+  }
+
+  const probes = new Map<string, { at: number; reachable: boolean }>();
+  const baseUrl = config.url.replace(/\/$/, '');
+
+  async function reachable(): Promise<boolean> {
+    const cached = probes.get(baseUrl);
+    if (cached && Date.now() - cached.at < PROBE_TTL_MS) {
+      return cached.reachable;
+    }
+    let isReachable = false;
+    try {
+      // Any HTTP response proves the daemon is up and answering.
+      await fetch(`${baseUrl}/health`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      isReachable = true;
+    } catch {
+      isReachable = false;
+    }
+    probes.set(baseUrl, { at: Date.now(), reachable: isReachable });
+    return isReachable;
+  }
+
+  async function call(
+    endpoint: '/fetch' | '/browse',
+    body: object,
+    timeoutMs: number,
+  ): Promise<ScrapeSidecarResponse> {
+    try {
+      const response = await fetch(`${baseUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const payload = (await response.json()) as ScrapeSidecarResponse;
+      return payload;
+    } catch {
+      // Connection refused, timeout, or non-JSON: report tier unavailable so the
+      // ladder escalates or rethrows the original error without inventing a reason.
+      return { status: null, html: '', contentType: null, finalUrl: null, error: 'sidecar unreachable' };
+    }
+  }
+
+  return {
+    reachable,
+    fetchTier(url, timeoutMs) {
+      return call('/fetch', { url, timeoutMs }, timeoutMs);
+    },
+    browseTier(url, timeoutMs, humanize) {
+      return call('/browse', { url, timeoutMs, humanize }, timeoutMs);
+    },
+  };
+}
+
+/** True when the sidecar produced a usable page. */
+function isSidecarSuccess(response: ScrapeSidecarResponse): boolean {
+  return (
+    typeof response.status === 'number' &&
+    response.status >= 200 &&
+    response.status < 300 &&
+    !response.error &&
+    response.html.length > 0
+  );
+}
+
+/** Convert a sidecar success response into the `FetchedPage` shape the ladder uses. */
+function sidecarResponseToPage(response: ScrapeSidecarResponse): FetchedPage {
+  return {
+    html: response.html,
+    contentType: response.contentType,
+    finalUrl: response.finalUrl,
+  };
 }
 
 /**
@@ -193,18 +305,91 @@ export function sha256Hex(value: string): string {
 }
 
 /**
+ * Plain-fetch errors that signal bot blocking or a transport/TLS failure.
+ * 404/410 are excluded: they count toward dead-link invalidation and must not
+ * be hidden by the ladder (MODEL.md scrape_attempts rules).
+ */
+function shouldEscalate(error: ScrapeError): boolean {
+  if (error.statusCode === undefined) return true;
+  return error.statusCode === 401 || error.statusCode === 403 || error.statusCode === 429;
+}
+
+/**
  * Builds the injectable scrape pipeline used by the job loop and the manual
  * scrape endpoint. `deps` are overridable for tests.
+ *
+ * Scrape ladder (ARCHITECTURE §10, Lane B):
+ *   1. Plain fetch — the cheap path that already works for most sites.
+ *   2. TLS-impersonated fetch via the scrape sidecar, triggered when the plain
+ *      fetch fails with 401/403/429 or any transport/TLS error (no status code).
+ *   3. Camoufox JS-rendered browse via the sidecar, triggered when Tier 2 returns
+ *      a non-OK status, an error, or empty HTML.
+ *
+ * Dead-link semantics are preserved throughout: 404/410 from the plain fetch
+ * never escalate, and if every sidecar tier fails we rethrow the *original*
+ * Tier-1 error so the job loop classifies it exactly as it would without a sidecar.
  */
 export function makeScraper(
   options: CoreConfig['scrape'],
-  deps: { fetchPage?: typeof fetchPageHtml; convert?: typeof convertHtmlToMarkdown } = {},
+  deps: {
+    fetchPage?: typeof fetchPageHtml;
+    convert?: typeof convertHtmlToMarkdown;
+    sidecar?: ScrapeSidecarClient | null;
+  } = {},
 ): ScrapeFn {
   const fetchPage = deps.fetchPage ?? fetchPageHtml;
   const convert = deps.convert ?? convertHtmlToMarkdown;
+  const sidecar = deps.sidecar ?? createScrapeSidecarClient(options.sidecar);
+
+  /**
+   * Try the sidecar tiers when the plain fetch was blocked. Transport failures
+   * resolve as `null`, so the caller rethrows the original error unchanged.
+   */
+  async function trySidecar(url: string): Promise<{ tier: 'tls' | 'browse'; page: FetchedPage } | null> {
+    if (!sidecar || !(await sidecar.reachable())) {
+      return null;
+    }
+
+    const tls = await sidecar.fetchTier(url, options.sidecar?.fetchTimeoutMs ?? 15_000);
+    if (isSidecarSuccess(tls)) {
+      return { tier: 'tls', page: sidecarResponseToPage(tls) };
+    }
+
+    if (!(await sidecar.reachable())) {
+      return null;
+    }
+
+    const browse = await sidecar.browseTier(
+      url,
+      options.sidecar?.browseTimeoutMs ?? 45_000,
+      options.sidecar?.humanize ?? true,
+    );
+    if (isSidecarSuccess(browse)) {
+      return { tier: 'browse', page: sidecarResponseToPage(browse) };
+    }
+
+    return null;
+  }
 
   return async (url: string): Promise<ScrapeResult> => {
-    const page = await fetchPage(url, options.timeoutMs);
+    let tier: 'plain' | 'tls' | 'browse' = 'plain';
+    let page: FetchedPage;
+
+    try {
+      page = await fetchPage(url, options.timeoutMs);
+    } catch (error) {
+      if (error instanceof ScrapeError && shouldEscalate(error)) {
+        const sidecarResult = await trySidecar(url);
+        if (!sidecarResult) {
+          throw error;
+        }
+        tier = sidecarResult.tier;
+        page = sidecarResult.page;
+      } else {
+        throw error;
+      }
+    }
+
     const markdown = (await convert(page.html, options.binary, options.conversionTimeoutMs)).trim();
     const truncated = markdown.length > options.maxContentChars;
     // Hash the stored content so an unchanged hash reliably means "skip downstream".
@@ -218,6 +403,7 @@ export function makeScraper(
           contentType: page.contentType,
           finalUrl: page.finalUrl,
           truncated,
+          tier,
         },
       },
     };

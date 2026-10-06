@@ -37,5 +37,15 @@ export interface CoreConfig {
     conversionTimeoutMs?: number;
     /** Page-download cap in bytes; oversized pages fail the scrape as transient. */
     maxBytes: number;
+    /**
+     * Optional scrape sidecar (curl_cffi + Camoufox) for sites that block plain
+     * fetch. Absent = feature off; the ladder degrades gracefully (ARCHITECTURE §10).
+     */
+    sidecar?: {
+      url: string;
+      fetchTimeoutMs: number;
+      browseTimeoutMs: number;
+      humanize: boolean;
+    };
   };
 }

@@ -290,13 +290,15 @@ describe('bookmark API', () => {
     expect(page3.pagination.hasMore).toBe(false);
   });
 
-  test('health reports vector, ai probes and enrichment capabilities', async () => {
-    const body = (await (await app.request('/api/health')).json()) as {
+  test('health reports vector, ai probes, enrichment capabilities and sidecar status', async () => {
+    const { app: testApp } = makeApp({ env: { SCRAPE_SIDECAR_URL: '' } });
+    const body = (await (await testApp.request('/api/health')).json()) as {
       status: string;
       vector: { backend: string; indexed: number };
       ai: { chatAvailable: boolean; embeddingModel: string };
       enrichment: { scrapeAvailable: boolean };
       screenshot: { available: boolean };
+      scrapeSidecar: { configured: boolean; url?: string; reachable: boolean | null };
     };
     expect(body.status).toBe('ok');
     expect(body.vector.backend).toBe('memory');
@@ -306,6 +308,7 @@ describe('bookmark API', () => {
     expect(body.ai.embeddingModel).toBe('stub-model');
     expect(body.enrichment.scrapeAvailable).toBe(false);
     expect(body.screenshot.available).toBe(false);
+    expect(body.scrapeSidecar).toEqual({ configured: false, reachable: null });
   });
 
   test('creates, updates and deletes a bookmark', async () => {
@@ -381,6 +384,36 @@ describe('bookmark API', () => {
     expect(loadConfig({ PORT: '' }).port).toBe(3000);
     expect(loadConfig({ SCRAPE_TIMEOUT_MS: '   ' }).scrape.timeoutMs).toBe(15_000);
     expect(loadConfig({ QDRANT_TIMEOUT_MS: '' }).qdrant.timeoutMs).toBe(5_000);
+  });
+
+  test('scrape sidecar env mapping: defaults, disable, and boolean parsing', () => {
+    // On by default at localhost; empty string disables.
+    const withDefaults = loadConfig({});
+    expect(withDefaults.scrape.sidecar).toEqual({
+      url: 'http://127.0.0.1:9383',
+      fetchTimeoutMs: 15_000,
+      browseTimeoutMs: 45_000,
+      humanize: true,
+    });
+    expect(loadConfig({ SCRAPE_SIDECAR_URL: '' }).scrape.sidecar).toBeUndefined();
+
+    // Custom values.
+    expect(loadConfig({ SCRAPE_SIDECAR_URL: 'http://sidecar.test' }).scrape.sidecar?.url).toBe(
+      'http://sidecar.test',
+    );
+    expect(loadConfig({ SCRAPE_SIDECAR_TIMEOUT_MS: '5000' }).scrape.sidecar?.fetchTimeoutMs).toBe(
+      5_000,
+    );
+    expect(loadConfig({ SCRAPE_BROWSE_TIMEOUT_MS: '30000' }).scrape.sidecar?.browseTimeoutMs).toBe(
+      30_000,
+    );
+
+    // Humanize: only "false" and "0" are falsy; everything else is true.
+    expect(loadConfig({ SCRAPE_BROWSE_HUMANIZE: 'false' }).scrape.sidecar?.humanize).toBe(false);
+    expect(loadConfig({ SCRAPE_BROWSE_HUMANIZE: '0' }).scrape.sidecar?.humanize).toBe(false);
+    expect(loadConfig({ SCRAPE_BROWSE_HUMANIZE: 'true' }).scrape.sidecar?.humanize).toBe(true);
+    expect(loadConfig({ SCRAPE_BROWSE_HUMANIZE: 'yes' }).scrape.sidecar?.humanize).toBe(true);
+    expect(loadConfig({ SCRAPE_BROWSE_HUMANIZE: '' }).scrape.sidecar?.humanize).toBe(true);
   });
 
   test('assigns and removes a user tag', async () => {

@@ -113,6 +113,7 @@ describe('createCore — health composition', () => {
       expect(report.ai.embeddingModel).toBe('stub-model');
       expect(report.enrichment.scrapeAvailable).toBe(false);
       expect(report.screenshot.available).toBe(true);
+      expect(report.scrapeSidecar).toEqual({ configured: false, reachable: null });
     } finally {
       core.stop();
     }

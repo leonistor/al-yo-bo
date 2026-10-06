@@ -2,7 +2,7 @@ import type { AiHealthReport } from '@al-yo-bo/ai';
 
 import type { CoreAi } from '../ai.ts';
 import type { CoreConfig } from '../config.ts';
-import type { ScrapeFn } from '../scrape.ts';
+import { createScrapeSidecarClient, type ScrapeFn } from '../scrape.ts';
 import type { ScreenshotClient } from '../screenshot.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 
@@ -48,6 +48,16 @@ export interface HealthReport {
   screenshot: {
     available: boolean;
   };
+  /**
+   * Scrape sidecar capability report (ARCHITECTURE §10): configured when the env
+   * is set, reachable from a cached probe. Descriptive only — a missing sidecar
+   * silently degrades the scrape ladder back to plain fetch.
+   */
+  scrapeSidecar: {
+    configured: boolean;
+    url?: string;
+    reachable: boolean | null;
+  };
 }
 
 export interface HealthServiceDeps {
@@ -78,10 +88,12 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
   const { vector, config, ai, jobs, scrape, screenshot } = deps;
   // Bun.which returns null (not '') when the binary is missing.
   const hasBinary = deps.hasBinary ?? ((binary: string) => Bun.which(binary) !== null);
+  const sidecar = createScrapeSidecarClient(config.scrape.sidecar);
 
   return {
     async health() {
       const index = vector.current();
+      const sidecarReachable = sidecar ? await sidecar.reachable() : null;
       return {
         status: 'ok' as const,
         version: PACKAGE_VERSION,
@@ -96,6 +108,11 @@ export function createHealthService(deps: HealthServiceDeps): HealthService {
         },
         screenshot: {
           available: Boolean(screenshot),
+        },
+        scrapeSidecar: {
+          configured: Boolean(config.scrape.sidecar),
+          url: config.scrape.sidecar?.url,
+          reachable: sidecarReachable,
         },
       };
     },

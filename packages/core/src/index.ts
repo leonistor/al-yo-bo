@@ -129,9 +129,12 @@ export {
   fetchPageHtml,
   convertHtmlToMarkdown,
   sha256Hex,
+  createScrapeSidecarClient,
   ScrapeError,
   type ScrapeFn,
   type ScrapeResult,
   type FetchedPage,
+  type ScrapeSidecarClient,
+  type ScrapeSidecarResponse,
 } from './scrape.ts';
 export { type ScreenshotClient, type ScreenshotResult } from './screenshot.ts';

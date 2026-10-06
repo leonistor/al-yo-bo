@@ -56,6 +56,14 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value.trim() === '') {
+    return fallback;
+  }
+  const lower = value.trim().toLowerCase();
+  return lower !== 'false' && lower !== '0';
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): ServerConfig {
   // Single parse point for the AI env (§8): absent optionals degrade, invalid
   // values fail fast. `parseAiConfig` reads the OLLAYA_*/OLLAMA_*/OPENROUTER_*
@@ -90,6 +98,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       binary: env.HTML_TO_MARKDOWN_BIN ?? 'html-to-markdown',
       maxAttempts: numberFromEnv(env.SCRAPE_MAX_ATTEMPTS, 3),
       maxBytes: numberFromEnv(env.SCRAPE_MAX_BYTES, 5 * 1024 * 1024),
+      // On by default at localhost; `SCRAPE_SIDECAR_URL=""` turns it off.
+      sidecar:
+        env.SCRAPE_SIDECAR_URL === ''
+          ? undefined
+          : {
+              url: env.SCRAPE_SIDECAR_URL ?? 'http://127.0.0.1:9383',
+              fetchTimeoutMs: numberFromEnv(env.SCRAPE_SIDECAR_TIMEOUT_MS, 15_000),
+              browseTimeoutMs: numberFromEnv(env.SCRAPE_BROWSE_TIMEOUT_MS, 45_000),
+              humanize: booleanFromEnv(env.SCRAPE_BROWSE_HUMANIZE, true),
+            },
     },
     qdrant: {
       // On by default (matching the sidecar deployment); `QDRANT_URL=""` turns it off.
