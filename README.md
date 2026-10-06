@@ -30,6 +30,12 @@ Requires [Bun](https://bun.com). For page scraping, also install the
 [html-to-markdown CLI](https://github.com/xberg-io/html-to-markdown) (e.g. `brew install html-to-markdown`)
 — without it bookmarks still save, but page content is never fetched.
 
+Bot-blocked sites get a second chance through the optional **scrape sidecar**: `bun run
+scrape:install` (a pinned uv environment with [Camoufox](https://github.com/daijro/camoufox) and
+curl_cffi; ~300 MB browser download) plus `bun run scrape:start` — a loopback service on
+`127.0.0.1:9383` that adds a TLS-impersonation fetch tier and a headless browser render tier on top
+of plain fetch. Without it, scraping is plain fetch exactly as before (`docs/ARCHITECTURE.md` §10).
+
 Imported bookmarks also get a screenshot. macOS captures it with `Bun.WebView` (nothing to
 install); on Linux, install the pinned headless Chrome once with `bun run chrome:install`.
 

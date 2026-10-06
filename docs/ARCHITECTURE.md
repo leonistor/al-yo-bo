@@ -19,8 +19,9 @@ These constrain every later decision. A change that violates one needs an explic
    data live in one SQLite file. Nothing else ever holds the only copy of durable data. Rebuildable
    *serving* structures may live outside the file (FTS5 inside it; a local Qdrant collection
    outside it): losing one is repaired from SQLite without re-embedding (§6).
-3. **Self-hosted, local single binaries only.** A single-user tool. It must never require a hosted
-   or cloud service. Optional sidecars must be single local binaries (Ollaya, Qdrant) and every
+3. **Self-hosted, local components only.** A single-user tool. It must never require a hosted
+   or cloud service. Optional sidecars must be self-contained local components — single binaries
+   (Ollaya, Qdrant) or one pinned uv-managed service (the scrape sidecar, §10) — and every
    feature must degrade gracefully when a sidecar is down. The single user has a profile (a person
    — MODEL.md principle 8); it is not an account system.
 4. **Docs-first.** Architecture, data model, and design are decided in `docs/` before code. Prefer
@@ -50,6 +51,7 @@ depends on it.
 | LLM access      | **AI SDK v7**                        | `generateText` + `Output.object`; Ollama locally, OpenRouter in production               | [ai-sdk.com](https://ai-sdk.com)                                                                     |
 | Extraction      | **`@ai-sdk/openai-compatible`** + **`ollama-ai-provider-v2`** | LLM import extraction (OpenRouter primary, Ollama local); deterministic parser fallback | [ai-sdk.dev/providers](https://ai-sdk.dev/providers/openai-compatible)       |
 | Screenshots     | **`Bun.WebView`** (experimental)     | zero-install WebKit capture (Chrome over CDP on Linux/Windows); `og:image` fallback       | [bun.com/docs/api/webview](https://bun.com/docs/api/webview)                                         |
+| Scraping        | **Camoufox + curl_cffi** (sidecar)   | tiered scrape ladder: plain fetch → TLS-impersonated fetch → headless stealth-Firefox render; uv-managed local service (§10) | [github.com/daijro/camoufox](https://github.com/daijro/camoufox)                                     |
 | Embeddings      | **OpenRouter (via `packages/ai`)** + **SQLite BLOBs** | durable vector copy in the DB file; query text embedded at request time  | [openrouter.com](https://openrouter.com)                                                             |
 | Vector serving  | **Qdrant** (single binary, sidecar)  | filtered top-k; in-process KNN is the offline fallback                                   | [qdrant.tech](https://qdrant.tech/documentation/)                                                    |
 | Search          | **SQLite FTS5** + **RRF fusion**     | keyword (FTS5) + semantic (Qdrant/KNN), fused app-side                                   | [sqlite.org](https://sqlite.org)                                                                     |
@@ -103,6 +105,7 @@ flowchart LR
     Ollaya["Ollaya daemon\n127.0.0.1:11435"]
     Ollama["Ollama daemon\n127.0.0.1:11434"]
     Qdrant["Qdrant\n127.0.0.1:6333"]
+    Scrape["Scrape sidecar\n(Camoufox + curl_cffi)\n127.0.0.1:9383"]
   end
 
   OR["OpenRouter\nembeddings"]
@@ -121,6 +124,7 @@ flowchart LR
   Worker --> DB
   Worker --> AI
   Worker --> Sites
+  Worker -. "tiers 2-3 when blocked" .-> Scrape
   Search --> DB
   Search --> Qdrant
   AI --> Ollaya
@@ -155,6 +159,10 @@ server.
   not confuse it with **Ollaya** (the classifier daemon above).
 - **Qdrant** — the vector-serving sidecar, a single local binary (§6). Holds only a rebuildable
   serving copy of the embeddings; SQLite is canonical.
+- **Scrape sidecar** — an optional uv-managed Python service (§10): a `curl_cffi` TLS-impersonation
+  fetch tier and a headless **Camoufox** render tier for the scrape ladder. Chosen over the
+  evaluated alternatives (§10, "Scraping alternatives"); with the sidecar down or absent, scraping
+  is plain fetch exactly as before (§1.5).
 - **OpenRouter** — embedding + LLM provider via `packages/ai` (document vectors in the worker,
   query vectors in the API, extraction models). Optional at the database level: bookmarks without
   embeddings are still findable by keyword.
@@ -694,7 +702,27 @@ the PATH lookup) or a fetch/convert fails, the scrape fails, the bookmark keeps 
 and reconciliation retries it on the next start. Stored content is truncated to
 `SCRAPE_MAX_CONTENT_CHARS` **before** hashing, so `content_hash` always describes exactly what is
 stored; an unchanged hash skips the embed job. Scrape provenance (timestamp, content type, final
-URL after redirects, truncated flag) is merged under `metadata.scrape`.
+URL after redirects, truncated flag, the fetch tier that succeeded) is merged under
+`metadata.scrape`.
+
+**Fetch tiers (decided 2026-10).** The scraper escalates through up to three tiers, mirroring the
+screenshot ladder below; each success records `metadata.scrape.tier`:
+
+1. **Plain fetch** (default, always available) — browser-like UA, `SCRAPE_TIMEOUT_MS` budget,
+   redirect follow. What the app did before the sidecar existed.
+2. **TLS-impersonated fetch** (scrape sidecar `POST /fetch`) — `curl_cffi` with a full Chrome
+   client fingerprint (TLS/JA3-JA4 + headers). Defeats bot filters that serve real content to real
+   clients but block plain fetches (smoke-verified 2026-10-06: magnific.com, uxdesign.cc).
+3. **Browser render** (scrape sidecar `POST /browse`) — headless **Camoufox** (stealth Firefox,
+   BrowserForge fingerprint rotation, `humanize`) for fully client-rendered pages and stricter
+   filters.
+
+Escalation into tier 2 happens on HTTP 401/403/429 or a transport/TLS error from tier 1 — never on
+404/410, so dead-link counting is untouched. Tier 3 runs when tier 2 still returns a blocked or
+empty page. If the sidecar is unreachable or every tier fails, the original tier-1 error stands and
+the failure classification below is unchanged; with the sidecar not installed, scraping is exactly
+the plain fetch it always was (§1.5). The sidecar is stateless and loopback-only; markdown
+conversion stays in core via the html-to-markdown CLI regardless of tier.
 
 Failures are classified. A **dead link** (HTTP 404/410) increments `bookmarks.scrape_attempts`; once
 it reaches `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` — kept, but excluded from default
@@ -710,6 +738,33 @@ path.
 | `SCRAPE_MAX_CONTENT_CHARS` | Stored markdown cap (hash applies to this)  | `200000`           |
 | `SCRAPE_MAX_ATTEMPTS`      | Dead-link failures before a bookmark is marked `invalid` (shared with the job retry cap) | `3` |
 | `HTML_TO_MARKDOWN_BIN`     | html-to-markdown CLI binary                 | `html-to-markdown` |
+| `SCRAPE_SIDECAR_URL`        | Scrape sidecar base URL; **empty string disables tiers 2-3** | `http://127.0.0.1:9383` |
+| `SCRAPE_SIDECAR_TIMEOUT_MS` | Tier-2 TLS-fetch timeout                    | `15000`            |
+| `SCRAPE_BROWSE_TIMEOUT_MS`  | Tier-3 browser render timeout               | `45000`            |
+| `SCRAPE_BROWSE_HUMANIZE`    | Camoufox humanized input on tier 3          | `true`             |
+
+### Scraping alternatives (evaluated 2026-10-06)
+
+Headless smoke test against two real failed imports (magnific.com — WAF 403; uxdesign.cc — Medium +
+Cloudflare 403): stock Chrome-for-Testing and Patchright (headless) were blocked by **both**
+targets; TLS impersonation alone (`curl_cffi`) passed both (both sites serve SSR HTML to
+Chrome-fingerprinted clients); Camoufox and CloakBrowser passed both with JS rendering.
+
+- **Camoufox** (chosen) — patched Firefox + BrowserForge fingerprint rotation, MPL-2.0, uv-native,
+  works headless (2/2 live targets).
+- **CloakBrowser** (second-runner — documented, not installed) — closed-source patched Chromium,
+  also 2/2, but: closed binary with a license key and an auto-update daemon, wrapper-only CDP (the
+  raw `--remote-debugging-port` flag does **not** open a DevTools listener on the darwin build),
+  and the free-tier binary ages as detection evolves. If ever adopted: pin `CLOAKBROWSER_VERSION`,
+  set `CLOAKBROWSER_AUTO_UPDATE=false`, and drive it through its Python wrapper, never the CLI.
+- **Obscura** — Rust + V8 single binary with CDP; passed the plain-WAF target but not the
+  Cloudflare JS challenge; young project. Kept in mind as a fast fallback renderer, not the
+  stealth tier.
+- **`Bun.WebView`** — zero-install render fallback (already the screenshot primary on macOS);
+  the documented last resort if the sidecar tier is ever dropped on macOS.
+- **Stock headless Chromium / Playwright / Patchright (headless)** — blocked by both smoke
+  targets; headless client signals are the primary detection vector (Patchright's own docs
+  recommend headed + real Chrome channel, which does not fit a server sidecar).
 
 ### Screenshot implementation
 
@@ -758,6 +813,12 @@ host, with a scripted archive copy to ship a new build. Three processes must be 
    with `config/qdrant.yaml` plus `QDRANT__STORAGE__*` env overrides derived from `DATA_DIR`;
    loopback only, storage under `<DATA_DIR>/qdrant/`). In development, `bun run dev` starts it
    automatically when the binary is installed and skips it (in-memory vectors) when it is not.
+4. the **scrape sidecar** (`bun run scrape:install` once — a pinned uv venv with
+   `camoufox[geoip]` + `curl_cffi` in the gitignored `.tools/scrape/`, plus the Camoufox browser
+   download, ~300 MB into the platform cache — then `bun run scrape:start`: a loopback-only Python
+   service on `127.0.0.1:9383` serving the TLS-fetch and browser-render tiers). Optional: without
+   it the scraper is plain fetch exactly as before; `bun run dev` starts it when installed and
+   skips it (with a message) when not.
 
 Chat additionally needs the local **Ollama daemon** (§2 chat) with the `OLLAMA_CHAT_MODEL` pulled
 (e.g. `ollama pull llama3.2`). `scripts/dev.sh` sources the repo-root `.env` so the server process —
@@ -786,6 +847,7 @@ variables (§8, §10).
 | Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
 | Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
 | html-to-markdown missing  | Every scrape fails with a clear reason; bookmarks stay URL + note; install the binary and restart (or use the manual re-scrape action) |
+| Scrape sidecar unreachable | Tier-1 plain fetch still runs for every scrape; bot-blocked sites fail transiently (as before the sidecar existed); reconciliation retries once the sidecar returns |
 | Screenshot capture fails (both `Bun.WebView` and `og:image`) | Bookmark keeps its URL/note; `metadata.image` is left unchanged and the UI shows a placeholder; reconciliation retries on the next start |
 | `Bun.WebView` unavailable / experimental API churned | Capture falls back to `og:image`; with no `og:image` either, the placeholder is shown (no broken image) |
 | Page has no `og:image`    | No image artifact is stored; the placeholder is used; the bookmark is otherwise unaffected |
@@ -812,3 +874,4 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Fractional sort_order (§5/MODEL) | Rebalance churn becomes measurable (very wide sibling lists reordered constantly); then switch keys per-subtree or add lazy rebalancing.                                              |
 | Vite for the web build (§2)      | Bun's fullstack bundler applies Vite-compatible plugins (Tailwind) in its production CLI build; then collapse the dual build path.                                                    |
 | Multi-user / remote ambition     | Any want for multi-device sync, accounts, or a hosted deployment reopens the backend choice; re-entry costs documented in `docs/plans/rewrite-research.md` §2.4 (PocketBase alternative). |
+| Scrape sidecar (§10)             | Camoufox maintenance stalls, its evasion rate drops measurably on real imports, or uv is unavailable in production; then re-evaluate the documented alternatives (CloakBrowser second-runner, Obscura renderer, `Bun.WebView` fallback) or fall back to plain fetch. |
