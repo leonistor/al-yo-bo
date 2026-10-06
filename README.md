@@ -11,8 +11,9 @@ about them.
 
 > **Status:** MVP complete. Capture, markdown import, scrape + embed enrichment (background job
 > loop), keyword/semantic/hybrid search, Qdrant-backed semantic serving, Ollaya classification with
-> a human review queue, and Ollama-backed chat are implemented. OpenRouter chat for production is
-> the remaining next step (see `docs/ARCHITECTURE.md` §2).
+> a first-run setup wizard that seeds vocabulary from a developer profile, and Ollama-backed chat are
+> implemented. OpenRouter chat for production is the remaining next step (see
+> `docs/ARCHITECTURE.md` §2).
 
 ## Documentation
 
@@ -85,9 +86,9 @@ Quick orientation:
   Press `/` to focus the search.
 - **Capture** — add a URL from the top bar, or import a whole markdown collection file; bookmarks
   are upserted by URL (globally unique), so re-importing merges instead of duplicating.
-- **Organize** — categories form an orderable tree (drag to reorder or nest in the sidebar), tags
-  classify bookmarks, and the classifier's below-threshold suggestions wait in the **review queue**
-  for a manual accept.
+- **Organize** — categories form an orderable tree (drag to reorder or nest in the sidebar) and
+  tags classify bookmarks. On first run, a setup wizard suggests tags and categories from a
+  developer-profile questionnaire; confirming creates them outright.
 - **Live updates** — the server pushes coarse events over SSE; lists, tags, and job progress update
   without a refresh (ARCHITECTURE §9).
 - **Profile** — the single user's name, GitHub username, and avatar (initials until a file is
@@ -126,12 +127,19 @@ when no LLM is configured) and shows editable rows. Clicking **Import** commits 
 missing categories and tags are created as **active**, bookmarks are upserted by URL (so re-importing
 the same file merges instead of duplicating), and enrichment is queued. There is no staging step.
 
-### Review queue
+### First-run setup wizard
 
-The Review queue (left sidebar) lists **classifier suggestions**: tags whose classification
-probability fell below the auto-assign threshold. Accept one to assign it manually
-(`source='user'`). Vocabulary itself is curated directly (rename, delete, deprecate) — there is no
-proposal queue.
+When `profile.setup_completed_at` is `null`, the app shows a setup wizard instead of the library:
+
+1. **Identity** — name and GitHub username.
+2. **Developer profile** — questionnaire about source, focus, languages, frameworks, tools,
+   experience, and optional notes.
+3. **Suggestions** — an LLM proposes tags and categories from the profile. You check the ones you
+   want; if no LLM is configured, this step is skipped.
+4. **Confirm** — checked suggestions are created, setup completes, and the app loads.
+
+Vocabulary is also created automatically by markdown import. Below-threshold classifier output is
+simply not assigned; manual tagging is the recovery.
 
 ### Seed fixture
 

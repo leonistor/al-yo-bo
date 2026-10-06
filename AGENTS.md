@@ -112,9 +112,10 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   SQLite — never a second durable store, never a hosted service.
 - Sidecars (Ollaya, Qdrant) and OpenRouter are optional: every feature must degrade gracefully when
   they are down (keyword-only search, manual tagging).
-- Classifier rules (MODEL.md): never invent vocabulary; only `active` tags are auto-assigned;
-  `classification_runs`/`classification_results` evidence is immutable; user-sourced assignments are
-  never overwritten.
+- Classifier rules (MODEL.md): vocabulary is created only by explicit user action (manual UI,
+  import commit, wizard confirmation) — the background classifier never creates vocabulary; only
+  `active` tags are auto-assigned; `classification_runs` rows are the immutable provenance trail;
+  user/import-sourced assignments are never overwritten.
 - Type safety: no `as any`, `@ts-ignore`, `@ts-expect-error`.
 
 ## Repo etiquette

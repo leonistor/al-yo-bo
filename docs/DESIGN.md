@@ -53,8 +53,8 @@ component code.
 
 **Status colors** map to meaning, reserved (not decorative): category chips and tag confidence use
 `muted`/`accent`; classification states use a documented palette (active = `primary`,
-deprecated = `muted-foreground`). Vocabulary is created active by the importer; classifier output is
-either auto-assigned or a below-threshold suggestion.
+deprecated = `muted-foreground`). Vocabulary is created active by the importer or the setup wizard;
+classifier output is either auto-assigned (above threshold) or ignored.
 
 **Surfaces:**
 
@@ -95,7 +95,7 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 - **Expanded:** default `256px`; drag-resizable between `200px` and `360px`. The resize handle is a
   `4px` invisible hit area on the right edge with a 1px visible divider; cursor `ew-resize`.
 - **Collapsed:** `56px` icon rail (`w-14`): brand/expand button on top; account and theme
-  buttons below it; icon entries with tooltips (label + count) for All, Review, Categories, Tags;
+  buttons below it; icon entries with tooltips (label + count) for All, Categories, Tags;
   footer icons for Import, Vocabulary, Share. Rail buttons render at `icon-lg`. Badges sit at the
   button's top-right corner, partially outside so they don't overlap the glyph. Active entries
   use `bg-sidebar-accent`.
@@ -110,7 +110,7 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 
 ### Sidebar information architecture
 
-1. **Views:** All bookmarks (total badge), Review queue (pending count badge).
+1. **Views:** All bookmarks (total badge).
 2. **Library — collapsible groups:** each Section is a `CollapsibleSection` header; category rows
    indent `pl-4` under a 2px `border-l` guide. Tags are a collapsible group rendered as **pills with
    the count inside** (no icon-text rows).
@@ -137,6 +137,31 @@ compact/grid/dense four-way segmented control (List / Rows3 / LayoutGrid / Grid3
 the right. Sort options fold
 direction in: Newest / Oldest / Recently updated / Title A–Z / Title Z–A.
 
+## Setup wizard
+
+First-run flow, gated by `profile.setup_completed_at == null`. Until the wizard finishes, render it
+instead of the app shell. Already-seeded workspaces (including the octocat fixture) set
+`setup_completed_at`, so the wizard is normally skipped in development.
+
+**Steps:**
+
+1. **Identity** — name and GitHub username as plain controlled inputs, committed together by the
+   step's Continue button to `PATCH /api/profile` (empty values allowed; one-time entry, not the
+   Profile page's inline-edit pattern).
+2. **Developer profile** — questionnaire (source, focus one-of, languages/frameworks/tools
+   multi-select with free-text add, experience one-of, optional notes). Uses chips + text inputs;
+   values are collected client-side and committed as `devProfile` via `PATCH /api/profile`.
+3. **Suggestions** — `POST /api/vocabulary/suggest`. Renders proposed tags and category paths as a
+   checkbox list (reuses the import-preview include-checkbox pattern). If the LLM is unavailable,
+   show a clear "No LLM configured — skip and import later" state; skipping still marks setup
+   complete.
+4. **Confirm** — checked entries are sent to `POST /api/vocabulary/bulk`, then setup is marked
+   complete with `PATCH /api/profile { setupCompletedAt }`. Uses the same sticky action-bar
+   pattern as Import.
+
+Navigation is linear: Back/Next through the steps, with the final step bulk-creating the checked
+vocabulary and then marking setup complete.
+
 ## Components (shadcn/ui on base-ui)
 
 - **Substrate: base-ui.** All `src/components/ui/*` wrappers import from `@base-ui/react/*` (style
@@ -159,8 +184,8 @@ direction in: Newest / Oldest / Recently updated / Title A–Z / Title Z–A.
 
 ### Count rendering
 
-- **Nav / view counts** (All bookmarks total, Review queue, category rows, vocabulary status counts):
-  render as `Badge variant="secondary"` (or `variant="default"` for emphasis such as review queue).
+- **Nav / view counts** (All bookmarks total, category rows, vocabulary status counts):
+  render as `Badge variant="secondary"` (or `variant="default"` for emphasis such as a pending import count).
 - **Tag counts inside pills** (`TagPill`): render as inline text (`text-muted-foreground tabular-nums`),
   not a `Badge`. For selected pills, use `text-primary-foreground/80` to keep the count readable
   against the primary surface; for `removable`/`static` secondary pills, use
@@ -236,12 +261,12 @@ stacks rows at `gap-1.5`.
 
 ### List rows & actions — the one managed-list language
 
-Shared primitives under `src/components/` used by every list-like page (Vocabulary, review queue,
-bookmarks, import): one row anatomy, one action cluster, one destructive confirmation.
+Shared primitives under `src/components/` used by every list-like page (Vocabulary, bookmarks,
+import): one row anatomy, one action cluster, one destructive confirmation.
 
 - **`EditableRow`** — row chrome: `rounded-lg border border-border bg-card p-3`, hover surface
   (`hover:bg-accent/50`), focus ring inside. Renders as `<li>` inside a `role="list"` when
-  `asListItem`. The review queue, vocabulary rows, and skeletons all use it.
+  `asListItem`. Vocabulary rows, import rows, and skeletons all use it.
 - **`RowActions`** — the one action cluster. Icon buttons revealed on hover / `group-focus-within` /
   `pointer-coarse` (`150ms` opacity); >2 actions overflow into a `DropdownMenu` with
   `data-[variant=destructive]` items. Every icon button carries an `aria-label`; roving tabindex
@@ -401,7 +426,7 @@ opacity-only.
 - [ ] Live regions for streaming/async updates (search results, chat).
 - [ ] No meaning conveyed by color alone (pair with icon/text).
 - [ ] **List keyboard navigation.** All managed lists (`BookmarkList`, import result grid,
-      vocabulary tabs, review queue) share `useListKeyboardNav`: `↑`/`↓` to move selection, `Enter`
+      vocabulary tabs) share `useListKeyboardNav`: `↑`/`↓` to move selection, `Enter`
       to activate, `Delete`/backspace to remove (grid: `←`/`→`, column-aware `↑`/`↓`, Home/End).
       Roving tabindex; `role="list"`/`role="listitem"` semantics.
 - [ ] "Skip to results" link for screen-reader/keyboard users.
@@ -426,11 +451,7 @@ opacity-only.
    `apps/web/src/components/BookmarkList.tsx:258`).
 4. Motion + empty-state pass — apply DESIGN.md motion tokens to sidebar collapse/sheet
    transitions; review empty/skeleton states against imagery fallback rules.
-5. Review-queue Dismiss (fast-follow) — suggestions currently have Accept only. Needs a new
-   `POST /api/review/candidates/dismiss` route and a semantics decision against the
-   immutable-evidence invariant (likely clearing the result's `selected` bit so it leaves the
-   queue); rows then gain a dismiss action via the shared `RowActions`.
-6. Batch operations — multi-select delete/tagging across managed lists (rows already share one
+5. Batch operations — multi-select delete/tagging across managed lists (rows already share one
    action language; selection state and a batch mutation surface are the missing pieces).
-7. Vocabulary pagination/virtualization — the vocab lists are unpaginated with a client-side
+6. Vocabulary pagination/virtualization — the vocab lists are unpaginated with a client-side
    filter; revisit if a dataset grows past ~500 entries per tab.

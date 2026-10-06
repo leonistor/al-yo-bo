@@ -19,37 +19,39 @@
    `active` tags.
 3. **Vocabulary is created in its usable state.** Categories are plain organizing records with no
    lifecycle. Tags carry a two-state lifecycle, `active ⇄ deprecated`, where only `active` tags are
-   classifier candidates and can be auto-assigned. The importer **auto-creates** any missing
-   category or tag as `active` at commit time; the classifier **never creates vocabulary**. Nothing
-   is ever parked in a pending, rejected, or merged state.
+   classifier candidates and can be auto-assigned. Vocabulary is created `active` by explicit user
+   action: the setup wizard (on confirmation), the importer (at commit time), or the manual
+   vocabulary UI. The classifier **never creates vocabulary**. Nothing is ever parked in a pending,
+   rejected, or merged state.
 4. **Separate evidence from effective state — immutability without exception.** Classifier output
-   is stored immutably in `classification_runs` / `classification_results`; the tags actually
-   applied to a bookmark live in `bookmark_tags`. Re-running classification never destroys prior
-   evidence, and changing assignment policy never rewrites history. No code path — including
-   seeds, CLI scripts, and future migrations — may UPDATE or re-point an evidence row.
-5. **Classification never invents vocabulary.** A classifier can only select from existing `active`
-   tags. Unmatched output is recorded as evidence only — it is never turned into a new tag and
-   never auto-assigned.
-6. **Provenance is always recoverable.** Every effective tag assignment points back to the run that
-   produced it, and each result keeps the classifier's original label.
+   is stored immutably in `classification_runs`; the tags actually applied to a bookmark live in
+   `bookmark_tags`. Re-running classification never destroys prior evidence. No code path —
+   including seeds, CLI scripts, and future migrations — may UPDATE an evidence row.
+5. **Vocabulary is created only by explicit user action.** A classifier can only select from
+   existing `active` tags; it never creates, promotes, or auto-assigns vocabulary. Unmatched
+   classifier labels are logged and discarded. Vocabulary is created by manual UI edits, import
+   commit, or setup-wizard confirmation.
+6. **Provenance is always recoverable.** Every effective tag assignment records its `source`
+   (`'classifier'`, `'user'`, or `'import'`), `confidence`, and (for classifier-sourced rows) the
+   `classification_runs.id` it came from.
 7. **One durable store.** Relational data, the full-text index (FTS5), and the durable copy of the
    vector data all live in the same SQLite file. A Qdrant collection holds a *rebuildable serving
    copy* of the embeddings (ARCHITECTURE §6): it is never the only copy of anything and is repaired
    from `bookmark_embeddings` at startup.
-8. **The profile is the person.** One singleton `profile` row holds the single user's identity
-   (name, GitHub username, avatar file). The row is not deletable, has no dataset pointer, and
-   there is no `users` table or `user_id` column anywhere.
+8. **The profile is the person and their setup state.** One singleton `profile` row holds the
+   single user's identity (name, GitHub username, avatar file) plus a `dev_profile` JSON
+   questionnaire and a `setup_completed_at` timestamp. The row is not deletable, has no dataset
+   pointer, and there is no `users` table or `user_id` column anywhere.
 
 ## Entity overview
 
 ```
-profile                                    (singleton identity)
+profile                                    (singleton identity + setup state)
 
 categories ──< categories                  (self-referencing tree)
 categories ──< bookmarks                   (organization)
 
-bookmarks ──< classification_runs ──< classification_results >── tags
-bookmarks ──< classification_runs ──< unknown_classification_labels
+bookmarks ──< classification_runs          (provenance anchor)
 bookmarks ──< bookmark_tags        >── tags            (effective assignments)
 
 bookmarks ──< bookmark_fts          (keyword index)
@@ -73,10 +75,13 @@ connection. Instead:
 
 ### `profile`
 
-The single user's identity — name, GitHub username, avatar file name. A **singleton**: migration
+The single user's identity and setup state. A **singleton**: migration
 `0001` inserts one row with the fixed all-zero sentinel id, the app reads it by id (never by
 name), and there is no delete path. The avatar is a file under `<DATA_DIR>/profile/` (BLOBs would
-bloat the single backup file); `avatar_path` holds the file name.
+bloat the single backup file); `avatar_path` holds the file name. `dev_profile` stores the
+developer-questionnaire responses (source, focus, languages, frameworks, tools, experience, and
+optional notes) as JSON. `setup_completed_at` is an epoch-millisecond timestamp: `NULL` means the
+setup wizard is still pending; seeding and the wizard's final step set it.
 
 ```sql
 CREATE TABLE profile (
@@ -84,6 +89,8 @@ CREATE TABLE profile (
   name              TEXT,
   github_username   TEXT,
   avatar_path       TEXT,
+  dev_profile       TEXT,                         -- JSON: source, focus, languages, frameworks, tools, experience, notes?
+  setup_completed_at INTEGER,                     -- epoch ms; NULL = wizard pending
   created_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
@@ -203,49 +210,6 @@ CREATE TABLE classification_runs (
 CREATE INDEX classification_runs_bookmark ON classification_runs(bookmark_id, created_at);
 ```
 
-### `classification_results`
-
-Per-tag output of a run. Immutable. Keeps the classifier's raw label even if the mapped tag
-changes.
-
-```sql
-CREATE TABLE classification_results (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
-  run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
-                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
-  tag_id      BLOB NOT NULL REFERENCES tags(id) ON DELETE CASCADE
-                   CHECK (typeof(tag_id) = 'blob' AND length(tag_id) = 16),
-  probability REAL NOT NULL,
-  rank        INTEGER,
-  selected    INTEGER NOT NULL DEFAULT 0,         -- 1 = chosen by the assignment policy
-  raw_label   TEXT,                               -- original classifier label, pre-mapping
-  UNIQUE (run_id, tag_id)
-) STRICT;
-
-CREATE INDEX classification_results_tag ON classification_results(tag_id);
-```
-
-### `unknown_classification_labels`
-
-Durable evidence for classifier labels that match no candidate tag. Insert-only (immutable like
-all classification evidence); `classification_results` keeps its NOT NULL `tag_id` FK contract
-untouched. There is deliberately **no FK to `tags`** — the label matched nothing — and the raw
-label is preserved verbatim. No uniqueness constraint: each occurrence, even a repeated label, is
-its own evidence row.
-
-```sql
-CREATE TABLE unknown_classification_labels (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
-  run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
-                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
-  raw_label   TEXT NOT NULL,
-  probability REAL NOT NULL,
-  created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
-) STRICT;
-
-CREATE INDEX unknown_classification_labels_run ON unknown_classification_labels(run_id);
-```
-
 ### `bookmark_tags`
 
 The **effective** assignment shown in the UI. Composite uniqueness prevents duplicates.
@@ -325,18 +289,17 @@ CREATE TABLE bookmark_embeddings (
   filters.
 - **Uniqueness.** `bookmarks.url` is globally unique; category names are unique among siblings
   (two partial indexes — roots and children); tag names are globally unique; `(bookmark_id,
-  tag_id)` in `bookmark_tags` and `(run_id, tag_id)` in `classification_results` are unique via
-  `UNIQUE` constraints (not composite primary keys).
+  tag_id)` in `bookmark_tags` is unique via a `UNIQUE` constraint (not a composite primary key).
 - **Tree integrity.** The `categories` self-FK expresses parenthood; cycles and self-parenting are
   prevented **in the app layer** on every parent set and subtree move (SQL cannot express this).
   Depth is unlimited; the UI may render a soft depth cap for ergonomics, but the schema has none.
 - **Assignment policy.** A classifier result becomes an effective `bookmark_tags` row only when
   its probability clears the configured `auto_assign` threshold _and_ the tag is `active`.
-  Otherwise it is retained as evidence, and the tag is surfaced for review (via `candidate`).
-- **No classifier-created vocabulary.** A classifier label that maps to no existing tag is
-  recorded as evidence only (an `unknown_classification_labels` row linked to the run); it never
-  creates a tag and is never auto-assigned. An importer category or frontmatter tag that matches
-  no vocabulary entry is auto-created `active`.
+  Results that fail either test are simply not assigned; manual tagging is the recovery.
+- **No classifier-created vocabulary.** The classifier may only select from existing `active`
+  tags; unmatched labels are logged and discarded. An importer category or frontmatter tag that
+  matches no vocabulary entry is auto-created `active`, as are tags and categories confirmed on
+  the setup-wizard suggestion screen.
 - **Active by construction.** Only `active` vocabulary is ever assigned or auto-assigned. There is
   no pending or rejected state to review; retiring a tag is `deprecated`, and deleted vocabulary
   is removed outright.
@@ -351,10 +314,9 @@ CREATE TABLE bookmark_embeddings (
   `updated_at` to server time on every insert, and `AFTER UPDATE` triggers bump `updated_at` —
   client-sent values are always overridden (a raw authenticated UPDATE could still rewrite
   `created_at`; the app never sends it — API-hardening scope).
-- **Immutable evidence.** `classification_runs`, `classification_results`, and
-  `unknown_classification_labels` are insert-only. No UPDATE, no re-pointing, no exceptions
-  (principle 4); retraction reconciles effective state (`bookmark_tags`,
-  `classification_results.selected`) without touching other evidence.
+- **Immutable evidence.** `classification_runs` is insert-only. No UPDATE, no exceptions
+  (principle 4); retraction reconciles effective state (`bookmark_tags`) without touching
+  evidence.
 
 ## Deletion semantics
 
@@ -362,9 +324,9 @@ CREATE TABLE bookmark_embeddings (
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | profile            | **not deletable** — no delete path exists                                                                                                                    |
 | category           | cascades to its **subtree** (children via the self-FK); `bookmarks.category_id` in the subtree is set to `NULL` — bookmarks survive                          |
-| bookmark           | cascades to `classification_runs` (→ results and unknown labels), `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
-| tag                | cascades to `bookmark_tags` and `classification_results`; the run/evidence for other tags remains                                                            |
-| classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains; `classification_results` and `unknown_classification_labels` cascade-delete with the run |
+| bookmark           | cascades to `classification_runs`, `bookmark_tags`, and `bookmark_embeddings`; `bookmark_fts` rows are removed by `AFTER DELETE` triggers (virtual tables cannot be FK targets); the Qdrant point (if any) is deleted best-effort by the API and repaired at the next startup sync |
+| tag                | cascades to `bookmark_tags`; classifier runs for bookmarks that used this tag remain                                                                         |
+| classification run | `bookmark_tags.run_id` set to `NULL`; effective assignment remains                                                                                           |
 
 ## Seed & verification fixture
 

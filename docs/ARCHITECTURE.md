@@ -90,7 +90,7 @@ flowchart LR
   subgraph bun [Bun process]
     API["Hono RPC API\n(apps/server)"]
     MCP["MCP server\n(MCP TS SDK v2, Hono adapter)"]
-    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\ncategories · review · import\nenrichment · profile · health"]
+    Core["Core services\n(packages/core)\nsearch · bookmarks · vocabulary\ncategories · setup · import\nenrichment · profile · health"]
     Bus["Event bus\n(core emits, SSE fans out)"]
     Worker["Job worker (in-process loop)\nscrape · embed · classify · screenshot · reindex"]
     Search["Search module\nFTS5 + vector top-k + RRF"]
@@ -136,7 +136,7 @@ durability boundary (§10), so it is shown separately.
 **Transport vs. domain.** `apps/server` (the Hono API) is a thin transport adapter: it parses HTTP,
 calls exactly one `packages/core` service, and maps domain errors to problem+json. `packages/core`
 owns the application services — search orchestration, bookmark CRUD and its re-run triggers,
-vocabulary, categories (tree), review, import, the enrichment queue, the single-user profile, and
+vocabulary, categories (tree), setup, import, the enrichment queue, the single-user profile, and
 health. The app edge constructs the concrete adapters (AI layer, Qdrant stack, scraper, avatar file
 store) and injects them as interfaces, so core stays transport-neutral and testable without a
 server.
@@ -205,9 +205,9 @@ Rules:
   own; the Qdrant startup sync (which passes plain records into `packages/vectordb`) stays in
   `apps/server`.
 - **`packages/ai` interface/adapter split (decided).** `core` may import only the **interface**
-  modules from `ai` (`EmbeddingClient`, `ClassifierClient` and their types). Concrete adapters and
-  the single construction point (`buildAiLayer(config)`, `packages/ai`'s index) are consumed only
-  by `apps/server`, which injects the built layer into core. This keeps core transport-neutral and
+  modules from `ai` (`EmbeddingClient`, `ClassifierClient`, `SuggestClient` and their types).
+  Concrete adapters and the single construction point (`buildAiLayer(config)`, `packages/ai`'s
+  index) are consumed only by `apps/server`, which injects the built layer into core. This keeps core transport-neutral and
   testable with fakes, while the concrete provider wiring stays at the edge.
 - `search`, `vectordb`, and `ai`'s adapters take and return plain data, so they are testable
   without a running server.
@@ -361,24 +361,21 @@ returns keyword-only results. This is a normal state, not an error.
 
 ## 7. Classifier workflow
 
-Classification turns raw bookmarks into curated tag assignments with **immutable evidence** and
-**human review** for anything uncertain. The rules come from MODEL.md: classification never invents
-vocabulary; only `active` tags are auto-assigned; every effective tag can be traced to the run that
-produced it.
+Classification turns raw bookmarks into curated tag assignments with **immutable evidence**.
+The rules come from MODEL.md: classification never invents vocabulary; only `active` tags are
+auto-assigned; every effective tag can be traced to the run that produced it.
 
 **Participants.** Importer job · scraper/embedder jobs · Ollaya decision daemon · assignment policy
-(app code) · review UI (user).
+(app code) · user (manual tagging and vocabulary curation).
 
 ```mermaid
 flowchart TD
   V["0. Vocabulary\ncategories (tree) + tags (active/deprecated)"] --> I
   I["1. Ingest\nextract -> user edits -> commit"] --> E
   E["2. Enrich\nscrape page -> content\nembed -> vector\nscreenshot -> image"] --> C
-  C["3. Classify\nOllaya /api/decide\n-> classification_runs + results"] --> A
+  C["3. Classify\nOllaya /api/decide\n-> classification_runs"] --> A
   A["4. Assignment policy\nprob >= threshold AND tag active"] --> T["bookmark_tags (effective)"]
-  A --> R["5. Review\nbelow-threshold suggestions"]
-  R --> V
-  T --> S["6. Re-run triggers\ncontent / vocabulary / model change"]
+  T --> S["5. Re-run triggers\ncontent / vocabulary / model change"]
   S --> C
 ```
 
@@ -391,14 +388,17 @@ history. The tag lifecycle is toggled through `POST /api/tags/:id/status`.
 
 **Vocabulary establishment (decided).** Vocabulary is created in its **usable** state:
 
+- The **setup wizard** proposes tags and categories from the developer-profile questionnaire; on
+  confirmation they are created `active`, giving a fresh workspace its first vocabulary before any
+  import.
 - The **importer auto-creates** any missing category or tag referenced by a collection as `active`
   at commit time (`resolveVocabulary` → `createCategory`/`createTag`). There is no staging, no
   proposal, and no review gate before bookmarks land.
-- The **classifier never creates vocabulary** — it only votes on `active` tags; a returned label
-  that matches no candidate tag is recorded as evidence only (see Stage 3).
+- The **classifier never creates vocabulary** — it only votes on existing `active` tags; a returned
+  label that matches no candidate tag is logged and discarded.
 - The user tidies up afterwards through the vocabulary UI (rename, re-parent, `deprecate`, delete,
   drag-reorder).
-- A fresh workspace gets its vocabulary created as the first import lands.
+- A fresh workspace gets its vocabulary from the setup wizard or the first import.
 
 **Candidate set (decided).** For a bookmark, candidates are **all `active` tags** — there is no
 category scoping left (tags have no category, MODEL.md principle 2). The per-call cap (batched
@@ -515,14 +515,13 @@ Ollaya resolves the requested alias to a concrete checkpoint (for example `laya`
 the **resolved checkpoint** in `classification_runs.model`; keep the Ollaya runtime version in
 `classifier_version`.
 
-Persist results:
+Persist one `classification_runs` row per call (`classifier = 'ollaya'`) with the resolved model,
+classifier version, and run-level confidence. Individual per-tag scores are **not** stored: the
+assignment policy is applied immediately and only the resulting `bookmark_tags` rows (with
+`source='classifier'`, `confidence`, and `run_id`) survive.
 
-- one `classification_runs` row per call (`classifier = 'ollaya'`);
-- one `classification_results` row per candidate (`probability`, `rank`, `selected = 0`, and the
-  `raw_label` exactly as sent).
-
-A returned label that matches no candidate tag is never turned into vocabulary: it is logged as
-unknown evidence only (there is no `tag_id` to attach a result row to) and is **never** auto-assigned.
+A returned label that matches no candidate tag is never turned into vocabulary: it is logged and
+discarded, and is **never** auto-assigned.
 
 ### Stage 4 — Assignment policy (deterministic)
 
@@ -531,16 +530,13 @@ A result becomes effective only when **both** hold:
 1. `probability ≥ auto_assign threshold` (configuration), and
 2. the tag's status is `active`.
 
-Then set `selected = 1` and upsert `bookmark_tags` with `source='classifier'`, `confidence`, and
-`run_id` (the evidence link). Results below the threshold remain evidence and surface in the review
-queue.
+Upsert `bookmark_tags` with `source='classifier'`, `confidence`, and
+`run_id` (the evidence link). Results below the threshold are simply not assigned; manual tagging is the recovery.
 
 **Retraction (decided).** Applying a run recomputes the effective state, not just appends:
 classifier-sourced `bookmark_tags` rows for the affected bookmarks whose tags the current pass did
-**not** re-qualify are removed (`reconcileClassifierAssignments` in `packages/db`), and
-`classification_results.selected` is reconciled to the latest run. Evidence rows
-(`classification_runs`/`classification_results`) are never deleted — retraction touches effective
-state only.
+**not** re-qualify are removed (`reconcileClassifierAssignments` in `packages/db`). Evidence rows
+(`classification_runs`) are never deleted — retraction touches effective state only.
 
 **User rows win (decided).** Classifier re-runs skip `source='user'` and `source='import'` rows
 entirely — they are never overwritten or retracted. Re-running appends new evidence under the
@@ -548,17 +544,7 @@ current policy without rewriting history. Known limitation: user *removals* are 
 negative evidence, so a later run can re-assign a removed tag; if that becomes annoying, add a
 suppression table in a later model revision (§13).
 
-### Stage 5 — Review (human-in-the-loop)
-
-The review surface is **classifier suggestions only**. Vocabulary is created `active` by the
-importer and curated directly in the vocabulary UI.
-
-- **Below-threshold candidates** — classifier results that did not clear `AUTO_ASSIGN_THRESHOLD`.
-  Accepting one writes `bookmark_tags` with `source='user'`, which classifier re-runs never
-  overwrite.
-- **Stale / conflicting assignments** — resolve explicitly.
-
-### Stage 6 — Re-run triggers
+### Stage 5 — Re-run triggers
 
 Re-classify on: content-hash change, vocabulary change (new active tags), model or threshold
 change, or an explicit manual request. At most one classification is in flight per bookmark.
@@ -588,6 +574,8 @@ packages/ai/
   embedding.ts   embed/embedMany behind the EmbeddingClient contract
   classifier.ts  Ollaya adapter kept as ClassifierClient, constructed from central config
   extract.ts     import-extraction client (OpenRouter / Ollama / deterministic fallback)
+  suggest.ts     `SuggestClient` interface (the concrete adapter lives under `adapters/` and reuses
+                 the `EXTRACT_MODEL` route; returns null when no LLM is available)
   health.ts      capability probes → the existing degrade flags
   adapters/      concrete provider adapters (constructed only by apps/server)
   index.ts       buildAiLayer(config) → single construction point injected into core
@@ -679,7 +667,7 @@ Job types:
 | ------------ | ---------------- | --------------------------------------------------------------- |
 | `scrape`     | bookmark id      | fetch page → content/metadata/hash; enqueue `embed`, `screenshot` |
 | `embed`      | bookmark id      | vector via `packages/ai` → `bookmark_embeddings` (durable), then write-through to the vector index; enqueues `classify` |
-| `classify`   | bookmark id      | Ollaya → runs/results → assignment policy                       |
+| `classify`   | bookmark id      | Ollaya → `classification_runs` → assignment policy → `bookmark_tags` |
 | `screenshot` | bookmark id      | capture page image (`Bun.WebView`, then `og:image`) → `data/screenshots/<uuid>.jpg` + `metadata.image` |
 | `reindex`    | bookmark/tag/all | rebuild FTS rows, or sync the Qdrant collection from SQLite rows |
 
@@ -784,6 +772,7 @@ variables (§8, §10).
 | Ollaya unreachable        | No new classifications; manual tagging unaffected; jobs retry              |
 | Ollama unreachable / `OLLAMA_CHAT_MODEL` unset | Chat answers 503 problem+json (unset) or surfaces an in-stream error (daemon down); search, browsing, tagging unaffected |
 | Qdrant unreachable        | Semantic search served by the in-memory matrix (keyword-only if it is empty); index writes are skipped and repaired by the next startup sync. A sidecar still starting at boot is retried for a few seconds before this kicks in |
+| No LLM configured (wizard suggest) | The setup wizard's suggestion step is unavailable; the user skips or proceeds with no wizard-created vocabulary. Vocabulary is seeded by the first import instead |
 | SSE stream dropped        | Client shows stale data only until reconnect (synthetic `invalidate-all`, §9) or the next event/refetch; no state can be lost — events are refetch hints |
 | Scrape fails (transient)  | Bookmark persists as URL + note; keyword search still matches it; retried on the next start |
 | Scrape fails (dead link, 404/410) | Attempts counted under `metadata.scrape.lastError`; after `SCRAPE_MAX_ATTEMPTS` the bookmark is marked `invalid` (kept, hidden from default views/reconciliation) until a successful re-scrape or URL edit restores `active` |
@@ -806,6 +795,7 @@ fires, revisit the section, run a fresh benchmark or evaluation, and update this
 | Brute-force fallback limits (§6) | The collection exceeds ~50,000 bookmarks, fallback p95 exceeds ~100 ms, or the matrix exceeds ~512 MB of RAM; then Qdrant is carrying the load and the fallback may degrade to keyword-only.                                                        |
 | Lead-excerpt classification (§7) | Evaluation shows systematic tag misses on long pages; then add chunked classification with per-tag max aggregation.                                                                   |
 | All-active-tags candidate set (§7) | Precision drops as the tag vocabulary grows (more questions per call); then re-introduce scoped candidate sets (e.g. tag groups) as a model revision.                              |
+| Auto-assign threshold (§7)   | Sustained manual re-tagging of auto-assigned tags shows the threshold is miscalibrated; recalibrate `AUTO_ASSIGN_THRESHOLD` and re-run classification.                            |
 | User-removal semantics (§7)      | Users report re-assigned removed tags; then add a suppression (negative evidence) table to MODEL.md.                                                                                  |
 | Importer inline tags (§7)        | `source='import'` syntax appears in real collection files; then define the marker grammar in the importer spec.                                                                       |
 | Export memory buffering (§7)     | Exports get slow or memory-heavy at real collection sizes; then stream each format and zip incrementally instead of buffering files in memory.                                        |
