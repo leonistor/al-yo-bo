@@ -48,6 +48,7 @@ const screenshotClient = compositeScreenshotClient({
   fallback: ogImageScreenshotClient({
     fetchImpl: fetch,
     timeoutMs: config.scrape.timeoutMs,
+    maxBytes: config.screenshot.maxBytes,
   }),
 });
 

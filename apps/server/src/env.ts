@@ -41,6 +41,8 @@ export interface ServerConfig extends CoreConfig {
     height: number;
     settleMs: number;
     timeoutMs: number;
+    /** og:image fallback download cap in bytes (overages fall through to no image). */
+    maxBytes: number;
   };
 }
 
@@ -101,6 +103,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       height: numberFromEnv(env.SCREENSHOT_HEIGHT, 800),
       settleMs: numberFromEnv(env.SCREENSHOT_SETTLE_MS, 1_500),
       timeoutMs: numberFromEnv(env.SCREENSHOT_TIMEOUT_MS, 15_000),
+      maxBytes: numberFromEnv(env.SCREENSHOT_MAX_OG_IMAGE_BYTES, 8 * 1024 * 1024),
     },
   };
 }

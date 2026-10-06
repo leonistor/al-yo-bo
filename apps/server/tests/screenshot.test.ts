@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   extractOgImageUrl,
-  MAX_OG_IMAGE_BYTES,
+  DEFAULT_MAX_OG_IMAGE_BYTES,
   ogImageScreenshotClient,
 } from '../src/screenshot.ts';
 
@@ -73,7 +73,7 @@ describe('ogImageScreenshotClient', () => {
 
   test('oversized Content-Length falls through to null', async () => {
     const big = new Response(new Uint8Array(4), {
-      headers: { 'content-type': 'image/jpeg', 'content-length': String(MAX_OG_IMAGE_BYTES + 1) },
+      headers: { 'content-type': 'image/jpeg', 'content-length': String(DEFAULT_MAX_OG_IMAGE_BYTES + 1) },
     });
     const result = await client({ fetchImpl: fetchReturning(big) }).capture('https://x/');
     expect(result).toBeNull();

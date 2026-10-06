@@ -19,8 +19,8 @@ export class ScreenshotError extends Error {
   }
 }
 
-/** Hard cap on a downloaded `og:image`; larger bodies fall through to "no image". */
-export const MAX_OG_IMAGE_BYTES = 8 * 1024 * 1024;
+/** Default cap on a downloaded `og:image` when no env override is provided. */
+export const DEFAULT_MAX_OG_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Captures the viewport via `Bun.WebView` (zero-install WKWebView on macOS).
@@ -37,48 +37,67 @@ export function bunWebViewScreenshotClient(options: {
   return {
     async capture(url: string): Promise<ScreenshotResult | null> {
       const view = new Bun.WebView({ width: options.width, height: options.height });
+      const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let closed = false;
 
-      // A hung `navigate`/`screenshot` cannot be cancelled directly, but
-      // `view.close()` rejects the pending operation ("WebView closed"), which
-      // releases the WebContent process. Racing against a rejecting timer means
-      // the timeout actually aborts instead of just flipping a flag. The timer
-      // is closed in `finally` alongside the view.
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
+      // Bun.WebView has no native AbortSignal; closing the view rejects pending
+      // navigate/screenshot/evaluate calls and frees the WebContent process.
+      function closeView(): void {
+        if (!closed) {
+          closed = true;
           view.close();
+        }
+      }
+
+      function cleanup(): void {
+        clearTimeout(timer);
+        controller.abort();
+        closeView();
+      }
+
+      timer = setTimeout(() => cleanup(), options.timeoutMs);
+
+      const capture = (async (): Promise<ScreenshotResult> => {
+        await view.navigate(url);
+        await Bun.sleep(options.settleMs);
+
+        const buffer = (await view.screenshot({
+          encoding: 'buffer',
+          format: 'jpeg',
+          quality: 80,
+        })) as Buffer;
+
+        // og:image is best read from the DOM while we have a live page.
+        let ogImageUrl: string | null = null;
+        try {
+          const raw = await view.evaluate(
+            'document.querySelector(\'meta[property="og:image"]\')?.content ?? null',
+          );
+          ogImageUrl = typeof raw === 'string' && raw.length > 0 ? raw : null;
+        } catch {
+          ogImageUrl = null;
+        }
+
+        return { buffer, ogImageUrl };
+      })();
+
+      const expiry = new Promise<never>((_, reject) => {
+        function onAbort(): void {
           reject(new ScreenshotError(`Screenshot of ${url} timed out after ${options.timeoutMs}ms`));
-        }, options.timeoutMs);
+        }
+        if (controller.signal.aborted) {
+          onAbort();
+          return;
+        }
+        controller.signal.addEventListener('abort', onAbort, { once: true });
       });
 
       try {
-        return await Promise.race([
-          (async (): Promise<ScreenshotResult> => {
-            await view.navigate(url);
-            await Bun.sleep(options.settleMs);
-
-            const buffer = (await view.screenshot({
-              encoding: 'buffer',
-              format: 'jpeg',
-              quality: 80,
-            })) as Buffer;
-
-            // og:image is best read from the DOM while we have a live page.
-            let ogImageUrl: string | null = null;
-            try {
-              const raw = await view.evaluate(
-                'document.querySelector(\'meta[property="og:image"]\')?.content ?? null',
-              );
-              ogImageUrl = typeof raw === 'string' && raw.length > 0 ? raw : null;
-            } catch {
-              ogImageUrl = null;
-            }
-
-            return { buffer, ogImageUrl };
-          })(),
-          timeout,
-        ]);
+        return await Promise.race([capture, expiry]);
       } catch (error) {
+        capture.catch(() => {});
+        expiry.catch(() => {});
         if (error instanceof ScreenshotError) {
           throw error;
         }
@@ -86,8 +105,9 @@ export function bunWebViewScreenshotClient(options: {
           `Screenshot of ${url} failed: ${error instanceof Error ? error.message : error}`,
         );
       } finally {
-        clearTimeout(timer);
-        view.close();
+        capture.catch(() => {});
+        expiry.catch(() => {});
+        cleanup();
       }
     },
   };
@@ -164,7 +184,7 @@ export function ogImageScreenshotClient(options: {
   fetchPage?: typeof fetchPageHtml;
 }): ScreenshotClient {
   const fetchPage = options.fetchPage ?? fetchPageHtml;
-  const maxBytes = options.maxBytes ?? MAX_OG_IMAGE_BYTES;
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_OG_IMAGE_BYTES;
 
   return {
     async capture(url: string): Promise<ScreenshotResult | null> {
