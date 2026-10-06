@@ -93,7 +93,7 @@ export {
   type HealthReport,
   type HealthJobs,
 } from './services/health.ts';
-export { bookmarkView, bookmarkViewOrThrow } from './services/_views.ts';
+export { bookmarkView, bookmarkViewOrThrow, requireBookmark } from './services/_views.ts';
 
 // Enrichment primitives, re-exported so the app edge can construct capabilities
 // (scraper, queue reconciliation) without importing core internals by path.

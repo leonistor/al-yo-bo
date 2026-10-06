@@ -72,3 +72,11 @@ export function unpackFloat32(bytes: Uint8Array): Float32Array {
   }
   return values;
 }
+
+/** Message for a failed fetch; timeout/abort aborts surface as timeouts. */
+export function describeFetchFailure(error: unknown): string {
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+    return 'request timed out';
+  }
+  return error instanceof Error ? error.message : String(error);
+}

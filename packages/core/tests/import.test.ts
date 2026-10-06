@@ -106,7 +106,7 @@ describe('ImportService', () => {
     const { bookmarks } = await service.preview(MARKDOWN);
     const report = service.commit(bookmarks, { file: 'collection.md' });
 
-    expect(report.bookmarks).toHaveLength(2);
+    expect(report.bookmarks).toBe(2);
     expect(report.parsed).toBe(2);
     expect(report.added).toBe(2);
     const category = db
@@ -139,7 +139,7 @@ describe('ImportService', () => {
 
     const secondIds = listBookmarks(db).items.map((bookmark) => bookmark.id);
     expect(secondIds.toSorted()).toEqual(firstIds.toSorted());
-    expect(second.bookmarks).toHaveLength(2);
+    expect(second.bookmarks).toBe(2);
     expect(second.updated).toBe(2);
     expect(jobs.calls).toEqual([]); // re-commit: no scrape re-enqueue
   });
@@ -179,7 +179,7 @@ describe('ImportService', () => {
 
     expect(report.added).toBe(1);
     expect(report.skipped).toBe(2);
-    expect(report.bookmarks.map((bookmark) => bookmark.url)).toEqual(['https://example.com/ok']);
+    expect(report.bookmarks).toBe(1);
     expect(report.warnings?.length).toBe(2);
     expect(report.warnings?.[0]).toContain('ftp://example.com/file');
     // Only the valid row is enriched.

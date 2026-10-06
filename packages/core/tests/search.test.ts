@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { assignTag, createBookmark, createCategory, createTag } from '@al-yo-bo/db';
+import { assignTag, createBookmark, createCategory, createTag, rebuildFts } from '@al-yo-bo/db';
 import { uuidToBytes } from '@al-yo-bo/shared';
 
 import { createSearchService, type SearchService } from '../src/services/search.ts';
@@ -419,6 +419,73 @@ describe('SearchService — aggregates', () => {
       { id: category.id, parentId: null, name: 'Dev', count: 1 },
     ]);
     expect(aggregates.tags).toEqual([{ id: tag.id, name: 'rust', status: 'active', count: 1 }]);
+  });
+});
+
+describe('SearchService — snippets', () => {
+  test('keyword hits surface an FTS snippet for the matching bookmark', async () => {
+    const { service, db } = makeService();
+    const bookmark = createBookmark(db, {
+      url: 'https://example.com/snippet',
+      title: 'Snippet demo',
+      content: 'The quick brown fox jumps over the lazy river.', // match 'river'
+    });
+    // Rebuild the FTS index so the content column is indexed (createBookmark
+    // triggers an FTS insert, but a manual rebuild guarantees consistency).
+    rebuildFts(db);
+
+    const response = await service.search({
+      q: 'river',
+      mode: 'keyword',
+      ...BASE,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.items).toHaveLength(1);
+    expect(response.items[0]!.id).toBe(bookmark.id);
+    expect(response.items[0]!.snippet).toContain('river');
+  });
+
+  test('empty-query lists do not attach snippets', async () => {
+    const { service, db } = makeService();
+    createBookmark(db, { url: 'https://example.com/a', title: 'alpha', content: 'beta' });
+
+    const response = await service.search({ q: '', mode: 'keyword', ...BASE, limit: 10, offset: 0 });
+
+    expect(response.items).toHaveLength(1);
+    expect(response.items[0]!.snippet).toBeUndefined();
+  });
+});
+
+describe('SearchService — date filters', () => {
+  test('honors dateFrom and dateTo on created_at', async () => {
+    const { service, db } = makeService();
+    const oldBookmark = createBookmark(db, {
+      url: 'https://example.com/old',
+      title: 'old',
+    });
+    const newBookmark = createBookmark(db, {
+      url: 'https://example.com/new',
+      title: 'new',
+    });
+    // Force the first bookmark into the distant past.
+    db.query('UPDATE bookmarks SET created_at = ? WHERE id = ?').run(
+      1_700_000_000_000,
+      uuidToBytes(oldBookmark.id),
+    );
+
+    const response = await service.search({
+      q: '',
+      mode: 'keyword',
+      ...BASE,
+      dateFrom: 1_790_000_000_000,
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(response.items.map((item) => item.id)).toEqual([newBookmark.id]);
+    expect(response.total).toBe(1);
   });
 });
 

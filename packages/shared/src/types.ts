@@ -89,6 +89,8 @@ export interface BookmarkImage {
 export interface BookmarkWithTags extends Bookmark {
   tags: BookmarkTagView[];
   image?: BookmarkImage;
+  /** FTS snippet surfaced on search results; absent on non-search lists. */
+  snippet?: string;
 }
 
 /** Bookmark count per category (structure-agnostic; the tree is built client-side). */
@@ -189,9 +191,12 @@ export interface ImportReport {
   /** Count of tag assignments made by the import. */
   tagsAssigned: number;
   parsed: number;
-  bookmarks: ImportedBookmark[];
+  /** Number of bookmarks that entered the commit; the preview still carries the full list. */
+  bookmarks: number;
   /** Ids of bookmarks created by this import — the enrichment trigger (ARCHITECTURE §10). */
   addedIds: string[];
+  /** Soft, non-fatal issues surfaced during import (e.g. deprecated tags, invalid URLs). */
+  warnings?: string[];
 }
 
 /** File formats the Export feature can produce. */

@@ -5,6 +5,8 @@
  * only by `buildAiLayer` (consumed by apps/server, §4).
  */
 
+import { describeFetchFailure } from '@al-yo-bo/shared';
+
 import { APICallError, embedMany } from 'ai';
 
 import type { EmbeddingClient, EmbeddingResult } from '../embedding.ts';
@@ -69,13 +71,10 @@ export class AiEmbeddingClient implements EmbeddingClient {
   }
 }
 
-/** Message for a failed embed call; timeout aborts surface as timeouts. */
+/** Message for a failed embed call; API errors keep their status code, otherwise fall back to the shared fetch helper. */
 function describeFailure(error: unknown): string {
-  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-    return 'request timed out';
-  }
   if (APICallError.isInstance(error)) {
     return error.statusCode != null ? `${error.statusCode} ${error.message}` : error.message;
   }
-  return error instanceof Error ? error.message : String(error);
+  return describeFetchFailure(error);
 }

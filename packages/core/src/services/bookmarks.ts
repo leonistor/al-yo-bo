@@ -22,7 +22,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../errors.ts';
 import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
-import { bookmarkViewOrThrow } from './_views.ts';
+import { bookmarkViewOrThrow, requireBookmark } from './_views.ts';
 import type { JobScheduler } from './enrichment.ts';
 
 export interface BookmarkInput {
@@ -137,10 +137,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
     },
 
     async update(id, input) {
-      const current = getBookmarkById(db, id);
-      if (!current) {
-        throw new NotFoundError('Bookmark not found');
-      }
+      const current = requireBookmark(db, id);
       const patch: Partial<DbBookmarkInput> = {};
       if (input.url !== undefined) {
         // Same gate as `create` — without it normalizeUrl below would throw a
@@ -209,10 +206,7 @@ export function createBookmarkService(deps: BookmarkServiceDeps): BookmarkServic
     },
 
     async assignTag(bookmarkId, tagId) {
-      const bookmark = getBookmarkById(db, bookmarkId);
-      if (!bookmark) {
-        throw new NotFoundError('Bookmark not found');
-      }
+      requireBookmark(db, bookmarkId);
       const tag = getTagById(db, tagId);
       if (!tag) {
         throw new NotFoundError('Tag not found');

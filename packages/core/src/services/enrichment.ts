@@ -22,7 +22,7 @@ import type { EventsSink } from '../events.ts';
 import { ScrapeError, type ScrapeFn } from '../scrape.ts';
 import type { ScreenshotClient } from '../screenshot.ts';
 import type { VectorProvider } from '../vector/provider.ts';
-import { bookmarkViewOrThrow } from './_views.ts';
+import { bookmarkViewOrThrow, requireBookmark } from './_views.ts';
 
 /**
  * Minimal scheduling port other services depend on. It is deliberately tiny so
@@ -190,9 +190,7 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
     },
 
     async classify(id) {
-      if (!getBookmarkById(db, id)) {
-        throw new NotFoundError('Bookmark not found');
-      }
+      requireBookmark(db, id);
       if (!classifier) {
         throw new DomainError('Classification is not available', 'classify_unavailable');
       }
@@ -214,9 +212,7 @@ export function createEnrichmentService(deps: EnrichmentServiceDeps): Enrichment
     },
 
     async screenshot(id) {
-      if (!getBookmarkById(db, id)) {
-        throw new NotFoundError('Bookmark not found');
-      }
+      requireBookmark(db, id);
       if (!screenshot) {
         return { status: 'skipped', bookmark: bookmarkViewOrThrow(db, id) };
       }

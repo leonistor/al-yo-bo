@@ -11,6 +11,8 @@
  * timeout, kept verbatim from the v1 port.
  */
 
+import { describeFetchFailure } from '@al-yo-bo/shared';
+
 export interface NoulQuestion {
   type: 'noul';
   instructions?: string;
@@ -102,12 +104,4 @@ function normalizeDecideResponse(body: OllayaDecideBody): DecideResult {
     );
   }
   return result;
-}
-
-/** Message for a failed fetch; `AbortSignal.timeout` aborts surface as timeouts. */
-function describeFetchFailure(error: unknown): string {
-  if (error instanceof Error && error.name === 'TimeoutError') {
-    return 'request timed out';
-  }
-  return error instanceof Error ? error.message : String(error);
 }

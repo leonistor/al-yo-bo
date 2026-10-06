@@ -14,7 +14,7 @@ import {
   updateBookmark,
 } from '@al-yo-bo/db';
 
-import { ingestBookmarks, parseCollection, resolveVocabulary } from '../src/index.ts';
+import { commitImport, ingestBookmarks, parseCollection, resolveVocabulary } from '../src/index.ts';
 
 const SAMPLE = `# stray title
 
@@ -426,6 +426,61 @@ tags: [imported, unknown]
     expect(report.tagsAssigned).toBe(2);
     expect(getTagByName(db, 'imported')).not.toBeNull();
     expect(getTagByName(db, 'unknown')).not.toBeNull();
+  });
+
+  test('carries parser warnings through ingestBookmarks to the report', () => {
+    const db = freshDb();
+    const { bookmarks } = parseCollection(`---
+title: My collection
+tags: [imported]
+---
+
+- a: https://example.com/a
+`);
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution, {
+      warnings: ['Unrecognized frontmatter key "title" was ignored.'],
+    });
+
+    expect(report.warnings).toEqual(['Unrecognized frontmatter key "title" was ignored.']);
+  });
+
+  test('carries parser warnings through commitImport to the report', () => {
+    const db = freshDb();
+    const { bookmarks } = parseCollection(`---
+title: My collection
+---
+
+- a: https://example.com/a
+`);
+    const report = commitImport(db, bookmarks, {
+      warnings: ['Unrecognized frontmatter key "title" was ignored.'],
+    });
+
+    expect(report.added).toBe(1);
+    expect(report.warnings).toEqual(['Unrecognized frontmatter key "title" was ignored.']);
+  });
+
+  test('merges parser warnings with deprecated-tag warnings in the report', () => {
+    const db = freshDb();
+    const deprecated = createTag(db, { name: 'legacy' });
+    setTagStatus(db, deprecated.id, 'deprecated');
+    const { bookmarks } = parseCollection(`---
+title: My collection
+tags: [legacy]
+---
+
+- a: https://example.com/a
+`);
+    const resolution = resolveVocabulary(db, bookmarks);
+    const report = ingestBookmarks(db, bookmarks, resolution, {
+      warnings: ['Unrecognized frontmatter key "title" was ignored.'],
+    });
+
+    expect(report.warnings).toEqual([
+      'Unrecognized frontmatter key "title" was ignored.',
+      'Deprecated tag "legacy" was not assigned to imported bookmarks.',
+    ]);
   });
 
   test('does not assign a deprecated tag and surfaces a warning', () => {

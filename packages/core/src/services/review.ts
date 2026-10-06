@@ -14,7 +14,6 @@ import type { Database } from 'bun:sqlite';
 
 import {
   assignTag,
-  getBookmarkById,
   getBookmarksWithTagsByIds,
   getTagById,
   listActiveTags,
@@ -27,7 +26,7 @@ import { NotFoundError } from '../errors.ts';
 import type { EventsSink } from '../events.ts';
 import type { VectorProvider } from '../vector/provider.ts';
 import { syncVectorPayload } from '../vector/sync.ts';
-import { bookmarkViewOrThrow } from './_views.ts';
+import { bookmarkViewOrThrow, requireBookmark } from './_views.ts';
 
 export interface ReviewServiceDeps {
   db: Database;
@@ -57,10 +56,7 @@ export function createReviewService(deps: ReviewServiceDeps): ReviewService {
     },
 
     async acceptCandidate(bookmarkId, tagId) {
-      const bookmark = getBookmarkById(db, bookmarkId);
-      if (!bookmark) {
-        throw new NotFoundError('Bookmark not found');
-      }
+      requireBookmark(db, bookmarkId);
       const tag = getTagById(db, tagId);
       if (!tag) {
         throw new NotFoundError('Tag not found');

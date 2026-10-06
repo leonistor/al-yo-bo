@@ -648,12 +648,12 @@ describe('import API', () => {
     );
     expect(imported.status).toBe(200);
     const body = (await imported.json()) as {
-      bookmarks: unknown[];
+      bookmarks: number;
       parsed: number;
       added: number;
       categoriesCreated: number;
     };
-    expect(body.bookmarks).toHaveLength(1);
+    expect(body.bookmarks).toBe(1);
     expect(body.parsed).toBe(1);
     expect(body.added).toBe(1);
     expect(body.categoriesCreated).toBe(1);

@@ -12,6 +12,8 @@ import type { ImportReport, ImportedBookmark } from '@al-yo-bo/shared';
 export interface IngestOptions {
   file?: string;
   skipped?: number;
+  /** Soft parser warnings (e.g. unrecognized frontmatter keys) to surface in the report. */
+  warnings?: string[];
 }
 
 /**
@@ -160,9 +162,12 @@ export function ingestBookmarks(
     categoriesCreated: resolution.categoriesCreated,
     tagsAssigned: 0,
     parsed: bookmarks.length,
-    bookmarks,
+    bookmarks: bookmarks.length,
     addedIds: [],
   };
+  if (options.warnings) {
+    report.warnings = [...options.warnings];
+  }
 
   const insideTransaction = db.transaction(() => {
     for (const entry of bookmarks) {
@@ -208,9 +213,10 @@ export function ingestBookmarks(
 
   insideTransaction.immediate();
   if (resolution.skippedTags.length > 0) {
-    report.warnings = resolution.skippedTags.map(
+    const skippedTagWarnings = resolution.skippedTags.map(
       (name) => `Deprecated tag "${name}" was not assigned to imported bookmarks.`,
     );
+    report.warnings = [...(report.warnings ?? []), ...skippedTagWarnings];
   }
   return report;
 }
@@ -238,9 +244,12 @@ export function commitImport(
     categoriesCreated: 0,
     tagsAssigned: 0,
     parsed: bookmarks.length,
-    bookmarks,
+    bookmarks: bookmarks.length,
     addedIds: [],
   };
+  if (options.warnings) {
+    report.warnings = [...options.warnings];
+  }
 
   const insideTransaction = db.transaction(() => {
     const resolution = resolveVocabularyInTransaction(db, bookmarks);
@@ -352,8 +361,9 @@ function ingestBookmarksInTransaction(
     }
   }
   if (resolution.skippedTags.length > 0) {
-    report.warnings = resolution.skippedTags.map(
+    const skippedTagWarnings = resolution.skippedTags.map(
       (name) => `Deprecated tag "${name}" was not assigned to imported bookmarks.`,
     );
+    report.warnings = [...(report.warnings ?? []), ...skippedTagWarnings];
   }
 }

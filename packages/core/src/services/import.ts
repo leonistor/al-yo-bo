@@ -23,6 +23,8 @@ export interface ImportPreview {
 
 export interface ImportOptions {
   file?: string;
+  /** Soft parser warnings (e.g. unrecognized frontmatter keys) to surface in the ingest report. */
+  warnings?: string[];
 }
 
 export interface ImportServiceDeps {
@@ -125,10 +127,8 @@ export function createImportService(deps: ImportServiceDeps): ImportService {
         file: options.file,
         // Reviewed list, except rows rejected above for an invalid URL.
         skipped: invalidUrlWarnings.length,
+        warnings: invalidUrlWarnings.length > 0 ? invalidUrlWarnings : undefined,
       });
-      if (invalidUrlWarnings.length > 0 || report.warnings?.length) {
-        report.warnings = [...invalidUrlWarnings, ...(report.warnings ?? [])];
-      }
       for (const id of report.addedIds) {
         jobs.enqueue(id, 'scrape');
         jobs.enqueue(id, 'screenshot');

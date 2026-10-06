@@ -19,6 +19,7 @@ import {
   type BookmarkListStatus,
   type BookmarkSort,
   type BookmarkStatus,
+  type BookmarkWithTags,
   type RankedCandidate,
   type SearchMode,
   type SearchResponse,
@@ -115,6 +116,28 @@ function filterCandidatesByStatus(
   return candidates
     .filter((candidate) => statuses.get(candidate.bookmarkId) === status)
     .map((candidate, index) => Object.assign({}, candidate, { rank: index + 1 }));
+}
+
+/**
+ * Attaches the FTS snippet (when one exists) to the corresponding bookmark.
+ * Keyword-only hits always carry a snippet; fused hits keep the snippet from
+ * the keyword side; semantic-only hits have none. Fresh objects are returned
+ * so callers that do not care about snippets can still ignore the field.
+ */
+function attachSnippets(
+  items: BookmarkWithTags[],
+  candidates: RankedCandidate[],
+): BookmarkWithTags[] {
+  const snippets = new Map<string, string>();
+  for (const candidate of candidates) {
+    if (candidate.snippet && !snippets.has(candidate.bookmarkId)) {
+      snippets.set(candidate.bookmarkId, candidate.snippet);
+    }
+  }
+  return items.map((item) => {
+    const snippet = snippets.get(item.id);
+    return snippet ? Object.assign({}, item, { snippet }) : item;
+  });
 }
 
 /**
@@ -254,9 +277,12 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     const mode: SearchMode = fusedMode ? input.mode : 'keyword';
 
     if (!fusedMode) {
-      const items = getBookmarksWithTagsByIds(
-        db,
-        keyword.map((candidate) => candidate.bookmarkId),
+      const items = attachSnippets(
+        getBookmarksWithTagsByIds(
+          db,
+          keyword.map((candidate) => candidate.bookmarkId),
+        ),
+        keyword,
       );
       return {
         items,
@@ -272,9 +298,12 @@ export function createSearchService(deps: SearchServiceDeps): SearchService {
     // `hasMore` exact, and a finished window reports exactly what was seen.
     const page = fused.slice(offset, window);
     const hasMore = fused.length > window;
-    const items = getBookmarksWithTagsByIds(
-      db,
-      page.map((candidate) => candidate.bookmarkId),
+    const items = attachSnippets(
+      getBookmarksWithTagsByIds(
+        db,
+        page.map((candidate) => candidate.bookmarkId),
+      ),
+      page,
     );
 
     return {

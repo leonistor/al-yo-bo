@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
-import { getBookmarksWithTagsByIds } from '@al-yo-bo/db';
-import type { BookmarkWithTags } from '@al-yo-bo/shared';
+import { getBookmarkById, getBookmarksWithTagsByIds } from '@al-yo-bo/db';
+import type { Bookmark, BookmarkWithTags } from '@al-yo-bo/shared';
 
 import { NotFoundError } from '../errors.ts';
 
@@ -20,4 +20,13 @@ export function bookmarkViewOrThrow(db: Database, id: string): BookmarkWithTags 
     throw new NotFoundError('Bookmark not found');
   }
   return view;
+}
+
+/** Returns the bare bookmark row or throws a transport-neutral 404. */
+export function requireBookmark(db: Database, id: string): Bookmark {
+  const bookmark = getBookmarkById(db, id);
+  if (!bookmark) {
+    throw new NotFoundError('Bookmark not found');
+  }
+  return bookmark;
 }
