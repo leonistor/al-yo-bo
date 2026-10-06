@@ -43,6 +43,11 @@ export function createProviderRegistry(providers: RegistryProviders): ProviderRe
           name: 'openrouter',
           apiKey: providers.openrouter.apiKey,
           baseURL: providers.openrouter.baseUrl ?? 'https://openrouter.ai/api/v1',
+          // OpenRouter serves structured outputs: declaring it lets the AI SDK
+          // send `json_schema` for schema-bearing calls instead of degrading to
+          // unconstrained `json_object` (which warns "responseFormat is not
+          // supported" and silently drops schema enforcement).
+          supportsStructuredOutputs: true,
         })
       : null,
     local: providers.local ? createOllama({ baseURL: providers.local.baseUrl }) : null,

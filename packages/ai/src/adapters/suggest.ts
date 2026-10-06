@@ -78,6 +78,9 @@ function openRouterSuggestClient(
       name: 'openrouter',
       apiKey: config.openrouter.apiKey,
       baseURL: config.openrouter.baseUrl,
+      // Structured outputs: send `json_schema` instead of unconstrained
+      // `json_object` (the adapter warns and drops schema enforcement otherwise).
+      supportsStructuredOutputs: true,
     }),
     local: null,
   };
