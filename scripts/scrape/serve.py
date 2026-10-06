@@ -64,11 +64,16 @@ def _json_response(
     payload: dict[str, Any],
 ) -> None:
     body = json.dumps(payload).encode("utf-8")
-    handler.send_response(status_code)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    try:
+        handler.send_response(status_code)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        # The caller's AbortSignal may fire a moment before our internal timeout;
+        # writing to the dead socket then must not crash the handler thread.
+        _log("client went away before the response landed")
 
 
 def _ok(
@@ -219,7 +224,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         assert _page is not None
         try:
-            response = _page.goto(url, wait_until="load", timeout=int(timeout * 1000))
+            # The goto budget must fit inside the client's overall AbortSignal
+            # timeout together with the settle wait below — otherwise the client
+            # aborts first and our error response lands on a closed socket.
+            goto_budget_ms = int(max(timeout - 3.0, 5.0) * 1000)
+            response = _page.goto(url, wait_until="load", timeout=goto_budget_ms)
         except Exception:
             # A crashed or hung browser poisons every later call: drop the cached
             # instances so the next request re-initializes Camoufox from scratch.
