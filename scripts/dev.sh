@@ -54,7 +54,7 @@ bun scripts/dev-qr.ts
 # VITE_ANNOTATE gates the in-app toolbar mount (apps/web/src/main.tsx) — Vite
 # only exposes VITE_-prefixed env vars to the client bundle. bun run --parallel
 # needs the script names as separate args, so unquoted expansion is intentional.
-agents="dev:server dev:web dev:qdrant dev:ollaya"
+agents="dev:server dev:web dev:qdrant dev:ollaya dev:scrape"
 if [ "$annotate" -eq 1 ]; then
   echo "[dev] annotation server enabled (--annotate)"
   export VITE_ANNOTATE=1
