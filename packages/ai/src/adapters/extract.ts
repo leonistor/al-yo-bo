@@ -10,13 +10,14 @@
  */
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText, NoObjectGeneratedError, Output } from 'ai';
+import { NoObjectGeneratedError } from 'ai';
 import { createOllama } from 'ollama-ai-provider-v2';
 
 import type { AiConfig } from '../config.ts';
 import type { ExtractionClient, ExtractionProvider, ExtractionResult } from '../extract.ts';
 import { extractionPrompt, extractionSchema, resolveExtractionRoute } from '../extract.ts';
 import type { ProviderRegistry } from '../registry.ts';
+import { generateStructured, ProviderCallError } from './generate-structured.ts';
 
 /** Per-request budget for the interactive import preview; failure → deterministic fallback. */
 const EXTRACT_TIMEOUT_MS = 60_000;
@@ -48,21 +49,14 @@ async function generateExtraction(
   modelId: string,
   text: string,
 ): Promise<ExtractionResult> {
-  const languageModel =
-    provider === 'openrouter' ? registry.openrouter?.chatModel(modelId) : registry.local?.(modelId);
-  if (!languageModel) {
-    throw new Error(`${provider} extraction failed: provider not configured`);
-  }
-
   try {
-    // Retries stay off: the caller's fallback is instant and the preview is
-    // interactive — a retry loop would just delay the deterministic parser.
-    const { output } = await generateText({
-      model: languageModel,
+    const output = await generateStructured({
+      registry,
+      provider,
+      modelId,
       prompt: extractionPrompt(text),
-      output: Output.object({ schema: extractionSchema }),
-      maxRetries: 0,
-      abortSignal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS),
+      schema: extractionSchema,
+      timeoutMs: EXTRACT_TIMEOUT_MS,
     });
     return {
       bookmarks: output.bookmarks.map(toImportedBookmark),
@@ -71,9 +65,12 @@ async function generateExtraction(
       warnings: [],
     };
   } catch (error) {
-    // Typed error so the caller can log the provider that failed and fall
-    // back cleanly (same contract as the legacy `ExtractionFailedError`).
-    throw new ExtractionError(provider, modelId, error);
+    // Re-wrap the shared provider error so the import service can log the
+    // failing provider and fall back to the deterministic parser cleanly.
+    if (error instanceof ProviderCallError) {
+      throw new ExtractionError(provider, modelId, error.cause);
+    }
+    throw error;
   }
 }
 

@@ -1,7 +1,8 @@
 /**
  * `@al-yo-bo/ai` — the single AI layer (ARCHITECTURE §8). All AI access
  * consolidates here: the former `packages/embeddings` (OpenRouter HTTP) and
- * `packages/classifier` (Ollaya client) plus the import-extraction client.
+ * `packages/classifier` (Ollaya client) plus the import-extraction client and
+ * the wizard vocabulary-suggestion client.
  *
  * Interface/adapter split (§4): `packages/core` imports ONLY the interfaces
  * and types below (type-only imports — no runtime provider code is pulled).
@@ -13,6 +14,7 @@ import { AiEmbeddingClient } from './adapters/embedding.ts';
 import { createExtractionClient } from './adapters/extract.ts';
 import type { ClassifierClient } from './classifier.ts';
 import { OllayaClassifierClient } from './classifier.ts';
+import { createSuggestClient } from './adapters/suggest.ts';
 import type { AiConfig } from './config.ts';
 import type { EmbeddingClient } from './embedding.ts';
 import type { ExtractionClient } from './extract.ts';
@@ -20,12 +22,14 @@ import type { AiHealth } from './health.ts';
 import { createAiHealth } from './health.ts';
 import type { ProviderRegistry } from './registry.ts';
 import { createProviderRegistry } from './registry.ts';
+import type { SuggestClient } from './suggest.ts';
 
 /**
  * The built AI layer handed to core by the app edge. Every member degrades
  * independently (§1.5): `embeddings: null` → keyword-only search;
- * `extract: null` → deterministic parser; the classifier always constructs —
- * an unreachable Ollaya daemon only fails classification jobs.
+ * `extract: null` → deterministic parser; `suggest: null` → manual wizard
+ * vocabulary; the classifier always constructs — an unreachable Ollaya daemon
+ * only fails classification jobs.
  */
 export interface AiLayer {
   readonly config: AiConfig;
@@ -37,6 +41,8 @@ export interface AiLayer {
   readonly classifier: ClassifierClient;
   /** LLM extraction client; `null` → deterministic markdown fallback in core. */
   readonly extract: ExtractionClient | null;
+  /** LLM vocabulary-suggestion client; `null` → wizard skips AI suggestions. */
+  readonly suggest: SuggestClient | null;
   /** Capability probes → degrade flags for the health endpoint. */
   readonly health: AiHealth;
 }
@@ -66,6 +72,7 @@ export function buildAiLayer(config: AiConfig): AiLayer {
       apiKey: config.ollaya.apiKey,
     }),
     extract: createExtractionClient(config),
+    suggest: createSuggestClient(config),
     health: createAiHealth(config),
   };
 }
@@ -97,6 +104,20 @@ export {
 } from './extract.ts';
 export type { ExtractionRoute } from './extract.ts';
 
+// Suggestion contract, prompt and schema (transport-neutral; no AI SDK).
+export {
+  suggestPrompt,
+  suggestedCategorySchema,
+  suggestedTagSchema,
+  vocabularySuggestionSchema,
+} from './suggest.ts';
+export type {
+  DevProfile,
+  SuggestClient,
+  SuggestInput,
+  VocabularySuggestion,
+} from './suggest.ts';
+
 // Health.
 export type { AiHealth, AiHealthReport } from './health.ts';
 export { createAiHealth } from './health.ts';
@@ -105,3 +126,4 @@ export { createAiHealth } from './health.ts';
 export { AiEmbeddingClient } from './adapters/embedding.ts';
 export type { EmbeddingAdapterConfig } from './adapters/embedding.ts';
 export { createExtractionClient, ExtractionError } from './adapters/extract.ts';
+export { createSuggestClient } from './adapters/suggest.ts';
