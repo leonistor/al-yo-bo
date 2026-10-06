@@ -21,6 +21,7 @@ function stubAi(): CoreAi {
     embeddings: null,
     classifier: null,
     extract: null,
+    suggest: null,
     health: {
       async report() {
         return {

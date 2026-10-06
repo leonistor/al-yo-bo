@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { AiHealthReport, ClassifierClient, EmbeddingClient } from '@al-yo-bo/ai';
+import type { AiHealthReport, ClassifierClient, EmbeddingClient, SuggestClient } from '@al-yo-bo/ai';
 import {
   ScrapeError,
   createCore,
@@ -95,10 +95,12 @@ const stubHealth = {
 function stubAiLayer(options: {
   embeddings?: EmbeddingClient | null;
   classifier?: ClassifierClient | null;
+  suggest?: SuggestClient | null;
 }): CoreAi {
   return {
     embeddings: options.embeddings ?? null,
     classifier: options.classifier ?? null,
+    suggest: options.suggest ?? null,
     extract: null,
     health: stubHealth,
   };
@@ -110,6 +112,7 @@ interface AppOptions {
   embeddings?: EmbeddingClient;
   scrape?: ScrapeFn;
   classifier?: ClassifierClient;
+  suggest?: SuggestClient;
   avatarStore?: AvatarStore;
   reindex?: () => Promise<{ vectorBackend: 'qdrant' | 'memory' }>;
   /** Extra env values merged into the test config (e.g. OLLAMA_CHAT_MODEL). */
@@ -122,7 +125,11 @@ function buildApp(db: Database, options: AppOptions = {}, hub = new EventHub()) 
   const core = createCore({
     db,
     config,
-    ai: stubAiLayer({ embeddings: options.embeddings ?? null, classifier: options.classifier ?? null }),
+    ai: stubAiLayer({
+      embeddings: options.embeddings ?? null,
+      classifier: options.classifier ?? null,
+      suggest: options.suggest ?? null,
+    }),
     vector: createVectorProvider(options.vector ?? new StubVectorIndex([]), 'memory'),
     scrape: options.scrape,
     avatarStore: options.avatarStore,
@@ -165,6 +172,18 @@ function stubClassifier(probabilities: Record<string, number>): ClassifierClient
         probabilities: Object.fromEntries(asked.map((name) => [name, probabilities[name] ?? 0])),
         model: 'laya:en',
       };
+    },
+  };
+}
+
+/** SuggestClient stub returning a fixed vocabulary proposal. */
+function stubSuggest(proposal: {
+  tags: { name: string; description?: string }[];
+  categories: { path: string[]; description?: string }[];
+}): SuggestClient {
+  return {
+    async suggest() {
+      return proposal;
     },
   };
 }
@@ -676,25 +695,71 @@ describe('import API', () => {
   });
 });
 
-describe('review API', () => {
-  test('returns an empty below-threshold list when nothing was classified', async () => {
-    const { app } = makeApp();
-    const candidates = await app.request('/api/review/candidates');
-    expect(((await candidates.json()) as unknown[]).length).toBe(0);
-  });
-
-  test('accepting a candidate writes a user-sourced assignment', async () => {
-    const { db, app } = makeApp();
-    const bookmark = createBookmark(db, { url: 'https://review.test', title: 'Review me' });
-    const tag = createTag(db, { name: 'review-tag' });
+describe('vocabulary suggest API', () => {
+  test('returns AI suggestions when a suggest client is configured', async () => {
+    const { app } = makeApp({
+      suggest: stubSuggest({
+        tags: [{ name: 'ai-tag' }],
+        categories: [{ path: ['ai', 'category'] }],
+      }),
+    });
 
     const response = await app.request(
-      '/api/review/candidates/accept',
-      jsonRequest({ bookmarkId: bookmark.id, tagId: tag.id }),
+      '/api/vocabulary/suggest',
+      jsonRequest({ devProfile: { source: 'questionnaire', focus: 'ai' } }),
     );
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { tags: { tagId: string; source: string }[] };
-    expect(body.tags.some((t) => t.tagId === tag.id && t.source === 'user')).toBe(true);
+    const body = (await response.json()) as {
+      available: boolean;
+      tags: { name: string }[];
+      categories: { path: string[] }[];
+    };
+    expect(body.available).toBe(true);
+    expect(body.tags).toEqual([{ name: 'ai-tag' }]);
+    expect(body.categories).toEqual([{ path: ['ai', 'category'] }]);
+  });
+
+  test('degrades to available:false when no suggest client is configured', async () => {
+    const { app } = makeApp();
+
+    const response = await app.request(
+      '/api/vocabulary/suggest',
+      jsonRequest({ devProfile: { source: 'questionnaire' } }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      available: boolean;
+      tags: unknown[];
+      categories: unknown[];
+    };
+    expect(body.available).toBe(false);
+    expect(body.tags).toEqual([]);
+    expect(body.categories).toEqual([]);
+  });
+});
+
+describe('vocabulary bulk API', () => {
+  test('creates tags and categories from a wizard batch', async () => {
+    const { app } = makeApp();
+
+    const response = await app.request(
+      '/api/vocabulary/bulk',
+      jsonRequest({
+        tags: [{ name: 'bulk-tag' }],
+        categories: [{ path: ['bulk', 'category'] }],
+      }),
+    );
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      tagsCreated: number;
+      categoriesCreated: number;
+      tags: { name: string }[];
+      categories: { name: string }[];
+    };
+    expect(body.tagsCreated).toBe(1);
+    expect(body.categoriesCreated).toBe(2);
+    expect(body.tags.map((tag) => tag.name)).toEqual(['bulk-tag']);
+    expect(body.categories.map((category) => category.name)).toEqual(['category']);
   });
 });
 
@@ -721,6 +786,40 @@ describe('profile API', () => {
     expect(body.name).toBe('Leo');
     // People type "@user"; the API contract promises the bare username.
     expect(body.githubUsername).toBe('leonistor');
+  });
+
+  test('patches the developer profile and setup-completed timestamp', async () => {
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/profile',
+      jsonRequest(
+        {
+          devProfile: {
+            source: 'questionnaire',
+            focus: 'web',
+            languages: ['typescript'],
+            frameworks: ['react'],
+            tools: ['neovim'],
+            experience: 'senior',
+            notes: 'hello',
+          },
+          setupCompletedAt: 1_234_567_890,
+        },
+        'PATCH',
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Profile;
+    expect(body.devProfile).toEqual({
+      source: 'questionnaire',
+      focus: 'web',
+      languages: ['typescript'],
+      frameworks: ['react'],
+      tools: ['neovim'],
+      experience: 'senior',
+      notes: 'hello',
+    });
+    expect(body.setupCompletedAt).toBe(1_234_567_890);
   });
 
   test('accepts an avatar upload through the injected store', async () => {

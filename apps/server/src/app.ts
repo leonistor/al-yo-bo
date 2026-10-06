@@ -6,6 +6,11 @@ import {
   type ProfilePatchInput,
 } from '@al-yo-bo/core';
 import {
+  suggestedCategorySchema,
+  suggestedTagSchema,
+  type SuggestInput,
+} from '@al-yo-bo/ai';
+import {
   isUuid,
   type BookmarkListStatus,
   type BookmarkSort,
@@ -249,6 +254,54 @@ function optionalSortOrder(body: Record<string, unknown>): string | undefined {
   return value.trim();
 }
 
+const devProfileSchema = z.object({
+  source: z.string().min(1),
+  focus: z.string().optional(),
+  languages: z.array(z.string()).optional(),
+  frameworks: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+  experience: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+/**
+ * Validates the wizard questionnaire payload used by both the PATCH profile
+ * route and the suggest route.
+ */
+function parseDevProfileBody(body: Record<string, unknown>): SuggestInput['devProfile'] | null {
+  const value = body['devProfile'];
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError('"devProfile" must be an object or null');
+  }
+  const parsed = devProfileSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ValidationError('"devProfile" has an invalid shape');
+  }
+  return parsed.data;
+}
+
+const bulkVocabularySchema = z.object({
+  tags: z.array(suggestedTagSchema).optional(),
+  categories: z.array(suggestedCategorySchema).optional(),
+});
+
+function parseBulkVocabularyBody(body: Record<string, unknown>): {
+  tags: { name: string; description?: string }[];
+  categories: { path: string[]; description?: string }[];
+} {
+  const parsed = bulkVocabularySchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('"tags" and "categories" must match the vocabulary suggestion shape');
+  }
+  return {
+    tags: parsed.data.tags ?? [],
+    categories: parsed.data.categories ?? [],
+  };
+}
+
 /**
  * Validates an `:id`-style path parameter before it reaches core: non-UUID
  * strings would otherwise surface as a 500 from deep inside the UUID codec.
@@ -454,6 +507,21 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
       return c.body(null, 204);
     })
 
+    .post('/api/vocabulary/suggest', jsonBody, async (c) => {
+      const body = c.req.valid('json');
+      const devProfile = parseDevProfileBody(body);
+      if (devProfile === null) {
+        throw new ValidationError('"devProfile" is required');
+      }
+      return c.json(await core.setup.suggest(devProfile));
+    })
+
+    .post('/api/vocabulary/bulk', jsonBody, async (c) => {
+      const body = c.req.valid('json');
+      const input = parseBulkVocabularyBody(body);
+      return c.json(core.vocabulary.createBulk(input), 201);
+    })
+
     .get('/api/aggregates', (c) => c.json(core.search.aggregates()))
 
     // Local-network interfaces so clients can render LAN URLs themselves (they
@@ -471,6 +539,16 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
       }
       if ('githubUsername' in body) {
         patch.githubUsername = optionalString(body, 'githubUsername');
+      }
+      if ('devProfile' in body) {
+        patch.devProfile = parseDevProfileBody(body);
+      }
+      if ('setupCompletedAt' in body) {
+        const value = body['setupCompletedAt'];
+        if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+          throw new ValidationError('"setupCompletedAt" must be a number or null');
+        }
+        patch.setupCompletedAt = value === null ? null : (value as number);
       }
       return c.json(core.profile.update(patch));
     })
@@ -494,15 +572,6 @@ export function createApp(core: Core, config: ServerConfig, hub: EventHub) {
     })
 
     .delete('/api/profile/avatar', async (c) => c.json(await core.profile.clearAvatar()))
-
-    .get('/api/review/candidates', (c) => c.json(core.review.listCandidates()))
-
-    .post('/api/review/candidates/accept', jsonBody, async (c) => {
-      const body = c.req.valid('json');
-      const bookmarkId = requiredUuid(body, 'bookmarkId');
-      const tagId = requiredUuid(body, 'tagId');
-      return c.json(await core.review.acceptCandidate(bookmarkId, tagId));
-    })
 
     .post('/api/import/preview', async (c) =>
       c.json(await core.import.preview(await readImportText(c))),

@@ -62,7 +62,7 @@ const stubHealth = {
 };
 
 function stubAiLayer(): CoreAi {
-  return { embeddings: null, classifier: null, extract: null, health: stubHealth };
+  return { embeddings: null, classifier: null, extract: null, suggest: null, health: stubHealth };
 }
 
 interface McpAppOptions {
