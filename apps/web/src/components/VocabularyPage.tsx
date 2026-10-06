@@ -792,6 +792,8 @@ function NewChildForm({
     [name, createMutation, onDone],
   );
 
+  const handleCreate = useCallback(() => createMutation.mutate(), [createMutation]);
+
   return (
     <div className="ml-6 flex items-center gap-2">
       <Input
@@ -806,7 +808,7 @@ function NewChildForm({
       <Button
         size="sm"
         disabled={name.trim() === '' || createMutation.isPending}
-        onClick={() => createMutation.mutate()}
+        onClick={handleCreate}
       >
         Add
       </Button>
@@ -916,6 +918,8 @@ function CategoryPanel({ tree, aggregates, loading, onChanged }: CategoryPanelPr
 
   const endDrag = useCallback(() => setDragId(null), []);
 
+  const clearNewChildParent = useCallback(() => setNewChildParent(null), []);
+
   const onDropNode = useCallback(
     (drag: string, target: string, position: 'before' | 'after' | 'into') => {
       handleDrop(tree, drag, target, position);
@@ -929,6 +933,19 @@ function CategoryPanel({ tree, aggregates, loading, onChanged }: CategoryPanelPr
     }
     endDrag();
   }, [dragId, handleDropToRoot, tree, endDrag]);
+
+  const handleRootDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleRootDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      onDropToRootNode();
+    },
+    [onDropToRootNode],
+  );
 
   // Recursive renderer as a named in-component function: a useCallback cannot
   // reference itself during initialization (react/immutability).
@@ -951,7 +968,7 @@ function CategoryPanel({ tree, aggregates, loading, onChanged }: CategoryPanelPr
         {newChildParent === node.id && (
           <NewChildForm
             parent={node}
-            onDone={() => setNewChildParent(null)}
+            onDone={clearNewChildParent}
             onChanged={onChanged}
             queryClient={queryClient}
           />
@@ -1009,14 +1026,8 @@ function CategoryPanel({ tree, aggregates, loading, onChanged }: CategoryPanelPr
               div — drag targets are not interactive controls. */}
           {dragId !== null && (
             <div
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                onDropToRootNode();
-              }}
+              onDragOver={handleRootDragOver}
+              onDrop={handleRootDrop}
               className="flex items-center justify-center rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted-foreground"
             >
               Drop to move to top level
