@@ -11,9 +11,24 @@ export type SearchMode = 'keyword' | 'semantic' | 'hybrid';
 export type BookmarkSort = 'created_at' | 'updated_at' | 'title';
 
 /**
- * The single user's profile — identity only. The profile is the person
- * (MODEL.md principle 8); the row is a singleton (fixed sentinel id) and never
- * deletable.
+ * Wizard questionnaire captured at setup. Fields are loose but typed: the UI
+ * populates them from chip/free-text inputs and the AI suggest layer uses them
+ * to seed relevant vocabulary.
+ */
+export interface DevProfile {
+  source: string;
+  focus?: string;
+  languages?: string[];
+  frameworks?: string[];
+  tools?: string[];
+  experience?: string;
+  notes?: string;
+}
+
+/**
+ * The single user's profile — identity plus setup state. The profile is the
+ * person (MODEL.md principle 8); the row is a singleton (fixed sentinel id)
+ * and never deletable.
  */
 export interface Profile {
   id: string;
@@ -21,6 +36,10 @@ export interface Profile {
   githubUsername: string | null;
   /** Avatar file name under `<DATA_DIR>/profile/`, when one was uploaded. */
   avatarPath: string | null;
+  /** Wizard questionnaire, stored as JSON in SQLite. */
+  devProfile: DevProfile | null;
+  /** NULL until the setup wizard is completed. */
+  setupCompletedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -171,16 +190,6 @@ export interface ImportedBookmark {
   priority: number | null;
   /** Tag names declared in the source (frontmatter, etc.). */
   tags: string[];
-}
-
-export interface ReviewCandidate {
-  bookmarkId: string;
-  bookmarkUrl: string;
-  bookmarkTitle: string | null;
-  tagId: string;
-  tagName: string;
-  probability: number;
-  runId: string;
 }
 
 export interface ImportReport {

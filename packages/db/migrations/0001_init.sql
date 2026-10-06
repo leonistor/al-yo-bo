@@ -10,6 +10,8 @@ CREATE TABLE profile (
   name              TEXT,
   github_username   TEXT,
   avatar_path       TEXT,
+  dev_profile       TEXT,                         -- JSON: wizard questionnaire
+  setup_completed_at INTEGER,                     -- NULL = setup wizard pending
   created_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 ) STRICT;
@@ -72,8 +74,11 @@ CREATE TABLE tags (
 
 CREATE UNIQUE INDEX tags_name_unique ON tags(name);
 
--- Classification evidence — insert-only, immutable without exception
--- (MODEL.md principles 4-5). No UPDATE path exists in packages/db.
+-- Classification provenance anchor. A run records that the classifier was
+-- consulted for a bookmark; the effective assignments it produced live in
+-- bookmark_tags (source = 'classifier', run_id set). No per-result or unknown-
+-- label tables: the background classifier never creates vocabulary, and only
+-- user-confirmed actions change the effective assignment set (MODEL.md).
 CREATE TABLE classification_runs (
   id                 BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
   bookmark_id        BLOB NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE
@@ -86,35 +91,6 @@ CREATE TABLE classification_runs (
 ) STRICT;
 
 CREATE INDEX classification_runs_bookmark ON classification_runs(bookmark_id, created_at);
-
-CREATE TABLE classification_results (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
-  run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
-                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
-  tag_id      BLOB NOT NULL REFERENCES tags(id) ON DELETE CASCADE
-                   CHECK (typeof(tag_id) = 'blob' AND length(tag_id) = 16),
-  probability REAL NOT NULL,
-  rank        INTEGER,
-  selected    INTEGER NOT NULL DEFAULT 0,         -- 1 = chosen by the assignment policy
-  raw_label   TEXT,                               -- original classifier label, pre-mapping
-  UNIQUE (run_id, tag_id)
-) STRICT;
-
-CREATE INDEX classification_results_tag ON classification_results(tag_id);
-
--- Durable evidence for classifier labels that match no candidate tag. There is
--- deliberately no FK to tags (the label matched nothing) and no uniqueness
--- constraint — each occurrence is its own evidence row (MODEL.md).
-CREATE TABLE unknown_classification_labels (
-  id          BLOB PRIMARY KEY NOT NULL CHECK (typeof(id) = 'blob' AND length(id) = 16),
-  run_id      BLOB NOT NULL REFERENCES classification_runs(id) ON DELETE CASCADE
-                   CHECK (typeof(run_id) = 'blob' AND length(run_id) = 16),
-  raw_label   TEXT NOT NULL,
-  probability REAL NOT NULL,
-  created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
-) STRICT;
-
-CREATE INDEX unknown_classification_labels_run ON unknown_classification_labels(run_id);
 
 -- The effective assignment shown in the UI (MODEL.md principle 4: separate
 -- evidence from effective state). User/import rows are never overwritten by
@@ -195,10 +171,6 @@ END;
 
 CREATE TRIGGER classification_runs_force_created AFTER INSERT ON classification_runs BEGIN
   UPDATE classification_runs SET created_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER unknown_classification_labels_force_created AFTER INSERT ON unknown_classification_labels BEGIN
-  UPDATE unknown_classification_labels SET created_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER bookmark_tags_force_created AFTER INSERT ON bookmark_tags BEGIN

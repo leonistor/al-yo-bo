@@ -8,10 +8,8 @@ import {
   countBookmarks,
   createBookmark,
   createCategory,
-  createClassificationResult,
   createClassificationRun,
   createTag,
-  createUnknownClassificationLabel,
   deleteBookmark,
   deleteCategory,
   candidatesForBookmark,
@@ -30,7 +28,6 @@ import {
   getTagByName,
   keywordSearch,
   listActiveTags,
-  listBelowThresholdCandidates,
   listBookmarkIdsMissingContent,
   listBookmarkIdsMissingEmbeddings,
   listBookmarks,
@@ -39,7 +36,6 @@ import {
   listCategorySubtreeIds,
   listEmbeddingModelMismatches,
   listTags,
-  listUnknownClassificationLabels,
   loadSeedFixture,
   moveCategory,
   newIdBytes,
@@ -50,6 +46,7 @@ import {
   setTagStatus,
   setupDatabase,
   updateBookmark,
+  updateProfile,
   upsertBookmarkByUrl,
   upsertEmbedding,
   wipeContent,
@@ -86,14 +83,16 @@ describe('schema & triggers', () => {
       'bookmarks',
       'tags',
       'classification_runs',
-      'classification_results',
-      'unknown_classification_labels',
       'bookmark_tags',
       'bookmark_embeddings',
       'bookmark_fts',
     ]) {
       expect(tables).toContain(name);
     }
+    // Dropped evidence tables stay out of the regenerated schema.
+    expect(tables).not.toContain('classification_results');
+    expect(tables).not.toContain('unknown_classification_labels');
+
     // The v2 no-scoping indexes exist; no dataset/section artifacts remain.
     const indexes = db
       .query<{ name: string }, []>(
@@ -120,6 +119,8 @@ describe('schema & triggers', () => {
     expect(profile.name).toBeNull();
     expect(profile.githubUsername).toBeNull();
     expect(profile.avatarPath).toBeNull();
+    expect(profile.devProfile).toBeNull();
+    expect(profile.setupCompletedAt).toBeNull();
     expect(profile.createdAt).toBeGreaterThan(1_000_000_000_000);
   });
 
@@ -543,152 +544,125 @@ describe('classification candidate set', () => {
   });
 });
 
-describe('review queue', () => {
+describe('classifier retraction', () => {
   let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
-  test('excludes already-assigned pairs and keeps only the latest run per pair', () => {
-    const bookmark = createBookmark(db, { url: 'https://review.test/page' });
-    const tag = createTag(db, { name: 'reviewable' });
+  function seedTagsAndBookmark(): { bookmark: ReturnType<typeof createBookmark>; keep: ReturnType<typeof createTag>; drop: ReturnType<typeof createTag> } {
+    const bookmark = createBookmark(db, { url: 'https://retract.test' });
+    const keep = createTag(db, { name: 'keep' });
+    const drop = createTag(db, { name: 'drop' });
+    return { bookmark, keep, drop };
+  }
 
-    const olderRun = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'test' });
-    createClassificationResult(db, { runId: olderRun, tagId: tag.id, probability: 0.5 });
-    const newerRun = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'test' });
-    createClassificationResult(db, { runId: newerRun, tagId: tag.id, probability: 0.2 });
-    // The insert trigger stamps both runs with the same millisecond; pin distinct
-    // times so "latest" is deterministic rather than decided by the id tiebreak.
-    db.query('UPDATE classification_runs SET created_at = ? WHERE id = ?').run(
-      1_000,
-      uuidToBytes(olderRun),
-    );
-    db.query('UPDATE classification_runs SET created_at = ? WHERE id = ?').run(
-      2_000,
-      uuidToBytes(newerRun),
-    );
+  test('deletes stale classifier-sourced bookmark_tags rows', () => {
+    const { bookmark, keep, drop } = seedTagsAndBookmark();
 
-    const candidates = listBelowThresholdCandidates(db, 0.7);
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.probability).toBe(0.2);
-    expect(candidates[0]?.runId).toBe(newerRun);
+    assignTag(db, { bookmarkId: bookmark.id, tagId: keep.id, source: 'classifier', confidence: 0.9 });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: drop.id, source: 'classifier', confidence: 0.9 });
 
-    // Accepting writes the assignment; the pair must leave the queue.
-    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
-    expect(listBelowThresholdCandidates(db, 0.7)).toEqual([]);
-  });
-});
-
-describe('classification evidence immutability', () => {
-  let db: Database;
-  beforeEach(() => {
-    db = freshDb();
-  });
-
-  test('re-running classification appends evidence; prior rows keep their content', () => {
-    const bookmark = createBookmark(db, { url: 'https://immutable.test' });
-    const tag = createTag(db, { name: 'evidenced' });
-
-    const run1 = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
-    createClassificationResult(db, {
-      runId: run1,
-      tagId: tag.id,
-      probability: 0.55,
-      selected: true,
-      rawLabel: 'evidenced',
-    });
-    assignTag(db, {
+    const { retracted } = reconcileClassifierAssignments(db, {
       bookmarkId: bookmark.id,
-      tagId: tag.id,
-      source: 'classifier',
-      runId: run1,
-      confidence: 0.55,
+      qualifiedTagIds: [keep.id],
     });
-    const rowsBefore = db
-      .query<{ probability: number; selected: number; raw_label: string | null }, []>(
-        'SELECT probability, selected, raw_label FROM classification_results',
-      )
-      .all();
 
-    // A second pass with nothing qualifying retracts the effective assignment
-    // but appends a new run — evidence is never rewritten or deleted.
-    const run2 = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
-    createClassificationResult(db, { runId: run2, tagId: tag.id, probability: 0.6 });
+    expect(retracted).toBe(1);
+    expect(getBookmarkTags(db, bookmark.id).map((t) => t.name)).toEqual(['keep']);
+  });
+
+  test('leaves user and import rows untouched', () => {
+    const { bookmark, keep, drop } = seedTagsAndBookmark();
+
+    assignTag(db, { bookmarkId: bookmark.id, tagId: keep.id, source: 'import' });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: drop.id, source: 'user' });
+
     const { retracted } = reconcileClassifierAssignments(db, {
       bookmarkId: bookmark.id,
       qualifiedTagIds: [],
-      runIds: [run2],
     });
-    expect(retracted).toBe(1);
-    expect(getBookmarkTags(db, bookmark.id)).toEqual([]);
 
-    const rowsAfter = db
-      .query<{ probability: number; selected: number; raw_label: string | null }, []>(
-        // No created_at on this table; UUIDv7 ids are time-ordered.
-        'SELECT probability, selected, raw_label FROM classification_results ORDER BY id',
-      )
-      .all();
-    expect(rowsAfter).toHaveLength(2);
-    // Probability and raw label are untouched; only the policy-derived
-    // `selected` bit of the stale row was reconciled (MODEL.md principle 4).
-    expect(rowsAfter[0]).toEqual({ ...rowsBefore[0]!, selected: 0 });
-    expect(rowsAfter[1]).toEqual({ probability: 0.6, selected: 0, raw_label: null });
+    expect(retracted).toBe(0);
+    const names = getBookmarkTags(db, bookmark.id).map((t) => t.name).toSorted();
+    expect(names).toEqual(['drop', 'keep']);
   });
 
-  test('retraction leaves user/import rows untouched and reconciles selected only', () => {
-    const bookmark = createBookmark(db, { url: 'https://retract.test' });
-    const tag = createTag(db, { name: 'keep-me' });
-    assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'import' });
+  test('deletes all classifier rows when qualifiedTagIds is empty', () => {
+    const { bookmark, keep, drop } = seedTagsAndBookmark();
 
-    const run = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
-    createClassificationResult(db, { runId: run, tagId: tag.id, probability: 0.9, selected: true });
-    assignTag(db, {
-      bookmarkId: bookmark.id,
-      tagId: tag.id,
-      source: 'classifier',
-      runId: run,
-      confidence: 0.9,
-    });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: keep.id, source: 'classifier', confidence: 0.9 });
+    assignTag(db, { bookmarkId: bookmark.id, tagId: drop.id, source: 'classifier', confidence: 0.9 });
 
-    reconcileClassifierAssignments(db, {
+    const { retracted } = reconcileClassifierAssignments(db, {
       bookmarkId: bookmark.id,
       qualifiedTagIds: [],
-      runIds: [],
     });
 
-    // The import row wins; only the classifier-sourced row was retracted.
+    expect(retracted).toBe(2);
+    expect(getBookmarkTags(db, bookmark.id)).toEqual([]);
+  });
+
+  test('user/import rows win when a classifier row overlaps', () => {
+    const { bookmark, keep } = seedTagsAndBookmark();
+
+    assignTag(db, { bookmarkId: bookmark.id, tagId: keep.id, source: 'user' });
+    // The classifier also thought it qualified, but the user row already won.
+    assignTag(db, { bookmarkId: bookmark.id, tagId: keep.id, source: 'classifier', confidence: 0.9 });
+
+    const { retracted } = reconcileClassifierAssignments(db, {
+      bookmarkId: bookmark.id,
+      qualifiedTagIds: [],
+    });
+
+    expect(retracted).toBe(0);
     const [assignment] = getBookmarkTags(db, bookmark.id);
-    expect(assignment?.source).toBe('import');
+    expect(assignment?.source).toBe('user');
   });
 });
 
-describe('unknown classification labels', () => {
+describe('profile setup fields', () => {
   let db: Database;
   beforeEach(() => {
     db = freshDb();
   });
 
-  test('persists immutable evidence rows with server timestamps', () => {
-    const bookmark = createBookmark(db, { url: 'https://ucl.test' });
-    const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+  test('round-trips devProfile JSON and setupCompletedAt', () => {
+    const devProfile = {
+      source: 'wizard',
+      focus: 'web',
+      languages: ['typescript', 'rust'],
+      frameworks: ['react'],
+      tools: ['neovim'],
+      experience: 'senior',
+      notes: 'hello',
+    };
 
-    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.99 });
-    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.4 });
+    const updated = updateProfile(db, { devProfile, setupCompletedAt: 42_000 });
+    expect(updated?.devProfile).toEqual(devProfile);
+    expect(updated?.setupCompletedAt).toBe(42_000);
 
-    const rows = listUnknownClassificationLabels(db, runId);
-    expect(rows).toHaveLength(2); // no uniqueness constraint — each occurrence kept
-    expect(rows[0]).toMatchObject({ rawLabel: 'mystery', probability: 0.99 });
-    expect(rows[1]?.probability).toBe(0.4);
-    expect(rows[0]?.createdAt).toBeGreaterThan(1_000_000_000_000); // trigger forced server time
+    const reloaded = getProfile(db);
+    expect(reloaded?.devProfile).toEqual(devProfile);
+    expect(reloaded?.setupCompletedAt).toBe(42_000);
   });
 
-  test('cascades away with the classification run', () => {
-    const bookmark = createBookmark(db, { url: 'https://ucl-cascade.test' });
-    const runId = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
-    createUnknownClassificationLabel(db, { runId, rawLabel: 'mystery', probability: 0.9 });
+  test('devProfile null clears stored JSON', () => {
+    updateProfile(db, {
+      devProfile: { source: 'wizard', focus: 'web' },
+      setupCompletedAt: 1,
+    });
+    const cleared = updateProfile(db, { devProfile: null });
+    expect(cleared?.devProfile).toBeNull();
+    expect(cleared?.setupCompletedAt).toBe(1);
+  });
 
-    db.query('DELETE FROM classification_runs WHERE id = ?').run(uuidToBytes(runId));
-    expect(listUnknownClassificationLabels(db, runId)).toEqual([]);
+  test('malformed stored dev_profile parses as null', () => {
+    db.query('UPDATE profile SET dev_profile = ? WHERE id = ?').run(
+      'not-json',
+      uuidToBytes('00000000-0000-0000-0000-000000000000'),
+    );
+    expect(getProfile(db)?.devProfile).toBeNull();
   });
 });
 
@@ -929,10 +903,11 @@ describe('seed fixture', () => {
       'Local & self-hosted',
     ]);
 
-    // The fixture owns the profile identity.
+    // The fixture owns the profile identity and marks setup complete.
     const profile = getProfile(db);
     expect(profile?.name).toBe('octocat');
     expect(profile?.githubUsername).toBe('octocat');
+    expect(profile?.setupCompletedAt).toBeGreaterThan(1_000_000_000_000);
   });
 
   test('re-seeding wipes the workspace first (ported clear semantics, FTS included)', () => {
@@ -952,14 +927,14 @@ describe('seed fixture', () => {
     expect(keywordSearch(db, { q: 'octocat' })).toHaveLength(0);
   });
 
-  test('wipeContent removes every content row but keeps the profile and evidence integrity', () => {
+  test('wipeContent removes every content row but keeps the profile and classification_runs integrity', () => {
     const db = freshDb();
     seedDatabase(db, loadSeedFixture(OCTOCAT_SEED_PATH));
     const bookmark = listBookmarks(db).items[0]!;
     const tag = createTag(db, { name: 'wipe-tag' });
     assignTag(db, { bookmarkId: bookmark.id, tagId: tag.id, source: 'user' });
-    const run = createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
-    createClassificationResult(db, { runId: run, tagId: tag.id, probability: 0.9 });
+    createClassificationRun(db, { bookmarkId: bookmark.id, classifier: 'ollaya' });
+    expect(db.query('SELECT COUNT(*) AS n FROM classification_runs').get()).toEqual({ n: 1 });
     upsertEmbedding(db, {
       bookmarkId: bookmark.id,
       model: 'test-model',
@@ -974,12 +949,12 @@ describe('seed fixture', () => {
     expect(getAggregates(db)).toEqual({ total: 0, invalidCount: 0, categories: [], tags: [] });
     expect(keywordSearch(db, { q: 'github' })).toHaveLength(0);
     expect(db.query('SELECT COUNT(*) AS n FROM classification_runs').get()).toEqual({ n: 0 });
-    expect(db.query('SELECT COUNT(*) AS n FROM classification_results').get()).toEqual({ n: 0 });
     expect(db.query('SELECT COUNT(*) AS n FROM bookmark_embeddings').get()).toEqual({ n: 0 });
     expect(db.query('SELECT COUNT(*) AS n FROM bookmark_tags').get()).toEqual({ n: 0 });
 
     // The profile is the person — never wiped (MODEL.md principle 8).
     expect(getProfile(db)?.name).toBe('octocat');
+    expect(getProfile(db)?.setupCompletedAt).toBeGreaterThan(1_000_000_000_000);
   });
 
   test('reset: false merges by URL instead of wiping', () => {

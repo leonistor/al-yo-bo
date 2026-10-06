@@ -144,6 +144,10 @@ export function seedDatabase(
       });
     }
 
+    // Seed marks setup complete unconditionally; the setup wizard is not
+    // replayed after a fixture load.
+    updateProfile(db, { setupCompletedAt: Date.now() });
+
     const categoriesBefore = countCategories(db);
     const walkCategories = (nodes: SeedCategoryNode[], parentId: string | null): void => {
       for (const node of nodes) {

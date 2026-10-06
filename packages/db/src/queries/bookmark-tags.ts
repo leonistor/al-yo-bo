@@ -22,7 +22,7 @@ export interface AssignTagInput {
 /**
  * Upserts an effective assignment. User and import rows win (ARCHITECTURE §7
  * "User rows win"): classifier-sourced assignments never overwrite them, and
- * classifier re-runs never retract them (reconcileClassifierAssignments only
+ * classifier re-runs never retract them (`reconcileClassifierAssignments` only
  * deletes `source = 'classifier'` rows).
  */
 export function assignTag(db: Database, input: AssignTagInput): void {

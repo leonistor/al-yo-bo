@@ -14,5 +14,4 @@ export * from './queries/categories.ts';
 export * from './queries/classification.ts';
 export * from './queries/embeddings.ts';
 export * from './queries/profile.ts';
-export * from './queries/review.ts';
 export * from './queries/tags.ts';
