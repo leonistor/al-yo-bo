@@ -5,10 +5,10 @@ import type {
   BookmarkWithTags,
   Category,
   CategoryNode,
+  DevProfile,
   ImportedBookmark,
   ImportReport,
   Profile,
-  ReviewCandidate,
   SearchMode,
   SearchResponse,
   Tag,
@@ -107,10 +107,12 @@ export function fetchProfile(): Promise<Profile | null> {
   });
 }
 
-/** Partial update of the singleton profile. Only name/githubUsername are exposed to the web app. */
+/** Partial update of the singleton profile. */
 export function updateProfile(patch: {
   name?: string | null;
   githubUsername?: string | null;
+  devProfile?: DevProfile | null;
+  setupCompletedAt?: number | null;
 }): Promise<Profile> {
   return api.api.profile
     .$patch({ json: patch })
@@ -183,13 +185,54 @@ export function fetchTags(): Promise<Tag[]> {
   });
 }
 
-export function fetchReviewCandidates(): Promise<ReviewCandidate[]> {
-  return api.api.review.candidates.$get().then(async (response) => {
-    if (!response.ok) {
-      throw await toError(response);
-    }
-    return response.json();
-  });
+export interface SuggestedTag {
+  name: string;
+  description?: string;
+}
+
+export interface SuggestedCategory {
+  path: string[];
+  description?: string;
+}
+
+export interface VocabularySuggestionResponse {
+  available: boolean;
+  tags: SuggestedTag[];
+  categories: SuggestedCategory[];
+}
+
+export interface BulkVocabularyResponse {
+  tagsCreated: number;
+  categoriesCreated: number;
+  tags: Tag[];
+  categories: Category[];
+}
+
+/** Asks the AI layer for tag/category suggestions derived from the dev profile. */
+export function suggestVocabulary(devProfile: DevProfile): Promise<VocabularySuggestionResponse> {
+  return api.api.vocabulary.suggest
+    .$post({ json: { devProfile } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
+}
+
+/** Creates the wizard-confirmed vocabulary in one transaction. */
+export function createBulkVocabulary(input: {
+  tags?: SuggestedTag[];
+  categories?: SuggestedCategory[];
+}): Promise<BulkVocabularyResponse> {
+  return api.api.vocabulary.bulk
+    .$post({ json: { tags: input.tags ?? [], categories: input.categories ?? [] } })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw await toError(response);
+      }
+      return response.json();
+    });
 }
 
 export interface ImportPreview {
@@ -453,17 +496,6 @@ export function reorderCategories(parentId: string | null, orderedIds: string[])
 export function deleteCategory(id: string): Promise<{ categories: number; bookmarks: number }> {
   return api.api.categories[':id']
     .$delete({ param: { id } })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw await toError(response);
-      }
-      return response.json();
-    });
-}
-
-export function acceptCandidate(bookmarkId: string, tagId: string): Promise<BookmarkWithTags> {
-  return api.api.review.candidates.accept
-    .$post({ json: { bookmarkId, tagId } })
     .then(async (response) => {
       if (!response.ok) {
         throw await toError(response);

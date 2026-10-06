@@ -12,14 +12,10 @@ export interface SidebarNavModel {
   tags: TagAggregate[];
   /** Total bookmark count. */
   total: number;
-  /** Pending review count. */
-  reviewCount: number;
   /** Number of non-empty tags shown. */
   tagCount: number;
   /** True when the "All" view is active. */
   isAllActive: boolean;
-  /** True when the review queue is active. */
-  isReviewActive: boolean;
   /** True when any category is selected. */
   isCategoryActive: boolean;
   /** True when any tag is selected. */
@@ -35,10 +31,8 @@ export interface SidebarNavModel {
 export function useSidebarNavModel(
   tree: CategoryNode[],
   aggregates: Aggregates | null,
-  view: 'library' | 'review',
   selectedCategoryId: string | null,
   selectedTagId: string | null,
-  reviewCount: number,
 ): SidebarNavModel {
   return useMemo(() => {
     // Sidebar rows show subtree totals: a collapsed branch must still account
@@ -61,12 +55,10 @@ export function useSidebarNavModel(
       categoryCounts: counts,
       tags,
       total: aggregates?.total ?? 0,
-      reviewCount,
       tagCount: tags.length,
-      isAllActive: view === 'library' && !selectedCategoryId && !selectedTagId,
-      isReviewActive: view === 'review',
-      isCategoryActive: view === 'library' && selectedCategoryId !== null,
-      isTagActive: view === 'library' && selectedTagId !== null,
+      isAllActive: !selectedCategoryId && !selectedTagId,
+      isCategoryActive: selectedCategoryId !== null,
+      isTagActive: selectedTagId !== null,
     };
-  }, [tree, aggregates, view, selectedCategoryId, selectedTagId, reviewCount]);
+  }, [tree, aggregates, selectedCategoryId, selectedTagId]);
 }

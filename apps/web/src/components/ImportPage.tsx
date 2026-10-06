@@ -1,4 +1,4 @@
-import type { ImportedBookmark } from '@al-yo-bo/shared';
+import type { CategoryNode, ImportedBookmark, Tag } from '@al-yo-bo/shared';
 import { BookmarkPlusIcon, FileUpIcon, SparklesIcon, WrenchIcon } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -61,9 +61,23 @@ function toRow(bookmark: ImportedBookmark): ImportRowState {
   };
 }
 
+/** All root-to-node paths currently in the category tree. */
+function collectCategoryPaths(nodes: CategoryNode[], prefix: string[] = []): string[] {
+  const paths: string[] = [];
+  for (const node of nodes) {
+    const path = [...prefix, node.name];
+    paths.push(path.join('/'));
+    paths.push(...collectCategoryPaths(node.children, path));
+  }
+  return paths;
+}
+
 interface ImportPageProps {
   /** Called after a successful commit so the library can refetch. */
   onCommitted: () => void;
+  /** Current vocabulary so the preview can flag entries that would be created. */
+  tags: Tag[];
+  categories: CategoryNode[];
 }
 
 /**
@@ -71,7 +85,7 @@ interface ImportPageProps {
  * extraction result on the right. The server is only asked to commit what the
  * user confirms — edits live here until "Import N bookmarks".
  */
-export function ImportPage({ onCommitted }: ImportPageProps) {
+export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
   const [sourceTab, setSourceTab] = useState<'paste' | 'upload'>('paste');
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<Omit<ImportPreview, 'bookmarks'> | null>(null);
@@ -106,6 +120,43 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
     }
     return duplicates;
   }, [included]);
+
+  // Client-side diff: which previewed tag/category paths are not in the current
+  // vocabulary? Normalized by trim + lowercase so the hint is forgiving.
+  const newVocabulary = useMemo(() => {
+    const existingTagNames = new Set(tags.map((tag) => tag.name.trim().toLowerCase()));
+    const existingCategoryPaths = new Set(
+      collectCategoryPaths(categories).map((path) => path.toLowerCase()),
+    );
+
+    const newTagNames = new Set<string>();
+    const newCategoryPaths = new Set<string>();
+
+    for (const row of included) {
+      for (const tag of row.tagsText
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t !== '')) {
+        const normalized = tag.toLowerCase();
+        if (!existingTagNames.has(normalized)) {
+          newTagNames.add(normalized);
+        }
+      }
+
+      const path = row.categoryPath.map((s) => s.trim()).filter((s) => s !== '');
+      if (path.length > 0) {
+        const key = path.join('/').toLowerCase();
+        if (!existingCategoryPaths.has(key)) {
+          newCategoryPaths.add(key);
+        }
+      }
+    }
+
+    return {
+      tags: newTagNames.size,
+      categories: newCategoryPaths.size,
+    };
+  }, [included, tags, categories]);
 
   const clearResults = useCallback(() => {
     setPreview(null);
@@ -310,6 +361,17 @@ export function ImportPage({ onCommitted }: ImportPageProps) {
           {rows.length > 0 && (
             <Badge variant="secondary">
               {included.length} of {rows.length}
+            </Badge>
+          )}
+          {rows.length > 0 && (newVocabulary.tags > 0 || newVocabulary.categories > 0) && (
+            <Badge variant="default">
+              {newVocabulary.tags > 0 &&
+                `${newVocabulary.tags} new tag${newVocabulary.tags === 1 ? '' : 's'}`}
+              {newVocabulary.tags > 0 && newVocabulary.categories > 0 && ' · '}
+              {newVocabulary.categories > 0 &&
+                `${newVocabulary.categories} new categor${
+                  newVocabulary.categories === 1 ? 'y' : 'ies'
+                }`}
             </Badge>
           )}
           {duplicateCount > 0 && (

@@ -4,7 +4,6 @@ import type {
   BookmarkSort,
   BookmarkWithTags,
   CategoryNode,
-  ReviewCandidate,
   SearchMode,
   Tag,
 } from '@al-yo-bo/shared';
@@ -14,13 +13,13 @@ import { toast } from 'sonner';
 import { AddBookmarkSheet } from '@/components/AddBookmarkSheet';
 import { BookmarkDetailSheet } from '@/components/BookmarkDetailSheet';
 import { BookmarkList } from '@/components/BookmarkList';
-import { ClassifierSuggestions } from '@/components/ClassifierSuggestions';
 import { CommandPalette } from '@/components/CommandPalette';
 import { ExportPage } from '@/components/ExportPage';
 import { ImportPage } from '@/components/ImportPage';
 import { ProfilePage } from '@/components/ProfilePage';
 import { ResultsToolbar } from '@/components/ResultsToolbar';
 import { SharePage } from '@/components/SharePage';
+import { SetupPage } from '@/components/SetupPage';
 import { Sidebar, SidebarNav } from '@/components/Sidebar';
 import { SidebarAccountMenu } from '@/components/SidebarAccountMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -28,24 +27,17 @@ import { Topbar } from '@/components/Topbar';
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { VocabularyPage } from '@/components/VocabularyPage';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import {
-  acceptCandidate,
   deleteBookmark,
   fetchAggregates,
   fetchBookmarks,
   fetchCategories,
   fetchProfile,
-  fetchReviewCandidates,
   fetchTags,
 } from '@/lib/client';
 import { navigate, useRoute } from '@/lib/router';
@@ -60,14 +52,12 @@ import { useTheme } from '@/lib/useTheme';
 import { addRecentQuery, getRecentQueries } from '@/lib/recent-queries';
 
 const PAGE_SIZE = 20;
-type View = 'library' | 'review';
 
 // Stable empty fallbacks: passing a fresh [] as a prop would defeat prop-identity
 // memoization in the list components on every render.
 const NO_ITEMS: BookmarkWithTags[] = [];
 const NO_TREE: CategoryNode[] = [];
 const NO_TAGS: Tag[] = [];
-const NO_CANDIDATES: ReviewCandidate[] = [];
 
 interface BookmarkListCrossfadeProps {
   page: number;
@@ -242,7 +232,6 @@ function ChatSurface() {
 
 export function App() {
   const route = useRoute();
-  const [view, setView] = useState<View>('library');
   const [query, setQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -435,10 +424,6 @@ export function App() {
     queryKey: queryKeys.tags,
     queryFn: fetchTags,
   });
-  const candidatesQuery = useQuery({
-    queryKey: queryKeys.candidates,
-    queryFn: fetchReviewCandidates,
-  });
   const profileQuery = useQuery({
     queryKey: queryKeys.profile,
     queryFn: fetchProfile,
@@ -448,7 +433,6 @@ export function App() {
   const profile = profileQuery.data ?? null;
   const tree = categoriesQuery.data ?? NO_TREE;
   const tags = tagsQuery.data ?? NO_TAGS;
-  const candidates = candidatesQuery.data ?? NO_CANDIDATES;
 
   // Generic refresh (toolbar button, new bookmark created): list + counts.
   const reload = useCallback(() => {
@@ -464,30 +448,12 @@ export function App() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
   }, [queryClient]);
 
-  // Deletes also remove a bookmark's review candidates and its tag aggregates.
+  // Deletes also remove a bookmark's tag aggregates.
   const invalidateAfterDelete = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
     void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
     void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.candidates });
   }, [queryClient]);
-
-  // Accepting a candidate assigns the tag and consumes the suggestion.
-  const onAccept = useCallback(
-    async (candidate: ReviewCandidate) => {
-      try {
-        await acceptCandidate(candidate.bookmarkId, candidate.tagId);
-        toast.success('Candidate accepted');
-        void queryClient.invalidateQueries({ queryKey: queryKeys.candidates });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.tags });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks.all });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.aggregates });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to accept candidate');
-      }
-    },
-    [queryClient],
-  );
 
   // Vocabulary edits change tag/category data; status flips (e.g. a tag going
   // deprecated) also affect bookmark lists and aggregates.
@@ -500,7 +466,6 @@ export function App() {
 
   // An import can create bookmarks, categories, and tags at once.
   const onImportCommitted = useCallback(() => {
-    setView('library');
     void queryClient.invalidateQueries();
   }, [queryClient]);
 
@@ -535,11 +500,6 @@ export function App() {
     setPage(0);
   }, []);
 
-  const onSelectView = useCallback((next: View) => {
-    setView(next);
-    navigate('library');
-  }, []);
-
   const onStatusChange = useCallback((next: BookmarkListStatus) => {
     setStatus(next);
     setPage(0);
@@ -565,7 +525,6 @@ export function App() {
   }, []);
 
   const handlePaletteSearch = useCallback((term: string) => {
-    setView('library');
     navigate('library');
     setQuery(term);
     setSearchQuery(term);
@@ -576,7 +535,6 @@ export function App() {
   }, []);
 
   const handleJumpToCategory = useCallback((id: string) => {
-    setView('library');
     navigate('library');
     setQuery('');
     setSearchQuery('');
@@ -586,7 +544,6 @@ export function App() {
   }, []);
 
   const handleJumpToTag = useCallback((id: string) => {
-    setView('library');
     navigate('library');
     setQuery('');
     setSearchQuery('');
@@ -642,7 +599,6 @@ export function App() {
     void confirmDelete();
   }, [confirmDelete]);
 
-  const reviewCount = candidates.length;
   const total = bookmarksQuery.data?.total ?? 0;
   const filtered =
     searchQuery !== '' || categoryId !== null || tagId !== null || status !== 'active';
@@ -652,15 +608,10 @@ export function App() {
     aggregates,
     profile,
     theme,
-    view,
     selectedCategoryId: categoryId,
     selectedTagId: tagId,
-    reviewCount,
     openSections,
     onSetOpenSection: setSidebarOpenSection,
-    // Both library and review live under the library route; picking either
-    // from the nav must leave the import page.
-    onSelectView,
     onSelectCategory,
     onSelectTag,
     onThemeChange: setTheme,
@@ -670,6 +621,17 @@ export function App() {
     onNavigateShare: goShare,
     onNavigateProfile: goProfile,
   };
+
+  if (profileQuery.isPending) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-background text-foreground">
+        <Spinner className="size-8" />
+      </div>
+    );
+  }
+  if (profile && profile.setupCompletedAt === null) {
+    return <SetupPage profile={profile} />;
+  }
 
   return (
     <div className="flex h-dvh bg-background text-foreground">
@@ -699,7 +661,11 @@ export function App() {
 
         <main className="flex min-h-0 flex-1 gap-3 p-4">
           {route === 'import' ? (
-            <ImportPage onCommitted={onImportCommitted} />
+            <ImportPage
+              onCommitted={onImportCommitted}
+              tags={tags}
+              categories={tree}
+            />
           ) : route === 'export' ? (
             <ExportPage categories={tree} tags={tags} />
           ) : route === 'vocabulary' ? (
@@ -726,78 +692,66 @@ export function App() {
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col gap-3">
-                {view === 'library' ? (
-                  <>
-                    <ResultsToolbar
-                      total={total}
-                      loading={bookmarksQuery.isFetching}
-                      status={status}
-                      invalidCount={aggregates?.invalidCount ?? 0}
-                      sort={sort}
-                      direction={direction}
-                      layout={layout}
-                      onStatusChange={onStatusChange}
-                      onSortChange={onSortChange}
-                      onDirectionChange={onDirectionChange}
-                      onLayoutChange={setLayout}
-                      onRefresh={reload}
-                    />
+                <ResultsToolbar
+                  total={total}
+                  loading={bookmarksQuery.isFetching}
+                  status={status}
+                  invalidCount={aggregates?.invalidCount ?? 0}
+                  sort={sort}
+                  direction={direction}
+                  layout={layout}
+                  onStatusChange={onStatusChange}
+                  onSortChange={onSortChange}
+                  onDirectionChange={onDirectionChange}
+                  onLayoutChange={setLayout}
+                  onRefresh={reload}
+                />
 
-                    <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
-                      <BookmarkListCrossfade
-                        page={page}
-                        listKey={listKey}
-                        isPlaceholderData={bookmarksQuery.isPlaceholderData}
-                        items={bookmarksQuery.data?.items ?? NO_ITEMS}
-                        // Skeleton only until the first page arrives; keepPreviousData
-                        // keeps the outgoing page visible during pagination/refetch.
-                        loading={bookmarksQuery.isPending}
-                        layout={layout}
-                        filtered={filtered}
-                        onOpen={setSelected}
-                        onDelete={setPendingDelete}
-                        onAdd={openAdd}
-                        onImport={goImport}
-                        onClearFilters={clearFilters}
-                        selectedTagId={tagId}
-                        onTagClick={onTagClick}
-                      />
+                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
+                  <BookmarkListCrossfade
+                    page={page}
+                    listKey={listKey}
+                    isPlaceholderData={bookmarksQuery.isPlaceholderData}
+                    items={bookmarksQuery.data?.items ?? NO_ITEMS}
+                    // Skeleton only until the first page arrives; keepPreviousData
+                    // keeps the outgoing page visible during pagination/refetch.
+                    loading={bookmarksQuery.isPending}
+                    layout={layout}
+                    filtered={filtered}
+                    onOpen={setSelected}
+                    onDelete={setPendingDelete}
+                    onAdd={openAdd}
+                    onImport={goImport}
+                    onClearFilters={clearFilters}
+                    selectedTagId={tagId}
+                    onTagClick={onTagClick}
+                  />
+                </div>
+
+                {total > PAGE_SIZE && (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>
+                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of{' '}
+                      {total}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page === 0}
+                        onClick={goPrevPage}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!bookmarksQuery.data?.pagination.hasMore}
+                        onClick={goNextPage}
+                      >
+                        Next
+                      </Button>
                     </div>
-
-                    {total > PAGE_SIZE && (
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>
-                          {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of{' '}
-                          {total}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={page === 0}
-                            onClick={goPrevPage}
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={!bookmarksQuery.data?.pagination.hasMore}
-                            onClick={goNextPage}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="min-h-0 flex-1 overflow-auto">
-                    <ClassifierSuggestions
-                      candidates={candidates}
-                      loading={candidatesQuery.isPending}
-                      onAccept={onAccept}
-                    />
                   </div>
                 )}
               </div>

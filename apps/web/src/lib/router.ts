@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 /**
  * Minimal hash router — no dependency.
  * `#/` (or no hash) is the library shell; `#/import`, `#/export`, `#/vocabulary`, `#/share`, and
- * `#/profile` are in-shell pages. The review queue stays an in-app view under the library route.
+ * `#/profile` are in-shell pages.
  */
 export type Route = 'library' | 'import' | 'export' | 'vocabulary' | 'share' | 'profile';
 

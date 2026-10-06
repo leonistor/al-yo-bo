@@ -16,7 +16,6 @@ export const queryKeys = {
   profile: ['profile'] as const,
   categories: ['categories'] as const,
   tags: ['tags'] as const,
-  candidates: ['review-candidates'] as const,
   lan: ['lan'] as const,
   health: ['health'] as const,
 };

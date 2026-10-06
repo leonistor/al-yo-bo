@@ -9,7 +9,6 @@ import {
   LibraryBigIcon,
   PanelLeftCloseIcon,
   QrCodeIcon,
-  Settings2Icon,
   TagsIcon,
   UploadIcon,
 } from 'lucide-react';
@@ -45,13 +44,10 @@ interface SidebarNavProps {
   aggregates: Aggregates | null;
   profile: Profile | null;
   theme: Theme;
-  view: 'library' | 'review';
   selectedCategoryId: string | null;
   selectedTagId: string | null;
-  reviewCount: number;
   openSections: Record<string, boolean>;
   onSetOpenSection: (key: string, open: boolean) => void;
-  onSelectView: (view: 'library' | 'review') => void;
   onSelectCategory: (id: string | null) => void;
   onSelectTag: (id: string | null) => void;
   onThemeChange: (theme: Theme) => void;
@@ -80,7 +76,6 @@ const rowClass =
   'w-full justify-start gap-2 px-2 font-normal data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground';
 
 interface NavSelectionProps {
-  onSelectView: (view: 'library' | 'review') => void;
   onSelectCategory: (id: string | null) => void;
   onSelectTag: (id: string | null) => void;
   onNavigate?: () => void;
@@ -110,7 +105,6 @@ interface CategoryTreeRowProps {
   node: CategoryNode;
   depth: number;
   counts: Map<string, number>;
-  view: 'library' | 'review';
   selectedCategoryId: string | null;
   openSections: Record<string, boolean>;
   onSetOpenSection: (key: string, open: boolean) => void;
@@ -141,7 +135,6 @@ function CategoryTreeRow({
   node,
   depth,
   counts,
-  view,
   selectedCategoryId,
   openSections,
   onSetOpenSection,
@@ -152,12 +145,11 @@ function CategoryTreeRow({
   const dnd = useContext(TreeDndContext);
   const hasChildren = node.children.length > 0;
   const open = openSections[navGroupKey(node.id)] ?? true;
-  const active = view === 'library' && selectedCategoryId === node.id;
+  const active = selectedCategoryId === node.id;
   const count = counts.get(node.id) ?? 0;
   const isDragging = dnd.dragId === node.id;
 
   const handleSelect = useCallback(() => {
-    selection.onSelectView('library');
     selection.onSelectTag(null);
     selection.onSelectCategory(selectedCategoryId === node.id ? null : node.id);
     selection.onNavigate?.();
@@ -263,7 +255,6 @@ function CategoryTreeRow({
               node={child}
               depth={depth + 1}
               counts={counts}
-              view={view}
               selectedCategoryId={selectedCategoryId}
               openSections={openSections}
               onSetOpenSection={onSetOpenSection}
@@ -321,7 +312,6 @@ function DropToRoot({ active, onDropToRoot }: DropToRootProps) {
 interface CategoryTreeProps extends NavSelectionProps {
   tree: CategoryNode[];
   counts: Map<string, number>;
-  view: 'library' | 'review';
   selectedCategoryId: string | null;
   openSections: Record<string, boolean>;
   onSetOpenSection: (key: string, open: boolean) => void;
@@ -331,11 +321,9 @@ interface CategoryTreeProps extends NavSelectionProps {
 function CategoryTree({
   tree,
   counts,
-  view,
   selectedCategoryId,
   openSections,
   onSetOpenSection,
-  onSelectView,
   onSelectCategory,
   onSelectTag,
   onNavigate,
@@ -373,8 +361,8 @@ function CategoryTree({
   }, [dragId, handleDropToRoot, tree, endDrag]);
 
   const selection = useMemo<NavSelectionProps>(
-    () => ({ onSelectView, onSelectCategory, onSelectTag, onNavigate }),
-    [onSelectView, onSelectCategory, onSelectTag, onNavigate],
+    () => ({ onSelectCategory, onSelectTag, onNavigate }),
+    [onSelectCategory, onSelectTag, onNavigate],
   );
 
   return (
@@ -386,7 +374,6 @@ function CategoryTree({
             node={node}
             depth={0}
             counts={counts}
-            view={view}
             selectedCategoryId={selectedCategoryId}
             openSections={openSections}
             onSetOpenSection={onSetOpenSection}
@@ -493,13 +480,10 @@ function SidebarTools({
 function SidebarNav({
   tree,
   aggregates,
-  view,
   selectedCategoryId,
   selectedTagId,
-  reviewCount,
   openSections,
   onSetOpenSection,
-  onSelectView,
   onSelectCategory,
   onSelectTag,
   onNavigateImport,
@@ -509,35 +493,21 @@ function SidebarNav({
   onNavigate,
   showTools = true,
 }: SidebarNavProps) {
-  const model = useSidebarNavModel(
-    tree,
-    aggregates,
-    view,
-    selectedCategoryId,
-    selectedTagId,
-    reviewCount,
-  );
+  const model = useSidebarNavModel(tree, aggregates, selectedCategoryId, selectedTagId);
 
   const showAll = useCallback(() => {
-    onSelectView('library');
     onSelectCategory(null);
     onSelectTag(null);
     onNavigate?.();
-  }, [onSelectView, onSelectCategory, onSelectTag, onNavigate]);
-
-  const showReview = useCallback(() => {
-    onSelectView('review');
-    onNavigate?.();
-  }, [onSelectView, onNavigate]);
+  }, [onSelectCategory, onSelectTag, onNavigate]);
 
   const toggleTag = useCallback(
     (id: string) => {
-      onSelectView('library');
       onSelectCategory(null);
       onSelectTag(selectedTagId === id ? null : id);
       onNavigate?.();
     },
-    [onSelectView, onSelectCategory, onSelectTag, selectedTagId, onNavigate],
+    [onSelectCategory, onSelectTag, selectedTagId, onNavigate],
   );
 
   const hasCategories = tree.length > 0;
@@ -555,17 +525,6 @@ function SidebarNav({
         <NavCount>{model.total}</NavCount>
       </Button>
 
-      <Button
-        variant="ghost"
-        className={rowClass}
-        data-active={model.isReviewActive}
-        onClick={showReview}
-      >
-        <Settings2Icon />
-        <span>Review queue</span>
-        {model.reviewCount > 0 && <NavCount>{model.reviewCount}</NavCount>}
-      </Button>
-
       {hasCategories && (
         <CollapsibleGroup
           storageKey={navGroupKey('categories')}
@@ -577,11 +536,9 @@ function SidebarNav({
           <CategoryTree
             tree={tree}
             counts={model.categoryCounts}
-            view={view}
             selectedCategoryId={selectedCategoryId}
             openSections={openSections}
             onSetOpenSection={onSetOpenSection}
-            onSelectView={onSelectView}
             onSelectCategory={onSelectCategory}
             onSelectTag={onSelectTag}
             onNavigate={onNavigate}
@@ -656,7 +613,7 @@ interface RailButtonProps {
   active?: boolean;
 }
 
-/** Icon-rail entry with a tooltip; review keeps a count badge. */
+/** Icon-rail entry with a tooltip. */
 function RailButton({ label, onClick, children, badge, active }: RailButtonProps) {
   const triggerRender = useMemo(
     () => (
@@ -689,13 +646,10 @@ export function Sidebar({
   aggregates,
   profile,
   theme,
-  view,
   selectedCategoryId,
   selectedTagId,
-  reviewCount,
   openSections,
   onSetOpenSection,
-  onSelectView,
   onSelectCategory,
   onSelectTag,
   onThemeChange,
@@ -710,14 +664,7 @@ export function Sidebar({
   onSetWidth,
   onSetCollapsed,
 }: SidebarProps) {
-  const model = useSidebarNavModel(
-    tree,
-    aggregates,
-    view,
-    selectedCategoryId,
-    selectedTagId,
-    reviewCount,
-  );
+  const model = useSidebarNavModel(tree, aggregates, selectedCategoryId, selectedTagId);
 
   // Drag preview state: while dragging we render a local width so the persisted
   // value is only written once, on release.
@@ -738,12 +685,9 @@ export function Sidebar({
   const asideStyle = useMemo(() => ({ width: renderWidth }), [renderWidth]);
 
   const showAll = useCallback(() => {
-    onSelectView('library');
     onSelectCategory(null);
     onSelectTag(null);
-  }, [onSelectView, onSelectCategory, onSelectTag]);
-
-  const showReview = useCallback(() => onSelectView('review'), [onSelectView]);
+  }, [onSelectCategory, onSelectTag]);
 
   const expand = useCallback(() => onSetCollapsed(false), [onSetCollapsed]);
 
@@ -882,14 +826,6 @@ export function Sidebar({
               <InboxIcon />
             </RailButton>
             <RailButton
-              label={`Review queue${model.reviewCount > 0 ? ` (${model.reviewCount})` : ''}`}
-              badge={model.reviewCount}
-              active={model.isReviewActive}
-              onClick={showReview}
-            >
-              <Settings2Icon />
-            </RailButton>
-            <RailButton
               label="Categories"
               active={model.isCategoryActive}
               onClick={expand}
@@ -957,13 +893,10 @@ export function Sidebar({
               aggregates={aggregates}
               profile={profile}
               theme={theme}
-              view={view}
               selectedCategoryId={selectedCategoryId}
               selectedTagId={selectedTagId}
-              reviewCount={reviewCount}
               openSections={openSections}
               onSetOpenSection={onSetOpenSection}
-              onSelectView={onSelectView}
               onSelectCategory={onSelectCategory}
               onSelectTag={onSelectTag}
               onThemeChange={onThemeChange}
