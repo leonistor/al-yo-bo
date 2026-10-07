@@ -18,6 +18,7 @@
     "typecheck": "bun run --parallel --filter '*' typecheck",
     "test": "bun test",
     "test:e2e": "bun scripts/e2e.ts",
+    "screenshot": "bun scripts/screenshots.ts",
     "db:seed": "bun run packages/db/src/seed.ts",
     "qdrant:install": "bash scripts/qdrant/install.sh",
     "qdrant:start": "bash scripts/qdrant/start.sh",

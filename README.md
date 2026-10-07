@@ -15,6 +15,16 @@ about them.
 > implemented. OpenRouter chat for production is the remaining next step (see
 > `docs/ARCHITECTURE.md` §2).
 
+## Screenshots
+
+| Light                                                                                             | Dark                                                                                              |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| <img src="docs/screenshots/library-light.png" width="440" alt="Library view, light theme">        | <img src="docs/screenshots/library-dark.png" width="440" alt="Library view, dark theme">          |
+
+More views (import, vocabulary) sit next to these in `docs/screenshots/`. Regenerate with
+`bun run screenshot` — it boots a scratch, seeded instance and captures headless; no dev server
+or manual clicking involved.
+
 ## Documentation
 
 | Doc                                          | What it covers                                                               |
