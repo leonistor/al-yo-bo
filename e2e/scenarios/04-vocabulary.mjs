@@ -65,7 +65,10 @@ async function confirmDelete() {
 }
 
 await check('seeded vocabulary renders (tooling tag, Design category)', async () => {
-  // The categories tab is the default; the tags tab needs one click.
+  // Tags is now the default tab (DESIGN.md §Vocabulary page, Tags first);
+  // the categories tab needs one click.
+  await tagList().getByText('tooling', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('tab', { name: 'Categories' }).click();
   await catTree().getByText('Design', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('tab', { name: 'Tags' }).click();
   await tagList().getByText('tooling', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 });

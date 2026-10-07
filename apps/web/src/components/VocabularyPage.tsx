@@ -315,7 +315,9 @@ function TagRow({
           )}
           <StatusBadge status={tag.status}>{tag.status}</StatusBadge>
           {bookmarkCount > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">{bookmarkCount}</span>
+            // Secondary meta: hidden below sm so the row name + badge + actions
+            // keep 44px tap targets without colliding (critique m05).
+            <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{bookmarkCount}</span>
           )}
         </div>
         {inline.editing ? (
@@ -694,12 +696,12 @@ function VocabCategoryRow({
             </button>
           )}
           {node.children.length > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
               {node.children.length} {node.children.length === 1 ? 'child' : 'children'}
             </span>
           )}
           {bookmarkCount > 0 && (
-            <span className="text-xs text-muted-foreground tabular-nums">{bookmarkCount}</span>
+            <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{bookmarkCount}</span>
           )}
         </div>
         {inline.editing ? (
@@ -723,7 +725,13 @@ function VocabCategoryRow({
         {inline.pending || deleteMutation.isPending ? (
           <Spinner className="size-4" />
         ) : (
-          <RowActions actions={actions} visibleCount={2} />
+          <>
+            {/* Below sm only add-child stays direct; edit/delete live in the
+                kebab so the row keeps the name readable at 390px. The hidden
+                variant is display-none, so it never steals tab order. */}
+            <RowActions actions={actions} visibleCount={1} className="sm:hidden" />
+            <RowActions actions={actions} visibleCount={2} className="hidden sm:flex" />
+          </>
         )}
       </div>
 
@@ -1070,10 +1078,13 @@ export function VocabularyPage({
         </span>
       </div>
 
-      <Tabs defaultValue="categories">
+      {/* Tab set per DESIGN.md §Vocabulary page (Tags first). No Sections tab:
+          ARCHITECTURE §5 dropped sections from the v2 data model, so there is
+          nothing to manage here — the doc line is updated in the same change. */}
+      <Tabs defaultValue="tags">
         <TabsList variant="line">
-          <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
         </TabsList>
 
         <TabsContent value="categories" className="mt-3">

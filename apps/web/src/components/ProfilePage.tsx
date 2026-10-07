@@ -15,6 +15,7 @@ import {
   MessageSquareIcon,
   MonitorIcon,
   MoonIcon,
+  PencilIcon,
   RefreshCwIcon,
   Rows3Icon,
   SparklesIcon,
@@ -133,13 +134,22 @@ function InlineField({ label, value, placeholder, error, onCommit, onClearError 
             className={cn(editableInputClass, 'w-full')}
           />
         ) : (
+          // Muted trailing pencil is the persistent edit affordance: discoverable
+          // for keyboard and touch users without hover, and calm enough to sit
+          // in a settings form (critique §priority 4).
           <button
             ref={displayRef}
             type="button"
             onClick={handleStart}
-            className="min-h-7 w-full cursor-pointer text-left text-sm focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group/inline flex min-h-7 w-full cursor-pointer items-center justify-between gap-2 text-left text-sm focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {value ? <span className="truncate">{value}</span> : <span className="text-muted-foreground">{placeholder}</span>}
+            {!inline.pending && (
+              <PencilIcon
+                aria-hidden
+                className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors duration-150 group-hover/inline:text-muted-foreground"
+              />
+            )}
           </button>
         )}
         {inline.pending && <Spinner className="absolute right-2 top-1.5 size-4" />}

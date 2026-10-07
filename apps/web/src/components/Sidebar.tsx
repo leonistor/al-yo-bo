@@ -872,14 +872,13 @@ export function Sidebar({
         </>
       ) : (
         <>
+          {/* Header carries no total badge — the "All bookmarks" nav row below
+              already renders model.total via NavCount (copy dedup). */}
           <div className="flex items-center gap-1.5 px-3 py-3 sm:px-4">
             <LibraryBigIcon className="size-5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 truncate text-sm font-semibold whitespace-nowrap tracking-tight">
               al-yo-bo
             </span>
-            <Badge variant="secondary" className="tabular-nums">
-              {model.total}
-            </Badge>
             <div className="ml-auto flex items-center gap-0.5">
               <SidebarAccountMenu
                 profile={profile}

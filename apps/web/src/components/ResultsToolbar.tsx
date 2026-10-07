@@ -138,7 +138,10 @@ export function ResultsToolbar({
           </SelectContent>
         </Select>
 
-        <div className="flex items-center rounded-lg border border-border">
+        {/* Layout switcher hides below sm (DESIGN.md §Results toolbar): at
+            390px it only buys chrome rows — the persisted `ayb:layout`
+            preference is owned by Profile, so nothing is lost on phones. */}
+        <div className="hidden items-center rounded-lg border border-border sm:flex">
           <Button
             variant={layout === 'list' ? 'secondary' : 'ghost'}
             size="icon-sm"

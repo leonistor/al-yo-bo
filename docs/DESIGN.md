@@ -114,8 +114,9 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 2. **Library — collapsible groups:** each Section is a `CollapsibleSection` header; category rows
    indent `pl-4` under a 2px `border-l` guide. Tags are a collapsible group rendered as **pills with
    the count inside** (no icon-text rows).
-3. **Header (expanded):** brand icon + wordmark, total badge, account menu, theme toggle,
-   collapse button. The sidebar header — not the topbar — owns Profile & theme.
+3. **Header (expanded):** brand icon + wordmark, account menu, theme toggle,
+   collapse button. The sidebar header — not the topbar — owns Profile & theme. No total badge
+   here: the "All bookmarks" view row already renders it.
 4. **Tools (footer, less-frequent):** Import, Vocabulary, Share.
 
 ### Command bar (content header, row 1)
@@ -134,7 +135,8 @@ the tinted sidebar by surface and border, never by shadow. Left→right:
 Sits at the top of `main`, directly above the list: result count (`aria-live`, `text-sm
 text-muted-foreground`) and Active/Invalid segmented control on the left; sort select, list/
 compact/grid/dense four-way segmented control (List / Rows3 / LayoutGrid / Grid3x3), refresh on
-the right. Sort options fold
+the right. Below `sm` the layout segmented control hides (the `ayb:layout` preference is owned by
+Profile); sort and refresh stay. Sort options fold
 direction in: Newest / Oldest / Recently updated / Title A–Z / Title Z–A.
 
 ## Setup wizard
@@ -281,9 +283,11 @@ import): one row anatomy, one action cluster, one destructive confirmation.
   and an `impact` list spelling out consequences *before* commit (e.g. tag delete names the
   assignment loss and the classification-evidence destruction — deprecate stays the primary
   "remove from use" action). The only modal in the app.
-- **Vocabulary page** — Tabs (line variant) Tags / Categories / Sections; per-tab create form
+- **Vocabulary page** — Tabs (line variant) Tags / Categories (Tags first); no Sections tab —
+  the v2 data model dropped sections (ARCHITECTURE §5). Per-tab create form
   (existing `Field` pattern), client-side name filter, status pills (active = primary,
-  deprecated = muted), usage counts from aggregates.
+  deprecated = muted), usage counts from aggregates. Below `sm` the row's secondary counts
+  hide and only the primary row action stays direct — the rest overflow into the kebab.
 
 ### Profile & settings page
 

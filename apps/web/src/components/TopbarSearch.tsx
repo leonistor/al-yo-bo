@@ -42,13 +42,16 @@ function ModeButton({ value, label, icon: Icon, active, onChange }: ModeButtonPr
       aria-pressed={active}
       onClick={handleClick}
       className={cn(
-        'flex h-6 w-6 items-center justify-center rounded text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-7 sm:w-7',
+        // Icon-only square below sm (tooltip covers meaning); visible text-xs
+        // label at sm:+ where the max-w-xl input group has room for words.
+        'flex h-6 w-6 items-center justify-center gap-1 rounded text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:h-7 sm:w-auto sm:px-1.5',
         active
           ? 'bg-background text-foreground ring-1 ring-border'
           : 'text-muted-foreground hover:text-foreground',
       )}
     >
-      <Icon className="size-4" />
+      <Icon className="size-4 shrink-0" />
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

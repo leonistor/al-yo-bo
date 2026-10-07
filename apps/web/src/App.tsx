@@ -797,9 +797,14 @@ export function App() {
       {/* Chat takes over full-screen below md instead of doing nothing. */}
       <Sheet open={chatOpen && !isTablet} onOpenChange={setChatOpen}>
         <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+          {/* No SheetDescription here: it duplicated the panel's empty-state
+              text ("Ask about your bookmarks" lived in both header and body). */}
           <SheetHeader className="border-b">
             <SheetTitle>Chat</SheetTitle>
-            <SheetDescription>Ask about your bookmarks</SheetDescription>
+            {/* A11y description lives on the panel's empty state. */}
+            <SheetDescription className="sr-only">
+              Search your library in plain language — results appear as cards you can open.
+            </SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1">
             <ChatSurface />

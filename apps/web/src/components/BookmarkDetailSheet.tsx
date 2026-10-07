@@ -60,7 +60,10 @@ import { formatDate, hostOf } from '@/lib/format';
 import { resolveImageSrc } from '@/lib/image';
 
 /** Stable delete trigger element; avoids recreating the Button on every render. */
-const DELETE_TRIGGER_BUTTON = <Button variant="destructive" />;
+// destructive-outline, not solid destructive: on mobile the sheet footer
+// splits Delete onto its own full-width row in the thumb zone, where a solid
+// red block reads as over-threatening (critique m03).
+const DELETE_TRIGGER_BUTTON = <Button variant="destructive-outline" />;
 
 interface ScrapeLastError {
   at?: number;
