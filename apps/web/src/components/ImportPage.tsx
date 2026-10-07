@@ -75,6 +75,8 @@ function collectCategoryPaths(nodes: CategoryNode[], prefix: string[] = []): str
 interface ImportPageProps {
   /** Called after a successful commit so the library can refetch. */
   onCommitted: () => void;
+  /** Cancel/back action: clear local state and return to the library view. */
+  goLibrary: () => void;
   /** Current vocabulary so the preview can flag entries that would be created. */
   tags: Tag[];
   categories: CategoryNode[];
@@ -85,7 +87,7 @@ interface ImportPageProps {
  * extraction result on the right. The server is only asked to commit what the
  * user confirms — edits live here until "Import N bookmarks".
  */
-export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
+export function ImportPage({ onCommitted, goLibrary, tags, categories }: ImportPageProps) {
   const [sourceTab, setSourceTab] = useState<'paste' | 'upload'>('paste');
   const [text, setText] = useState('');
   const [preview, setPreview] = useState<Omit<ImportPreview, 'bookmarks'> | null>(null);
@@ -162,6 +164,11 @@ export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
     setPreview(null);
     setRows([]);
   }, []);
+
+  const handleCancel = useCallback(() => {
+    clearResults();
+    goLibrary();
+  }, [clearResults, goLibrary]);
 
   // file.text() can reject (permission, encoding, removed file) — surface it
   // instead of leaving the onChange promise unhandled.
@@ -271,7 +278,7 @@ export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
           onValueChange={selectSourceTab}
           className="min-h-0 flex-1"
         >
-          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <div className="flex min-h-9 items-center justify-between gap-2 border-b border-border px-3 py-2">
             <TabsList variant="line">
               <TabsTrigger value="paste">Paste text</TabsTrigger>
               <TabsTrigger value="upload">Upload file</TabsTrigger>
@@ -325,7 +332,7 @@ export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
         {/* Provider status: the preview response is the only thing that knows
             whether the LLM or the fallback parser produced the list. */}
         <p
-          className="border-t border-border px-3 py-2 text-xs text-muted-foreground"
+          className="flex min-h-9 items-center border-t border-border px-3 py-2 text-xs text-muted-foreground"
           aria-live="polite"
         >
           {extracting ? (
@@ -356,7 +363,7 @@ export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
         aria-label="Extracted bookmarks"
         className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg border border-border bg-card"
       >
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex min-h-9 items-center gap-2 border-b border-border px-3 py-2">
           <h2 className="text-sm font-medium">Extracted bookmarks</h2>
           {rows.length > 0 && (
             <Badge variant="secondary">
@@ -435,12 +442,12 @@ export function ImportPage({ onCommitted, tags, categories }: ImportPageProps) {
           )}
         </ScrollArea>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-3 py-2">
+        <div className="flex min-h-9 items-center justify-end gap-2 border-t border-border px-3 py-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={clearResults}
-            disabled={extracting || importing || rows.length === 0}
+            onClick={handleCancel}
+            disabled={extracting || importing}
           >
             Cancel
           </Button>

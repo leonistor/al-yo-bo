@@ -526,7 +526,7 @@ function SidebarNav({
       >
         <InboxIcon />
         <span>All bookmarks</span>
-        <NavCount>{model.total}</NavCount>
+        <NavCount variant="default">{model.total}</NavCount>
       </Button>
 
       {hasCategories && (
@@ -591,10 +591,13 @@ interface NavCountProps {
   children: ReactNode;
   /** Corner badge for icon rail; inline badge for expanded rows. */
   corner?: boolean;
+  /** Inline badge variant. Defaults to "secondary" (DESIGN.md §Count rendering);
+   *  pass "default" for emphasis, matching the pending-import count precedent. */
+  variant?: 'default' | 'secondary';
 }
 
 /** Shared count renderer: secondary inline in expanded rows, primary corner in the rail. */
-function NavCount({ children, corner }: NavCountProps) {
+function NavCount({ children, corner, variant = 'secondary' }: NavCountProps) {
   if (corner) {
     return (
       <span className="absolute top-0 right-0 flex h-4 min-w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-medium text-primary-foreground tabular-nums">
@@ -603,7 +606,7 @@ function NavCount({ children, corner }: NavCountProps) {
     );
   }
   return (
-    <Badge variant="secondary" className="ml-auto tabular-nums">
+    <Badge variant={variant} className="ml-auto tabular-nums">
       {children}
     </Badge>
   );

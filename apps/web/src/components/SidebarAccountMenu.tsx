@@ -41,12 +41,12 @@ export function SidebarAccountMenu({
       onClick={handleProfileClick}
     >
       {profile ? (
-        <ProfileAvatar profile={profile} className={size === 'icon-sm' ? 'size-6' : 'size-7'} />
+        <ProfileAvatar profile={profile} className={size === 'icon-sm' ? 'size-7' : 'size-8'} />
       ) : (
         <UserIcon
           className={cn(
             'rounded-full bg-muted p-1 text-muted-foreground',
-            size === 'icon-sm' ? 'size-6' : 'size-7',
+            size === 'icon-sm' ? 'size-7' : 'size-8',
           )}
         />
       )}

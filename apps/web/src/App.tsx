@@ -476,6 +476,7 @@ export function App() {
   const toggleChat = useCallback(() => setChatOpen((open) => !open), []);
   const goImport = useCallback(() => navigate('import'), []);
   const goExport = useCallback(() => navigate('export'), []);
+  const goLibrary = useCallback(() => navigate('library'), []);
   const goVocabulary = useCallback(() => navigate('vocabulary'), []);
   const goShare = useCallback(() => navigate('share'), []);
   const goProfile = useCallback(() => navigate('profile'), []);
@@ -670,6 +671,7 @@ export function App() {
           {route === 'import' ? (
             <ImportPage
               onCommitted={onImportCommitted}
+              goLibrary={goLibrary}
               tags={tags}
               categories={tree}
             />
