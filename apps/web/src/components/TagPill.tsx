@@ -21,7 +21,10 @@ const tagPillVariants = cva(
         lg: 'h-7 px-3 text-sm',
       },
       interactive: {
-        true: 'cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        // Coarse-pointer hit slop (same pattern as ui/button): an after
+        // pseudo-element grows the tappable area to >= 44px tall without
+        // changing the resting 20px visual. Horizontal slop stays ~8px.
+        true: 'relative cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background pointer-coarse:after:absolute pointer-coarse:after:-inset-x-2 pointer-coarse:after:-inset-y-3.5',
         false: '',
       },
     },
@@ -104,7 +107,7 @@ export function TagPill({
           type="button"
           aria-label={`Remove ${name ?? (typeof children === 'string' ? children : 'tag')}`}
           onClick={handleRemove}
-          className="-mr-0.5 inline-flex size-3.5 cursor-pointer items-center justify-center rounded-full text-current/70 transition-colors hover:bg-foreground/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative -mr-0.5 inline-flex size-3.5 cursor-pointer items-center justify-center rounded-full text-current/70 transition-colors hover:bg-foreground/10 hover:text-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:-inset-4"
         >
           <XIcon className="size-3" aria-hidden />
         </button>

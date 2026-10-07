@@ -784,6 +784,14 @@ export function Sidebar({
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
+      aria-valuemin={SIDEBAR_MIN_WIDTH}
+      aria-valuemax={SIDEBAR_MAX_WIDTH}
+      aria-valuenow={effectiveCollapsed ? width : effectiveWidth}
+      aria-valuetext={
+        effectiveCollapsed
+          ? `Sidebar collapsed at ${SIDEBAR_RAIL_WIDTH} pixels`
+          : `${effectiveWidth} pixels wide`
+      }
       tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

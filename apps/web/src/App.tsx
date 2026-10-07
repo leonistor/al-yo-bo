@@ -180,6 +180,7 @@ function BookmarkListCrossfade({
               isActive ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
             aria-hidden={!isActive}
+            inert={!isActive}
           >
             <BookmarkList
               items={slot.items ?? NO_ITEMS}
