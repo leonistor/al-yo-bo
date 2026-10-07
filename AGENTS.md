@@ -69,6 +69,7 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
 | E2E tests (browser)      | `bun run test:e2e`     |
+| Release                  | `.opencode/command/release.md` |
 
 - **Browser QA:** use **Playwriter**, never Playwright. The automated suite is `bun run test:e2e`
   (scenarios in `e2e/`, see `e2e/README.md`). `bun run browser:install` (once) downloads
@@ -133,6 +134,10 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   `.opencode/skills/<name>/SKILL.md`.
 - Semantic commit prefixes. Commit autonomously when work is complete and verified; pushes require explicit approval; PRs only on request.
 - Run lint before committing.
+- User-facing changes land in `CHANGELOG.md` as hand-written prose (one-line tagline +
+  New/Improvements/Fixes bullets), drafted with the `changelog-generator` skill and human-confirmed
+  at release time — never a commit dump. Releases follow `.opencode/command/release.md`; version
+  lives in root `package.json`, tagged `vX.Y.Z`.
 
 ## Content warning
 
