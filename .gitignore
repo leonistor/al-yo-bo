@@ -18,6 +18,9 @@ build/
 # Local SQLite database and WAL sidecars (seed with `bun run db:seed`)
 data/
 
+# Demo videos: regenerate with `bun run videos`; commit only preview.html
+apps/web/public/demos/*.mp4
+
 # Qdrant sidecar marker file (dropped in the process working directory)
 .qdrant-initialized
 
