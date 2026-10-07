@@ -69,6 +69,7 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
 | E2E tests (browser)      | `bun run test:e2e`     |
+| Record demo videos       | `bun run videos`       |
 | Release                  | `.opencode/command/release.md` |
 
 - **Browser QA:** use **Playwriter**, never Playwright. The automated suite is `bun run test:e2e`
@@ -86,6 +87,12 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
   profile-lock contention with a headed browser). If code execution fails with "The Playwriter
   Chrome extension is not connected" right after a CLI upgrade, the relay daemon is stale:
   `pkill -f playwriter-ws-server` and retry.
+
+  **Exception — demo videos (`bun run videos`):** the video capture script is the only consumer of
+  Playwright in the project. Playwright is loaded only from `scripts/video-capture.ts`; the e2e and
+  screenshot pipelines stay on Playwriter. `playwright-recorder-plus` ships its own ffmpeg via
+  `ffmpeg-static`; no system ffmpeg is required. See `docs/demos/README.md` for the full architecture
+  and gotchas.
 - **Behavioral code questions:** start with **jevgrep** (`jg`) — how/why/where something works,
   even when a function or setting is named. Use plain grep/glob only for exact symbol definitions,
   string matches, or filenames; don't jump to broad text searches first.
