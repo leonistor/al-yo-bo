@@ -68,8 +68,10 @@ depend on concrete subsystem implementations; no cycles. See ARCHITECTURE §4.
 | Format                   | `bun run format`       |
 | Typecheck (all)          | `bun run typecheck`    |
 | Tests                    | `bun test`             |
+| E2E tests (browser)      | `bun run test:e2e`     |
 
-- **Browser QA:** use **Playwriter**, never Playwright. `bun run browser:install` (once) downloads
+- **Browser QA:** use **Playwriter**, never Playwright. The automated suite is `bun run test:e2e`
+  (scenarios in `e2e/`, see `e2e/README.md`). `bun run browser:install` (once) downloads
   Chrome for Testing into `~/.playwriter/browsers`; `bun run browser:start` launches it **headed**
   with the project profile `./.playwriter-profile` (gitignored) and the Playwriter extension
   auto-loaded — connect with `playwriter session new`. No extension in your personal browser is

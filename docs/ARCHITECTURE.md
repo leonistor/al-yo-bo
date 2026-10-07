@@ -273,6 +273,25 @@ The synthetic **octocat** demo is the single canonical seed and verification fix
   carried over). `docs/examples-mds/*` are real user collections — reserved for a much later
   import-edge-case test phase, and never treated as product requirements.
 
+### Browser e2e suite (decided)
+
+`bun run test:e2e` drives the real server + web app through **Playwriter** (never Playwright) in a
+disposable headless Chrome (`scripts/e2e.ts` orchestrates; scenarios in `e2e/scenarios/*.mjs`):
+
+- **Isolation.** Each run boots a scratch `DATA_DIR`, seeds octocat (which also marks setup
+  complete, bypassing the first-run wizard), starts server (3000) + web (5173) dev processes, and
+  tears everything down afterwards. Root `.env` and provider env vars are deliberately not
+  forwarded, so the suite always exercises the degraded, sidecar-free contract (keyword-only
+  search, deterministic import parser) — the same behavior ARCHITECTURE §12 guarantees.
+- **Scope.** Function, not aesthetics: navigation, search/filters/pagination, bookmark CRUD,
+  vocabulary management, import/export, profile persistence. Semantic/hybrid search, classifier
+  tagging, and LLM chat are out of scope (they need sidecars).
+- **Mechanics.** Scenarios are plain ESM executed by `playwriter -f`; results are JSONL files
+  under `/tmp` keyed by scenario name (the playwriter relay daemon caches imported modules and
+  only tails console output, so stdout alone is not a reliable channel — scenarios import helpers
+  with a cache-busting query). Filter/selection state survives same-document hash navigation, so
+  every scenario starts with a fresh document load.
+
 ## 6. Search subsystem
 
 **Decision: SQLite FTS5 (keyword) + a Qdrant sidecar (semantic top-k), fused app-side with
