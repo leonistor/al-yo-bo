@@ -14,7 +14,7 @@
       "command": ["crawlberg", "mcp"],
     },
     "chrome-devtools": {
-      "enabled": true,
+      "enabled": false,
       "type": "local",
       "command": ["bunx", "-y", "chrome-devtools-mcp@latest"],
     },
