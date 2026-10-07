@@ -58,23 +58,22 @@ await check('account menu navigates to profile', async () => {
   assertEqual(hash(), '#/profile', 'hash after profile click');
 });
 
-await check('"All bookmarks" returns to the library', async () => {
-  // The expanded sidebar's "All bookmarks" resets category/tag filters but
-  // does NOT navigate (Sidebar.tsx showAll has no route change) — the designed
-  // behavior is "stay on the current page with filters cleared".
+// "All bookmarks" is the home action: it resets category/tag filters AND
+// navigates back to the library from any route (no-op hash change at home).
+await check('"All bookmarks" navigates home from another route', async () => {
   await navButton(page, 'All bookmarks').click();
-  await page
-    .getByRole('heading', { name: 'Profile & settings', exact: true })
-    .waitFor({ state: 'visible', timeout: 10_000 });
-  assertEqual(hash(), '#/profile', 'hash after All bookmarks on profile');
+  await page.getByText(FIRST_PAGE_TITLE).first().waitFor({ state: 'visible', timeout: 10_000 });
+  assertEqual(hash(), '#/', 'hash after All bookmarks on profile');
 });
 
+// History after the home navigation: [..., #/share, #/profile, #/] — one back
+// step lands on the profile route the user came from.
 await check('browser back returns to the previous route', async () => {
   await page.goBack();
   await page
-    .getByRole('heading', { name: 'Share', exact: true })
+    .getByRole('heading', { name: 'Profile & settings', exact: true })
     .waitFor({ state: 'visible', timeout: 10_000 });
-  assertEqual(hash(), '#/share', 'hash after browser back');
+  assertEqual(hash(), '#/profile', 'hash after browser back');
 });
 
 await check('direct hash navigation renders vocabulary', async () => {

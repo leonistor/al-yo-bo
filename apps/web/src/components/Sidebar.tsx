@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useCategoryDropHandler } from '@/hooks/useCategoryMutations';
 import { useSidebarNavModel } from '@/hooks/useSidebarNavModel';
 import { dropPositionFromEvent } from '@/lib/categories';
+import { navigate } from '@/lib/router';
 import {
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
@@ -498,6 +499,9 @@ function SidebarNav({
   const showAll = useCallback(() => {
     onSelectCategory(null);
     onSelectTag(null);
+    // "All bookmarks" is the home action: it always lands on the library,
+    // even when clicked from Import/Export/etc. (no-op if already there).
+    navigate('library');
     onNavigate?.();
   }, [onSelectCategory, onSelectTag, onNavigate]);
 
@@ -687,6 +691,8 @@ export function Sidebar({
   const showAll = useCallback(() => {
     onSelectCategory(null);
     onSelectTag(null);
+    // Same home semantics as the expanded nav (collapsed rail button).
+    navigate('library');
   }, [onSelectCategory, onSelectTag]);
 
   const expand = useCallback(() => onSetCollapsed(false), [onSetCollapsed]);
