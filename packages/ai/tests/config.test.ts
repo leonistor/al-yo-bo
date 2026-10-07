@@ -15,6 +15,7 @@ describe('parseAiConfig', () => {
     // Absent optionals stay undefined — never throw, never coerce.
     expect(config.ollaya.apiKey).toBeUndefined();
     expect(config.ollama.chatModel).toBeUndefined();
+    expect(config.ollama.embedModel).toBeUndefined();
     expect(config.openrouter.apiKey).toBeUndefined();
     expect(config.extractModel).toBeUndefined();
     expect(config.mcpToken).toBeUndefined();
@@ -37,6 +38,7 @@ describe('parseAiConfig', () => {
     );
     expect(parseAiConfig({ OLLAYA_MODEL: '  ' }).ollaya.model).toBe('laya');
     expect(parseAiConfig({ OLLAMA_CHAT_MODEL: '' }).ollama.chatModel).toBeUndefined();
+    expect(parseAiConfig({ OLLAMA_EMBED_MODEL: '' }).ollama.embedModel).toBeUndefined();
     expect(parseAiConfig({ EXTRACT_MODEL: '' }).extractModel).toBeUndefined();
   });
 
@@ -52,6 +54,7 @@ describe('parseAiConfig', () => {
       OLLAYA_MODEL: 'laya-multilingual',
       OLLAMA_URL: 'http://127.0.0.1:21434',
       OLLAMA_CHAT_MODEL: 'llama3.2',
+      OLLAMA_EMBED_MODEL: 'nomic-embed-text',
       OPENROUTER_API_KEY: 'or-key',
       OPENROUTER_BASE_URL: 'https://proxy.example.com/v1',
       EMBEDDING_MODEL: 'openai/text-embedding-3-large',
@@ -65,6 +68,7 @@ describe('parseAiConfig', () => {
     expect(config.ollaya.model).toBe('laya-multilingual');
     expect(config.ollama.url).toBe('http://127.0.0.1:21434');
     expect(config.ollama.chatModel).toBe('llama3.2');
+    expect(config.ollama.embedModel).toBe('nomic-embed-text');
     expect(config.openrouter.apiKey).toBe('or-key');
     expect(config.openrouter.baseUrl).toBe('https://proxy.example.com/v1');
     expect(config.openrouter.embeddingModel).toBe('openai/text-embedding-3-large');

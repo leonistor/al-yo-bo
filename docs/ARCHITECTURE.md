@@ -364,8 +364,9 @@ raw speed at this size. The revisit conditions are in §13.
    vector index (Qdrant server-side filter, or fallback overfetch+filter).
 3. RRF fusion (`k = 60`) merges the two ranked lists into the final order.
 
-**Degradation.** Any missing link — no OpenRouter key/model, empty vector set, Qdrant down —
-returns keyword-only results. This is a normal state, not an error.
+**Degradation.** Any missing link — no embedding route (no production key, no `OLLAMA_EMBED_MODEL`
+in dev), empty vector set, Qdrant down — returns keyword-only results. This is a normal state, not
+an error.
 
 ## 7. Classifier workflow
 
@@ -596,10 +597,14 @@ config, then agents (`ToolLoopAgent`) when features need them.
 - **Embeddings model rule (restated, test-pinned).** `bookmark_embeddings.model` stores the
   configured `EMBEDDING_MODEL`, never the provider echo (§6). The AI SDK `embed()` result's model
   field is ignored for storage; a test fails if the two are ever conflated.
-- **OpenRouter is production-only (decided).** Default routing — the embedding client and the
-  default extraction model — engages only under `NODE_ENV=production` (`bun run start` sets it);
-  development (`bun run dev`) degrades to the local Ollama path and keyword-only search instead of
-  spending the cloud key. An explicit `EXTRACT_MODEL` override is honored in either environment.
+- **OpenRouter is production-only (decided); dev embeddings via local Ollama (decided 2026-10).**
+  Default routing — the embedding client and the default extraction model — engages only under
+  `NODE_ENV=production` (`bun run start` sets it); development (`bun run dev`) falls through to the
+  local Ollama path instead of spending the cloud key. An explicit `EXTRACT_MODEL` override is
+  honored in either environment. For embeddings, development opts in with `OLLAMA_EMBED_MODEL`:
+  when set, dev serves embeddings from that model on the Ollama daemon (`bookmark_embeddings.model`
+  stores the bare model id; switching models re-embeds once via the §6 reconciliation); unset, dev
+  stays keyword-only. An explicit `EMBEDDING_MODEL` never engages OpenRouter outside production.
 - **Structured outputs declared per provider (decided).** Every `createOpenAICompatible` provider
   sets `supportsStructuredOutputs: true` so schema-bearing calls send `json_schema` instead of
   silently degrading to unconstrained `json_object` (the AI SDK warns
@@ -631,6 +636,7 @@ adapter providing the localhost Host/Origin DNS-rebinding guard. Posture:
 | `OLLAYA_MODEL`          | Decision model alias                          | `laya`                   |
 | `OLLAMA_URL`            | Ollama daemon base URL (chat + local extraction fallback) | `http://127.0.0.1:11434` |
 | `OLLAMA_CHAT_MODEL`     | Chat model on the local Ollama daemon; unset disables chat (503, health reports unavailable) | unset |
+| `OLLAMA_EMBED_MODEL`    | Local Ollama embedding model — the dev route for semantic search (§8 routing). Unset → dev stays keyword-only; production embeddings always use OpenRouter | unset |
 | `AUTO_ASSIGN_THRESHOLD` | Minimum probability to auto-assign a tag. Default `0.7` after observing `laya`'s softly-calibrated probabilities (at `0.5` it cleared ~30 of 67 tags per bookmark) | `0.7` |
 | `OPENROUTER_API_KEY`    | Embedding/LLM provider credential (OpenRouter defaults are production-only, see above) | unset                    |
 | `OPENROUTER_BASE_URL`   | OpenAI-compatible API base URL                | `https://openrouter.ai/api/v1` |

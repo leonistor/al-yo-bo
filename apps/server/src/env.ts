@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { parseAiConfig, type AiConfig } from '@al-yo-bo/ai';
+import { parseAiConfig, resolveEmbeddingRoute, type AiConfig } from '@al-yo-bo/ai';
 import type { CoreConfig } from '@al-yo-bo/core';
 import { resolveDataDir } from '@al-yo-bo/db';
 
@@ -87,9 +87,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // CoreConfig views derived from the AI config — same values, narrower type.
     autoAssignThreshold: ai.autoAssignThreshold,
     embeddings: {
-      // Pinned default (docs/ARCHITECTURE §6): 1536 dims, cheap, matches the
-      // benchmarked fallback matrix. Changing the model triggers a re-embed pass.
-      model: ai.openrouter.embeddingModel,
+      // The active embedding model id (§8 route): OpenRouter in production
+      // with a key, else `OLLAMA_EMBED_MODEL` in dev, else undefined →
+      // keyword-only search. Dimensions come from the provider response;
+      // changing the model triggers a re-embed pass (§6).
+      model: resolveEmbeddingRoute(ai)?.model,
     },
     ollaya: { model: ai.ollaya.model },
     scrape: {

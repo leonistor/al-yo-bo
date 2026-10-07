@@ -10,13 +10,14 @@
  * here by `buildAiLayer`, which only `apps/server` calls.
  */
 
-import { AiEmbeddingClient } from './adapters/embedding.ts';
+import { AiEmbeddingClient, OllamaEmbeddingClient } from './adapters/embedding.ts';
 import { createExtractionClient } from './adapters/extract.ts';
 import type { ClassifierClient } from './classifier.ts';
 import { OllayaClassifierClient } from './classifier.ts';
 import { createSuggestClient } from './adapters/suggest.ts';
 import type { AiConfig } from './config.ts';
 import type { EmbeddingClient } from './embedding.ts';
+import { resolveEmbeddingRoute } from './embedding.ts';
 import type { ExtractionClient } from './extract.ts';
 import type { AiHealth } from './health.ts';
 import { createAiHealth } from './health.ts';
@@ -35,7 +36,11 @@ export interface AiLayer {
   readonly config: AiConfig;
   /** Explicit provider instances (no ambient defaults, §8). */
   readonly registry: ProviderRegistry;
-  /** OpenRouter embeddings; `null` unless production with `OPENROUTER_API_KEY` (dev → keyword-only search, §8). */
+  /**
+   * Embedding client (§8 route): OpenRouter in production with
+   * `OPENROUTER_API_KEY`, the local Ollama daemon in development when
+   * `OLLAMA_EMBED_MODEL` is set; `null` → keyword-only search (§6).
+   */
   readonly embeddings: EmbeddingClient | null;
   /** Ollaya decision client (bespoke — not an AI SDK provider, §3/§8). */
   readonly classifier: ClassifierClient;
@@ -60,6 +65,7 @@ export function buildAiLayer(config: AiConfig): AiLayer {
     // The Ollama provider speaks the native API under `/api` (`/api/chat`, …).
     local: { baseUrl: `${config.ollama.url.replace(/\/$/, '')}/api` },
   });
+  const embedRoute = resolveEmbeddingRoute(config);
 
   return {
     config,
@@ -70,12 +76,15 @@ export function buildAiLayer(config: AiConfig): AiLayer {
     }),
     extract: createExtractionClient(config),
     suggest: createSuggestClient(config),
-    // OpenRouter is a production provider (§8): development keeps its search
-    // keyword-only rather than spending the cloud key on embeddings.
+    // Embedding route (§8): production + key → OpenRouter; dev with
+    // `OLLAMA_EMBED_MODEL` → the local daemon, so development exercises
+    // semantic search without spending the cloud key; otherwise keyword-only.
     embeddings:
-      config.production && config.openrouter.apiKey
-        ? new AiEmbeddingClient(registry, { model: config.openrouter.embeddingModel })
-        : null,
+      embedRoute === null
+        ? null
+        : embedRoute.provider === 'openrouter'
+          ? new AiEmbeddingClient(registry, { model: embedRoute.model })
+          : new OllamaEmbeddingClient(registry, { model: embedRoute.model }),
     health: createAiHealth(config),
   };
 }
@@ -90,6 +99,7 @@ export { createProviderRegistry } from './registry.ts';
 
 // Interfaces core consumes (type-only; adapters stay out of core's graph).
 export type { EmbeddingClient, EmbeddingResult } from './embedding.ts';
+export type { EmbeddingProvider, EmbeddingRoute } from './embedding.ts';
 export type { ClassifierClient, DecideRequest, DecideResult, NoulQuestion } from './classifier.ts';
 export type { ExtractionClient, ExtractionProvider, ExtractionResult } from './extract.ts';
 
@@ -106,6 +116,9 @@ export {
   resolveExtractionRoute,
 } from './extract.ts';
 export type { ExtractionRoute } from './extract.ts';
+
+// Embedding routing (transport-neutral; adapters live in `adapters/`).
+export { resolveEmbeddingRoute } from './embedding.ts';
 
 // Suggestion contract, prompt and schema (transport-neutral; no AI SDK).
 export {
@@ -126,7 +139,7 @@ export type { AiHealth, AiHealthReport } from './health.ts';
 export { createAiHealth } from './health.ts';
 
 // Adapter surface consumed only by apps/server.
-export { AiEmbeddingClient } from './adapters/embedding.ts';
+export { AiEmbeddingClient, OllamaEmbeddingClient } from './adapters/embedding.ts';
 export type { EmbeddingAdapterConfig } from './adapters/embedding.ts';
 export { createExtractionClient, ExtractionError } from './adapters/extract.ts';
 export { createSuggestClient } from './adapters/suggest.ts';

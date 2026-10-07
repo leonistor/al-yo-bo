@@ -31,7 +31,8 @@ describe('createAiHealth', () => {
     expect(report.chatAvailable).toBe(false);
     expect(report.chatModel).toBeNull();
     expect(report.embeddingsConfigured).toBe(false);
-    expect(report.embeddingModel).toBe('openai/text-embedding-3-small');
+    // No active embedding route → no model id is reported (keyword-only, §6).
+    expect(report.embeddingModel).toBeNull();
     expect(report.classifierModel).toBe('laya');
     expect(report.extractConfigured).toBe(false);
     expect(report.extractModel).toBeNull();
@@ -86,7 +87,19 @@ describe('createAiHealth', () => {
     const report = await health.report();
 
     expect(report.embeddingsConfigured).toBe(true);
+    expect(report.embeddingModel).toBe('openai/text-embedding-3-small');
     expect(report.extractConfigured).toBe(true);
     expect(report.extractModel).toBe('deepseek/deepseek-v4.1-flash');
+  });
+
+  test('dev embeddings follow the OLLAMA_EMBED_MODEL route without production', async () => {
+    const health = createAiHealth(
+      parseAiConfig({ OLLAMA_EMBED_MODEL: 'nomic-embed-text', OLLAYA_URL: DEAD_URL, OLLAMA_URL: DEAD_URL }),
+    );
+
+    const report = await health.report();
+
+    expect(report.embeddingsConfigured).toBe(true);
+    expect(report.embeddingModel).toBe('nomic-embed-text');
   });
 });

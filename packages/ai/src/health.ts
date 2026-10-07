@@ -6,6 +6,7 @@
  */
 
 import type { AiConfig } from './config.ts';
+import { resolveEmbeddingRoute } from './embedding.ts';
 import { resolveExtractionRoute } from './extract.ts';
 
 export interface AiHealthReport {
@@ -16,10 +17,18 @@ export interface AiHealthReport {
   /** Chat capability: `OLLAMA_CHAT_MODEL` is set (an unreachable daemon surfaces an in-stream error instead, §12). */
   chatAvailable: boolean;
   chatModel: string | null;
-  /** Embedding capability: production (`NODE_ENV=production`) with `OPENROUTER_API_KEY` set — otherwise search degrades to keyword-only (§6/§8). */
+  /**
+   * Embedding capability: an active embedding route (§8) — OpenRouter under
+   * production with `OPENROUTER_API_KEY`, or the local Ollama daemon in dev
+   * with `OLLAMA_EMBED_MODEL`. Without one, search degrades to keyword-only
+   * (§6/§8).
+   */
   embeddingsConfigured: boolean;
-  /** The configured `EMBEDDING_MODEL` — the id stored in `bookmark_embeddings.model` (§6/§8, M4). */
-  embeddingModel: string;
+  /**
+   * The active embedding model id (`EMBEDDING_MODEL` OpenRouter id or the
+   * `OLLAMA_EMBED_MODEL` id); `null` when no embedding route is configured.
+   */
+  embeddingModel: string | null;
   /** The Ollaya decision-model alias (the resolved checkpoint is persisted per run, §7). */
   classifierModel: string;
   /** LLM extraction provider resolved (else the deterministic parser serves imports, §7). */
@@ -66,6 +75,7 @@ export function createAiHealth(config: AiConfig): AiHealth {
   return {
     async report(): Promise<AiHealthReport> {
       const route = resolveExtractionRoute(config);
+      const embedRoute = resolveEmbeddingRoute(config);
       const [ollayaReachable, ollamaReachable] = await Promise.all([
         probe(config.ollaya.url),
         probe(config.ollama.url),
@@ -75,8 +85,8 @@ export function createAiHealth(config: AiConfig): AiHealth {
         ollamaReachable,
         chatAvailable: config.ollama.chatModel !== undefined,
         chatModel: config.ollama.chatModel ?? null,
-        embeddingsConfigured: config.production && config.openrouter.apiKey !== undefined,
-        embeddingModel: config.openrouter.embeddingModel,
+        embeddingsConfigured: embedRoute !== null,
+        embeddingModel: embedRoute?.model ?? null,
         classifierModel: config.ollaya.model,
         extractConfigured: route.openrouterModel !== null || route.ollamaModel !== null,
         extractModel: route.prefersOpenRouter ? route.openrouterModel : route.ollamaModel,

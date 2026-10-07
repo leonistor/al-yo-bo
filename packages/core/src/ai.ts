@@ -12,7 +12,7 @@ import type { AiHealth, ClassifierClient, EmbeddingClient, ExtractionClient, Sug
  * `extract: null` → the deterministic markdown parser in the import service.
  */
 export interface CoreAi {
-  /** OpenRouter embeddings; `null` when `OPENROUTER_API_KEY` is unset (§8). */
+  /** Embedding client (§8 route); `null` → keyword-only search + skipped embed jobs. */
   readonly embeddings: EmbeddingClient | null;
   /** Ollaya decision client; `null` disables classification entirely (§1.5). */
   readonly classifier: ClassifierClient | null;

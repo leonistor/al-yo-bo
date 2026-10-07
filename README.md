@@ -51,6 +51,16 @@ export OPENROUTER_API_KEY=...   # production embeddings; dev search stays keywor
 # EMBEDDING_MODEL defaults to openai/text-embedding-3-small (1536 dims)
 ```
 
+Development can still have semantic search — embeddings from the local Ollama daemon:
+
+```sh
+ollama pull nomic-embed-text          # 768 dims (mxbai-embed-large → 1024)
+export OLLAMA_EMBED_MODEL=nomic-embed-text
+```
+
+Unset, dev search stays keyword-only; production embeddings always use OpenRouter. Changing the
+embedding model re-embeds the library once on the next boot.
+
 Chat runs on a local [Ollama](https://ollama.com) daemon and is off until a model is chosen:
 
 ```sh

@@ -136,7 +136,7 @@ const reconciliation = core.enrichment.reconcile();
 
 console.log(`al-yo-bo server listening on http://${config.host}:${config.port}`);
 console.log(
-  `[vector] backend: ${vector.backend}${ai.embeddings ? `, query embeddings: ${config.ai.openrouter.embeddingModel}` : ', query embeddings: off'}`,
+  `[vector] backend: ${vector.backend}${ai.embeddings ? `, query embeddings: ${config.embeddings.model}` : ', query embeddings: off'}`,
 );
 console.log(
   `[ai] classifier: ollaya/${config.ai.ollaya.model} — extract: ${ai.extract ? 'llm' : 'fallback (deterministic parser)'} — chat: ${config.ai.ollama.chatModel ?? 'off (set OLLAMA_CHAT_MODEL)'}`,

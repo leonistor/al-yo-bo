@@ -35,10 +35,16 @@ describe('buildAiLayer', () => {
     expect(layer.extract).not.toBeNull();
   });
 
-  test('embeddings engage only in production; development stays keyword-only', () => {
+  test('embeddings follow the §8 route: dev Ollama, production OpenRouter, else keyword-only', () => {
+    // Dev with a key stays keyword-only — OpenRouter is production-only (§8).
     const dev = buildAiLayer(parseAiConfig({ OPENROUTER_API_KEY: 'k' }));
     expect(dev.embeddings).toBeNull();
 
+    // Dev with OLLAMA_EMBED_MODEL serves embeddings from the local daemon.
+    const devLocal = buildAiLayer(parseAiConfig({ OLLAMA_EMBED_MODEL: 'nomic-embed-text' }));
+    expect(devLocal.embeddings).not.toBeNull();
+
+    // Production with a key engages OpenRouter (EMBEDDING_MODEL default).
     const prod = buildAiLayer(
       parseAiConfig({ OPENROUTER_API_KEY: 'k', NODE_ENV: 'production' }),
     );

@@ -460,9 +460,12 @@ describe('fused search pagination', () => {
     const { db, app } = makeApp();
     const ids = await firstSeededIds(app, 5);
     // Same database, second app instance with the stub subsystems attached.
+    // The env opts into the dev embedding route (§8) so `config.embeddings
+    // .model` names the stub's model and semantic mode engages.
     const fusedApp = buildApp(db, {
       vector: new StubVectorIndex(ids),
       embeddings: stubEmbeddings,
+      env: { OLLAMA_EMBED_MODEL: 'stub' },
     }).app;
 
     // Page 1: limit 2 over 5 semantic candidates -> hasMore, total is the true count.
@@ -512,6 +515,7 @@ describe('fused search pagination', () => {
     const fusedApp = buildApp(db, {
       vector: new StubVectorIndex([invalid.id, ...ids]),
       embeddings: stubEmbeddings,
+      env: { OLLAMA_EMBED_MODEL: 'stub' },
     }).app;
 
     const active = (await (

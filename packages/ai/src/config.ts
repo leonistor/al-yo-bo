@@ -40,11 +40,18 @@ const aiConfigSchema = z.object({
     /** Decision model *alias*; the daemon resolves it to a checkpoint per call. */
     model: z.preprocess(blankToUndefined, z.string().default(defaults.ollayaModel)),
   }),
-  /** Local Ollama daemon (chat + local extraction fallback, ARCHITECTURE §3). */
+  /** Local Ollama daemon (chat, embeddings and local extraction fallback, ARCHITECTURE §3). */
   ollama: z.object({
     url: z.string().default(defaults.ollamaUrl),
     /** Unset disables chat (503) and removes the Ollama extraction fallback. */
     chatModel: z.preprocess(blankToUndefined, z.string().optional()),
+    /**
+     * Local embedding model (dev embeddings, §6/§8): when set outside
+     * production, embeddings are served by this model on the Ollama daemon
+     * instead of degrading to keyword-only search. Unset keeps dev
+     * keyword-only; production embeddings always take the OpenRouter route.
+     */
+    embedModel: z.preprocess(blankToUndefined, z.string().optional()),
   }),
   openrouter: z.object({
     apiKey: z.string().optional(),
@@ -92,6 +99,7 @@ export function parseAiConfig(env: Record<string, string | undefined> = process.
     ollama: {
       url: env.OLLAMA_URL,
       chatModel: env.OLLAMA_CHAT_MODEL,
+      embedModel: env.OLLAMA_EMBED_MODEL,
     },
     openrouter: {
       apiKey: env.OPENROUTER_API_KEY,

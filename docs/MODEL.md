@@ -267,14 +267,15 @@ loads all rows into one in-memory matrix at startup as the offline fallback; cos
 reduces to a dot product on pre-normalized vectors there. The dimension is fixed by the embedding
 model, and all rows must share it (see [ARCHITECTURE.md](./ARCHITECTURE.md#6-search-subsystem)).
 
-**The `model` column stores the configured `EMBEDDING_MODEL`, never the provider's response
+**The `model` column stores the active embedding model id — the configured `EMBEDDING_MODEL`
+(OpenRouter) or `OLLAMA_EMBED_MODEL` id (dev Ollama route, §8) — never the provider's response
 echo** (ARCHITECTURE §8) — a dedicated test pins this rule.
 
 ```sql
 CREATE TABLE bookmark_embeddings (
   bookmark_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(bookmark_id) = 'blob' AND length(bookmark_id) = 16)
                     REFERENCES bookmarks(id) ON DELETE CASCADE,
-  model       TEXT NOT NULL,                        -- configured EMBEDDING_MODEL (not the provider echo)
+  model       TEXT NOT NULL,                        -- active embedding model id (not the provider echo)
   dims        INTEGER NOT NULL,                     -- must equal dimension(model)
   embedding   BLOB NOT NULL,                        -- little-endian Float32 array, length = dims * 4 bytes
   updated_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
