@@ -636,6 +636,12 @@ export function App() {
 
   return (
     <div className="flex h-dvh bg-background text-foreground">
+      <a
+        href="#results"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-md focus-visible:border focus-visible:border-border focus-visible:bg-background focus-visible:px-3 focus-visible:py-2 focus-visible:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Skip to results
+      </a>
       {isTablet && (
         <Sidebar
           {...sidebarProps}
@@ -708,7 +714,12 @@ export function App() {
                   onRefresh={reload}
                 />
 
-                <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto">
+                <div
+                  id="results"
+                  tabIndex={-1}
+                  ref={listScrollRef}
+                  className="min-h-0 flex-1 overflow-auto"
+                >
                   <BookmarkListCrossfade
                     page={page}
                     listKey={listKey}

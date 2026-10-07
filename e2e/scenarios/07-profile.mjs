@@ -55,7 +55,7 @@ await check('profile page renders all sections', async () => {
   await page
     .getByRole('heading', { name: 'Profile & settings', exact: true })
     .waitFor({ state: 'visible', timeout: 10_000 });
-  for (const section of ['Identity', 'Preferences', 'Workspace', 'System status']) {
+  for (const section of ['Identity', 'Preferences', 'Dataset', 'System status']) {
     await page
       .getByRole('heading', { name: section, exact: true })
       .waitFor({ state: 'visible' });

@@ -117,7 +117,7 @@ Import uses side-by-side panes; Share and Vocabulary use full-width single-colum
 3. **Header (expanded):** brand icon + wordmark, account menu, theme toggle,
    collapse button. The sidebar header — not the topbar — owns Profile & theme. No total badge
    here: the "All bookmarks" view row already renders it.
-4. **Tools (footer, less-frequent):** Import, Vocabulary, Share.
+4. **Tools (footer, less-frequent):** Import, Export, Vocabulary, Share.
 
 ### Command bar (content header, row 1)
 
@@ -334,6 +334,7 @@ stays visible; `Esc` closes; focus is trapped and restored by the sheet primitiv
 | Vocabulary management    | `VocabularyPage` — route `#/vocabulary` inside the shell (too much data for a sheet) |
 | Profile & settings       | `ProfilePage` — route `#/profile` inside the shell                                    |
 | Import                   | `ImportPage` — route `#/import` inside the shell                           |
+| Export                   | `ExportPage` — route `#/export` inside the shell                           |
 | Share                    | `SharePage` — route `#/share` inside the shell                             |
 | Destructive confirmation | `AlertDialog` (the one legitimate modal — interruptions must interrupt)    |
 

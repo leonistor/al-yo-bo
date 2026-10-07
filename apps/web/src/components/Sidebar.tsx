@@ -427,7 +427,7 @@ interface SidebarToolsProps {
   onNavigate?: () => void;
 }
 
-/** Tools block (DESIGN.md §Sidebar info architecture): Import, Export, Vocabulary, Share. */
+/** Tools block (DESIGN.md §Sidebar information architecture item 4): Import, Export, Vocabulary, Share. */
 function SidebarTools({
   onNavigateImport,
   onNavigateExport,

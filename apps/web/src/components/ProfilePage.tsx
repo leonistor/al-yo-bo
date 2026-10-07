@@ -598,7 +598,7 @@ export function ProfilePage({
         </section>
 
         <section className="rounded-lg border p-3">
-          <h2 className="text-sm font-medium">Workspace</h2>
+          <h2 className="text-sm font-medium">Dataset</h2>
           <p className="mt-2 text-xs text-muted-foreground">
             One library, one workspace — isolation for development or a second instance is a
             separate <span className="font-mono">DATA_DIR</span>, not a schema concept.
