@@ -14,9 +14,9 @@
       "command": ["crawlberg", "mcp"],
     },
     "chrome-devtools": {
-      "enabled": false,
+      "enabled": true,
       "type": "local",
-      "command": ["bunx", "-y", "chrome-devtools-mcp@latest"],
+      "command": ["bunx", "-y", "chrome-devtools-mcp@latest", "--isolated"],
     },
     "shadcn": {
       "type": "local",
