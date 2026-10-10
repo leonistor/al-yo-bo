@@ -6,6 +6,11 @@ import { toast } from 'sonner';
 import { App } from './App.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+// DEV-only: hand the live TanStack Query client to the devtools module so its
+// tools can read the cache at execute-time. The dynamic import is the entire
+// devtools tree (./devtools/register.ts) — Vite drops it from prod when
+// `import.meta.env.DEV` is replaced with `false` at build time.
+import { setQueryClientForDevtools } from '@/devtools/client.ts';
 /* eslint-disable import/no-unassigned-import -- global CSS side-effect import */
 import './index.css';
 /* eslint-enable import/no-unassigned-import */
@@ -41,6 +46,11 @@ const queryClient = new QueryClient({
 const root = document.getElementById('root');
 if (!root) {
   throw new Error('Missing #root element');
+}
+
+if (import.meta.env.DEV) {
+  setQueryClientForDevtools(queryClient);
+  void import('@/devtools/register.ts').then((m) => m.registerDevtools());
 }
 
 createRoot(root).render(
